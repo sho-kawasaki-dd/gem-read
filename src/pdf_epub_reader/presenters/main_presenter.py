@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import asyncio
 
-from pdf_epub_reader.dto import RectCoords
+from pdf_epub_reader.dto import PageData, RectCoords
 from pdf_epub_reader.interfaces.model_interfaces import IDocumentModel
 from pdf_epub_reader.interfaces.view_interfaces import IMainView
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
-
-DEFAULT_DPI = 144
+from pdf_epub_reader.utils.config import DEFAULT_DPI
 
 
 class MainPresenter:
@@ -54,26 +53,33 @@ class MainPresenter:
         self._view.set_on_cache_management_requested(
             self._on_cache_management_requested
         )
+        self._view.set_on_pages_needed(self._on_pages_needed)
 
     # --- Public API ---
 
     async def open_file(self, file_path: str) -> None:
         """文書を開き、必要な初期表示をまとめて行う。
 
-        このメソッドは「ファイルを開く」という 1 つのユーザー操作に対して、
-        状態表示、文書オープン、タイトル更新、ページ描画までを一貫して扱う。
-        こうしておくと View 側は複数の手順を知らず、単純な受け身でいられる。
+        全ページ分のプレースホルダーを配置し、実画像の読み込みは
+        View のビューポート監視による遅延読み込みに委ねる。
         """
         self._view.show_status_message(f"Opening {file_path}...")
         doc_info = await self._document_model.open_document(file_path)
         self._view.set_window_title(doc_info.title or doc_info.file_path)
 
-        # 初回表示では全ページをまとめて取得する。
-        # Phase 3 以降で仮想スクロールを導入する場合、この呼び出しは差し替わる。
-        pages = await self._document_model.render_page_range(
-            0, doc_info.total_pages - 1, self._current_dpi
-        )
-        self._view.display_pages(pages)
+        # 1 ページ目のサイズを取得し、全ページ同サイズとしてプレースホルダーを配置。
+        # 実際の画像は View がビューポートに基づいて後から要求する。
+        sample = await self._document_model.render_page(0, self._current_dpi)
+        placeholders = [
+            PageData(
+                page_number=i,
+                image_data=b"",
+                width=sample.width,
+                height=sample.height,
+            )
+            for i in range(doc_info.total_pages)
+        ]
+        self._view.display_pages(placeholders)
         self._view.show_status_message(
             f"Loaded {doc_info.total_pages} pages"
         )
@@ -121,11 +127,10 @@ class MainPresenter:
         asyncio.ensure_future(self._do_zoom_changed(level))
 
     async def _do_zoom_changed(self, level: float) -> None:
-        """ズーム率変更に追従してページを再描画する。
+        """ズーム率変更に追従してプレースホルダーを再配置する。
 
         ズーム率そのものは View に通知するが、実際に何 dpi で再レンダリングするかは
-        Presenter が判断する。これにより View は「倍率が変わった」という事実だけを知り、
-        画像生成の詳細から切り離される。
+        Presenter が判断する。再配置後は View のビューポート監視が遅延読み込みを行う。
         """
         self._zoom_level = level
         self._view.set_zoom_level(level)
@@ -137,13 +142,21 @@ class MainPresenter:
             return
 
         # 基準 DPI にズーム倍率を掛けて「今回必要な見た目の解像度」を計算する。
-        # こうしておくと、Model は毎回明示的な DPI を受け取るだけで済む。
         effective_dpi = int(DEFAULT_DPI * level)
         self._current_dpi = effective_dpi
-        pages = await self._document_model.render_page_range(
-            0, doc_info.total_pages - 1, effective_dpi
-        )
-        self._view.display_pages(pages)
+
+        # ズーム変更後もプレースホルダーを再配置し、View に遅延読み込みを任せる。
+        sample = await self._document_model.render_page(0, effective_dpi)
+        placeholders = [
+            PageData(
+                page_number=i,
+                image_data=b"",
+                width=sample.width,
+                height=sample.height,
+            )
+            for i in range(doc_info.total_pages)
+        ]
+        self._view.display_pages(placeholders)
 
     def _on_cache_management_requested(self) -> None:
         """キャッシュ管理 UI を開くための拡張ポイント。
@@ -152,3 +165,21 @@ class MainPresenter:
         ここでは「イベントの受け口」を先に置き、将来の接続位置を固定している。
         """
         pass
+
+    def _on_pages_needed(self, page_numbers: list[int]) -> None:
+        """View からページ画像の要求を受け取り、非同期レンダリングを開始する。"""
+        asyncio.ensure_future(self._do_render_pages(page_numbers))
+
+    async def _do_render_pages(self, page_numbers: list[int]) -> None:
+        """要求されたページをレンダリングし、View に供給する。
+
+        View のビューポート監視により呼ばれる。各ページを個別に
+        render_page() で取得し、まとめて update_pages() で返す。
+        """
+        pages: list[PageData] = []
+        for num in page_numbers:
+            page = await self._document_model.render_page(
+                num, self._current_dpi
+            )
+            pages.append(page)
+        self._view.update_pages(pages)

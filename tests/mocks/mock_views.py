@@ -30,6 +30,7 @@ class MockMainView:
         self._on_area_selected: Callable[[int, RectCoords], None] | None = None
         self._on_zoom_changed: Callable[[float], None] | None = None
         self._on_cache_management_requested: Callable[[], None] | None = None
+        self._on_pages_needed: Callable[[list[int]], None] | None = None
 
     # --- Display commands ---
     # 実 UI ではここで描画や画面更新が行われるが、Mock では記録だけを行う。
@@ -60,6 +61,12 @@ class MockMainView:
     def update_recent_files(self, files: list[str]) -> None:
         self.calls.append(("update_recent_files", (files,)))
 
+    def update_pages(self, pages: list[PageData]) -> None:
+        self.calls.append(("update_pages", (pages,)))
+
+    def show_error_dialog(self, title: str, message: str) -> None:
+        self.calls.append(("show_error_dialog", (title, message)))
+
     # --- Callback registration ---
     # View 自身はロジックを持たず、Presenter から受け取った関数を保持するだけにする。
 
@@ -85,6 +92,9 @@ class MockMainView:
     ) -> None:
         self._on_cache_management_requested = cb
 
+    def set_on_pages_needed(self, cb: Callable[[list[int]], None]) -> None:
+        self._on_pages_needed = cb
+
     # --- Simulation helpers (for triggering callbacks in tests) ---
     # テストコードからユーザー操作を模擬するための補助メソッド群。
 
@@ -105,6 +115,10 @@ class MockMainView:
     def simulate_zoom_changed(self, level: float) -> None:
         if self._on_zoom_changed:
             self._on_zoom_changed(level)
+
+    def simulate_pages_needed(self, page_numbers: list[int]) -> None:
+        if self._on_pages_needed:
+            self._on_pages_needed(page_numbers)
 
     # --- Helpers ---
 

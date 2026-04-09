@@ -31,7 +31,24 @@ class IMainView(Protocol):
     # Presenter が View に対して「何を表示するか」だけを命令するための API。
     # どう描画するかは View 実装側の責務であり、Protocol では扱わない。
 
-    def display_pages(self, pages: list[PageData]) -> None: ...
+    def display_pages(self, pages: list[PageData]) -> None:
+        """全ページ分のレイアウト空間（プレースホルダー）を設定する。
+
+        ``PageData.image_data`` は空 ``bytes`` が渡される場合があり、
+        その場合はプレースホルダー表示にする。
+        実際の画像は後から ``update_pages()`` で供給される。
+        """
+        ...
+
+    def update_pages(self, pages: list[PageData]) -> None:
+        """Presenter が遅延レンダリング結果を差分で View に供給するメソッド。
+
+        ``display_pages()`` がプレースホルダー配置用であるのに対し、
+        こちらは **画像データを含む** ``PageData`` を渡して
+        プレースホルダーを実画像に差し替える。
+        """
+        ...
+
     def scroll_to_page(self, page_number: int) -> None: ...
     def set_zoom_level(self, level: float) -> None: ...
     def show_selection_highlight(
@@ -41,6 +58,12 @@ class IMainView(Protocol):
     def set_window_title(self, title: str) -> None: ...
     def show_status_message(self, message: str) -> None: ...
     def update_recent_files(self, files: list[str]) -> None: ...
+    def show_error_dialog(self, title: str, message: str) -> None:
+        """重大エラー発生時にモーダルダイアログを表示する。
+
+        Phase 3-4 のファイル読み込み失敗・API エラー等で使用する。
+        """
+        ...
 
     # --- Callback registration (View → Presenter) ---
     # View は Presenter を直接知らないため、イベント発生時に呼ぶ関数だけを
@@ -59,6 +82,17 @@ class IMainView(Protocol):
     def set_on_zoom_changed(
         self, cb: Callable[[float], None]
     ) -> None: ...
+    def set_on_pages_needed(
+        self, cb: Callable[[list[int]], None]
+    ) -> None:
+        """ビューポート内に未レンダリングのページがあるとき呼ぶコールバックを登録する。
+
+        View がスクロール位置から必要ページを判断し、
+        そのページ番号リストを引数に Presenter を呼び出す。
+        遅延読み込みを View 主導で行うための仕組み。
+        """
+        ...
+
     def set_on_cache_management_requested(
         self, cb: Callable[[], None]
     ) -> None: ...

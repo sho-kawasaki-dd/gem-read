@@ -51,15 +51,17 @@ class TestOpenFileFlow:
         mock_main_view: MockMainView,
         mock_document_model: MockDocumentModel,
     ) -> None:
-        """文書を開くとページ描画とタイトル更新が行われることを確認する。"""
+        """文書を開くとプレースホルダー配置とタイトル更新が行われることを確認する。"""
         await main_presenter.open_file("/fake/doc.pdf")
 
-        # まず Model 側に open と render が委譲されていることを確認する。
+        # まず Model 側に open と render_page (サイズ取得用) が委譲されていること。
         assert len(mock_document_model.get_calls("open_document")) == 1
         assert mock_document_model.get_calls("open_document")[0] == (
             "/fake/doc.pdf",
         )
-        assert len(mock_document_model.get_calls("render_page_range")) == 1
+        # render_page_range ではなく render_page (1 回だけ) が呼ばれること。
+        assert len(mock_document_model.get_calls("render_page")) == 1
+        assert len(mock_document_model.get_calls("render_page_range")) == 0
 
         # 次に、その結果が View に反映されていることを確認する。
         titles = mock_main_view.get_calls("set_window_title")
@@ -70,6 +72,10 @@ class TestOpenFileFlow:
         assert len(pages_calls) == 1
         pages = pages_calls[0][0]
         assert len(pages) == 3  # Mock は 3 ページ文書を返す想定。
+
+        # プレースホルダーの image_data は空 bytes であること。
+        for page in pages:
+            assert page.image_data == b""
 
     @pytest.mark.asyncio
     async def test_open_file_shows_status_messages(
@@ -130,7 +136,7 @@ class TestZoomFlow:
         mock_main_view: MockMainView,
         mock_document_model: MockDocumentModel,
     ) -> None:
-        """文書表示中にズームすると再描画が走ることを確認する。"""
+        """文書表示中にズームするとプレースホルダーが再配置されることを確認する。"""
 
         # 先に文書を開いておかないと get_document_info が空のままなので、
         # ズーム時の再描画条件を満たせない。
@@ -145,12 +151,15 @@ class TestZoomFlow:
         assert len(zoom_calls) == 1
         assert zoom_calls[0] == (2.0,)
 
-        # その後、Model に再レンダリング要求が出ること。
-        render_calls = mock_document_model.get_calls("render_page_range")
-        assert len(render_calls) == 1
+        # render_page_range ではなく render_page (サイズ取得 1 回) が呼ばれること。
+        assert len(mock_document_model.get_calls("render_page")) == 1
+        assert len(mock_document_model.get_calls("render_page_range")) == 0
 
+        # display_pages にプレースホルダー（空 image_data）が渡されること。
         display_calls = mock_main_view.get_calls("display_pages")
         assert len(display_calls) == 1
+        for page in display_calls[0][0]:
+            assert page.image_data == b""
 
     @pytest.mark.asyncio
     async def test_zoom_without_document_is_noop(
@@ -162,4 +171,32 @@ class TestZoomFlow:
 
         # 例外ではなく no-op で終わることが UI 上の使い勝手として重要。
         await main_presenter._do_zoom_changed(1.5)
+        assert len(mock_document_model.get_calls("render_page")) == 0
         assert len(mock_document_model.get_calls("render_page_range")) == 0
+
+
+class TestLazyLoadingFlow:
+    """ビューポート基準の遅延読み込みを検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_pages_needed_triggers_render_and_update(
+        self,
+        main_presenter: MainPresenter,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+    ) -> None:
+        """View からの要求でページがレンダリングされ update_pages で返ること。"""
+        await main_presenter.open_file("/fake/doc.pdf")
+        mock_main_view.calls.clear()
+        mock_document_model.calls.clear()
+
+        await main_presenter._do_render_pages([0, 1])
+
+        render_calls = mock_document_model.get_calls("render_page")
+        assert len(render_calls) == 2
+        assert render_calls[0] == (0, 144)     # DEFAULT_DPI
+        assert render_calls[1] == (1, 144)
+
+        update_calls = mock_main_view.get_calls("update_pages")
+        assert len(update_calls) == 1
+        assert len(update_calls[0][0]) == 2    # 2 ページ分返却
