@@ -171,7 +171,8 @@ pdf-epub_reader_with_Gemini/
 * **Phase 0: プロジェクト構成の作成:** ディレクトリ構成、`__init__.py`、`pyproject.toml` の依存定義、`.env.example`、`conftest.py` 等のスキャフォールドを作成する。
 * **Phase 1: インターフェースとDTOの定義:** `interfaces/view_interfaces.py` に Protocol を用いてViewが持つべきメソッドを定義する。`dto/` にデータ転送オブジェクトを定義する。その後、GUIを使わずにコンソール出力だけで動く「ダミーのView」とPresenterを作成し、ロジックの流れを確認する。
 * **Phase 2: ViewのPySide6実装:** Phase 1で定義したインターフェースを満たす `views/main_window.py` 等を実装し、`infrastructure/event_loop.py` でqasyncを設定、Presenterと結合する。
-* **Phase 3: Modelの実装 (PyMuPDF):** `document_model.py` を実装し、PDFの画像レンダリング（`run_in_executor`）と仮想スクロール向けのデータ供給、および座標からのテキスト抽出を完成させる。
+* **Phase 3: Modelの実装 (PyMuPDF):** `document_model.py` を実装し、PDFの画像レンダリング（`run_in_executor`）と仮想スクロール向けのデータ供給、および座標からのテキスト抽出を完成させる。Phase 3 では `utils/config.py` に `AppConfig` dataclass と JSON 永続化を導入し、レンダリング設定（画像フォーマット PNG/JPEG 切替、JPEG 品質、キャッシュサイズ等）をコードレベルで変更可能にする。
+* **Phase 3.5: 包括的設定ダイアログの実装:** Phase 3 で導入した `AppConfig` の値をユーザーが GUI 上で変更・保存できる設定ダイアログを実装する。対象設定項目は画像フォーマット（PNG/JPEG）、JPEG 品質、ページキャッシュ上限、デフォルト DPI 等。MVP パターンに従い、設定ダイアログ用の View Protocol・Presenter・View 実装を追加する。設定変更は即座に `AppConfig` へ反映し、JSON ファイルへ永続化する。
 * **Phase 4: Modelの実装 (Gemini API):** `ai_model.py` を `async def` で実装し、Gemini APIへの通常リクエスト（ネイティブ `await`）と結果の返却を実現する。
 * **Phase 5: Context Cachingの実装:** 全文抽出とキャッシュ作成機能、最小トークン制限の回避ロジックをModelに組み込み、Presenter経由でView（有効期限やステータス）を更新する。
 

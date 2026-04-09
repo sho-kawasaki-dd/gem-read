@@ -8,7 +8,7 @@ dataclass で表現し、このモジュールに集約する。
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -64,14 +64,33 @@ class TextSelection:
 
 
 @dataclass(frozen=True)
+class ToCEntry:
+    """目次 (Table of Contents) の 1 エントリを表すデータ。
+
+    PDF/EPUB が持つ階層型の目次をフラットリストで表現する。
+    `level` が階層の深さ（1 が最上位）を示し、View 側でインデント等の
+    表示を調整できるようにする。
+
+    PyMuPDF の ``doc.get_toc()`` が返す ``[level, title, page]`` を
+    そのままマッピングする設計とした。page_number は 0-indexed に変換して格納する。
+    """
+
+    title: str
+    page_number: int
+    level: int
+
+
+@dataclass(frozen=True)
 class DocumentInfo:
     """開いた文書の基本メタデータ。
 
     ファイルパス・総ページ数・タイトルを切り出して保持することで、
     Presenter は Model の内部実装を知らずに UI 更新に必要な情報だけを扱える。
     `title` は PDF/EPUB に埋め込まれていない可能性があるため optional とする。
+    `toc` は目次情報。目次を持たない文書では空リストとなる。
     """
 
     file_path: str
     total_pages: int
     title: str | None = None
+    toc: list[ToCEntry] = field(default_factory=list)

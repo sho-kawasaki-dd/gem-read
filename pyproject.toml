@@ -10,6 +10,8 @@ dependencies = [
     "google-generativeai>=0.8",
     "qasync>=0.27",
     "python-dotenv>=1.0",
+    "Pillow>=10.0",
+    "platformdirs>=4.0",
 ]
 
 [dependency-groups]
