@@ -16,6 +16,10 @@ from pdf_epub_reader.interfaces.model_interfaces import IDocumentModel
 from pdf_epub_reader.interfaces.view_interfaces import IMainView
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
 from pdf_epub_reader.utils.config import DEFAULT_DPI
+from pdf_epub_reader.utils.exceptions import (
+    DocumentOpenError,
+    DocumentPasswordRequired,
+)
 
 
 class MainPresenter:
@@ -62,9 +66,35 @@ class MainPresenter:
 
         全ページ分のプレースホルダーを配置し、実画像の読み込みは
         View のビューポート監視による遅延読み込みに委ねる。
+
+        パスワード保護 PDF の場合は View にダイアログを表示させ、
+        ユーザーが入力したパスワードで再試行する。
         """
         self._view.show_status_message(f"Opening {file_path}...")
-        doc_info = await self._document_model.open_document(file_path)
+        try:
+            doc_info = await self._document_model.open_document(file_path)
+        except DocumentPasswordRequired as e:
+            # パスワード保護を検出 → View にダイアログを表示させる。
+            password = self._view.show_password_dialog(e.file_path)
+            if password is None:
+                # ユーザーがキャンセルした場合はオープンを中止する。
+                self._view.show_status_message("Open cancelled")
+                return
+            try:
+                doc_info = await self._document_model.open_document(
+                    file_path, password
+                )
+            except DocumentOpenError as retry_e:
+                self._view.show_error_dialog(
+                    "Open Error", str(retry_e)
+                )
+                self._view.show_status_message("Open failed")
+                return
+        except DocumentOpenError as e:
+            self._view.show_error_dialog("Open Error", str(e))
+            self._view.show_status_message("Open failed")
+            return
+
         self._view.set_window_title(doc_info.title or doc_info.file_path)
 
         # 1 ページ目のサイズを取得し、全ページ同サイズとしてプレースホルダーを配置。

@@ -7,6 +7,8 @@ Mock View / Mock Model / Presenter の組み立てを共通化する。
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from tests.mocks.mock_models import MockAIModel, MockDocumentModel
@@ -14,6 +16,33 @@ from tests.mocks.mock_views import MockMainView, MockSidePanelView
 
 from pdf_epub_reader.presenters.main_presenter import MainPresenter
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
+
+# --- テスト用フィクスチャファイルのパス ---
+_FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture
+def fixtures_dir() -> Path:
+    """テストフィクスチャディレクトリのパスを返す。"""
+    return _FIXTURES_DIR
+
+
+@pytest.fixture
+def sample_pdf_path() -> str:
+    """3 ページ・既知テキスト入りテスト PDF のパスを返す。"""
+    return str(_FIXTURES_DIR / "sample.pdf")
+
+
+@pytest.fixture
+def sample_epub_path() -> str:
+    """テスト用 EPUB のパスを返す。"""
+    return str(_FIXTURES_DIR / "sample.epub")
+
+
+@pytest.fixture
+def protected_pdf_path() -> str:
+    """パスワード "test123" 付きテスト PDF のパスを返す。"""
+    return str(_FIXTURES_DIR / "protected.pdf")
 
 
 @pytest.fixture

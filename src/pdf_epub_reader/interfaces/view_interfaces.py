@@ -65,6 +65,22 @@ class IMainView(Protocol):
         """
         ...
 
+    def show_password_dialog(self, file_path: str) -> str | None:
+        """パスワード保護された文書に対してパスワード入力ダイアログを表示する。
+
+        Passive View の例外的な同期メソッド。モーダルダイアログのため、
+        ユーザーが入力を完了するまで制御を返さない。
+
+        Args:
+            file_path: パスワード保護が検出されたファイルのパス。
+                       ダイアログ上でどのファイルか表示するために使う。
+
+        Returns:
+            ユーザーが入力したパスワード文字列。
+            キャンセルされた場合は ``None``。
+        """
+        ...
+
     # --- Callback registration (View → Presenter) ---
     # View は Presenter を直接知らないため、イベント発生時に呼ぶ関数だけを
     # 事前登録してもらう。この形にすると Passive View を保ちやすい。

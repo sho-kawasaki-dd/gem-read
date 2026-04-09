@@ -29,7 +29,9 @@ class IDocumentModel(Protocol):
     テキストを抽出できる」という能力だけを知れば十分である。
     """
 
-    async def open_document(self, file_path: str) -> DocumentInfo: ...
+    async def open_document(
+        self, file_path: str, password: str | None = None
+    ) -> DocumentInfo: ...
     async def render_page(self, page_number: int, dpi: int) -> PageData: ...
     async def render_page_range(
         self, start: int, end: int, dpi: int

@@ -22,6 +22,10 @@ class MockMainView:
         # 各 View メソッドの呼び出し履歴を残し、テストで事後検証できるようにする。
         self.calls: list[tuple[str, tuple]] = []
 
+        # show_password_dialog が返す固定値。テスト側で変更可能。
+        # None を設定するとキャンセル動作を再現する。
+        self._password_dialog_return: str | None = "test123"
+
         # Presenter から登録されたコールバックを保持する。
         # simulate_* メソッドはこれらを呼び出してユーザー操作を擬似再現する。
         self._on_file_open_requested: Callable[[], None] | None = None
@@ -66,6 +70,11 @@ class MockMainView:
 
     def show_error_dialog(self, title: str, message: str) -> None:
         self.calls.append(("show_error_dialog", (title, message)))
+
+    def show_password_dialog(self, file_path: str) -> str | None:
+        """パスワード入力ダイアログの Mock。_password_dialog_return を返す。"""
+        self.calls.append(("show_password_dialog", (file_path,)))
+        return self._password_dialog_return
 
     # --- Callback registration ---
     # View 自身はロジックを持たず、Presenter から受け取った関数を保持するだけにする。

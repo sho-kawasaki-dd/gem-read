@@ -16,6 +16,10 @@ from pdf_epub_reader.dto import (
     RectCoords,
     TextSelection,
 )
+from pdf_epub_reader.utils.exceptions import (
+    DocumentOpenError,
+    DocumentPasswordRequired,
+)
 
 
 class MockDocumentModel:
@@ -25,10 +29,26 @@ class MockDocumentModel:
         # Presenter がどの順序で何を要求したかを後から確認するための履歴。
         self.calls: list[tuple[str, tuple]] = []
         self._document_info: DocumentInfo | None = None
+        # テストでパスワード要求の振る舞いを制御するフラグ。
+        # True にすると open_document が password なしで
+        # DocumentPasswordRequired を送出する。
+        self._should_require_password: bool = False
+        # パスワード認証時に受け入れるパスワード。
+        self._accepted_password: str = "test123"
 
-    async def open_document(self, file_path: str) -> DocumentInfo:
+    async def open_document(
+        self, file_path: str, password: str | None = None
+    ) -> DocumentInfo:
         # open_document 後に get_document_info が使えるよう内部状態も更新する。
-        self.calls.append(("open_document", (file_path,)))
+        self.calls.append(("open_document", (file_path, password)))
+        if self._should_require_password and password is None:
+            raise DocumentPasswordRequired(file_path)
+        if (
+            self._should_require_password
+            and password is not None
+            and password != self._accepted_password
+        ):
+            raise DocumentOpenError(f"Invalid password for {file_path}")
         self._document_info = DocumentInfo(
             file_path=file_path,
             total_pages=3,

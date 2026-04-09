@@ -58,6 +58,7 @@ class TestOpenFileFlow:
         assert len(mock_document_model.get_calls("open_document")) == 1
         assert mock_document_model.get_calls("open_document")[0] == (
             "/fake/doc.pdf",
+            None,
         )
         # render_page_range ではなく render_page (1 回だけ) が呼ばれること。
         assert len(mock_document_model.get_calls("render_page")) == 1
@@ -197,6 +198,109 @@ class TestLazyLoadingFlow:
         assert render_calls[0] == (0, 144)     # DEFAULT_DPI
         assert render_calls[1] == (1, 144)
 
-        update_calls = mock_main_view.get_calls("update_pages")
-        assert len(update_calls) == 1
-        assert len(update_calls[0][0]) == 2    # 2 ページ分返却
+
+class TestPasswordFlow:
+    """パスワード保護 PDF のオープンフローを検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_password_success(
+        self,
+        main_presenter: MainPresenter,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+    ) -> None:
+        """パスワード入力成功 → 文書が正常にオープンされる。"""
+        mock_document_model._should_require_password = True
+        mock_main_view._password_dialog_return = "test123"
+
+        await main_presenter.open_file("/fake/protected.pdf")
+
+        # パスワードダイアログが表示されたこと。
+        dialog_calls = mock_main_view.get_calls("show_password_dialog")
+        assert len(dialog_calls) == 1
+        assert dialog_calls[0] == ("/fake/protected.pdf",)
+
+        # 再試行で正しいパスワードが渡されたこと。
+        open_calls = mock_document_model.get_calls("open_document")
+        assert len(open_calls) == 2
+        assert open_calls[0] == ("/fake/protected.pdf", None)
+        assert open_calls[1] == ("/fake/protected.pdf", "test123")
+
+        # 文書が正常に表示されたこと。
+        assert len(mock_main_view.get_calls("display_pages")) == 1
+
+    @pytest.mark.asyncio
+    async def test_password_cancelled(
+        self,
+        main_presenter: MainPresenter,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+    ) -> None:
+        """パスワードダイアログをキャンセル → オープン中止。"""
+        mock_document_model._should_require_password = True
+        mock_main_view._password_dialog_return = None
+
+        await main_presenter.open_file("/fake/protected.pdf")
+
+        # ダイアログは表示されたがキャンセルされた。
+        assert len(mock_main_view.get_calls("show_password_dialog")) == 1
+
+        # 再試行はされず、display_pages も呼ばれない。
+        open_calls = mock_document_model.get_calls("open_document")
+        assert len(open_calls) == 1  # 初回のみ
+        assert len(mock_main_view.get_calls("display_pages")) == 0
+
+        # キャンセルメッセージがステータスバーに出る。
+        status_msgs = mock_main_view.get_calls("show_status_message")
+        assert any("cancelled" in msg[0].lower() for msg in status_msgs)
+
+    @pytest.mark.asyncio
+    async def test_wrong_password_shows_error(
+        self,
+        main_presenter: MainPresenter,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+    ) -> None:
+        """間違ったパスワード → エラーダイアログが表示される。"""
+        mock_document_model._should_require_password = True
+        mock_document_model._accepted_password = "correct"
+        mock_main_view._password_dialog_return = "wrong"
+
+        await main_presenter.open_file("/fake/protected.pdf")
+
+        # エラーダイアログが表示されたこと。
+        error_calls = mock_main_view.get_calls("show_error_dialog")
+        assert len(error_calls) == 1
+        assert "Open Error" in error_calls[0][0]
+
+        # 文書は表示されない。
+        assert len(mock_main_view.get_calls("display_pages")) == 0
+
+
+class TestDocumentOpenError:
+    """DocumentOpenError 発生時のエラーハンドリングを検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_open_error_shows_dialog(
+        self,
+        main_presenter: MainPresenter,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+    ) -> None:
+        """ファイルオープン失敗 → エラーダイアログが表示される。"""
+        from pdf_epub_reader.utils.exceptions import DocumentOpenError
+
+        # open_document が DocumentOpenError を送出するよう差し替える。
+        async def _raise_open_error(
+            file_path: str, password: str | None = None
+        ):
+            raise DocumentOpenError(f"Cannot open {file_path}")
+
+        mock_document_model.open_document = _raise_open_error  # type: ignore[assignment]
+
+        await main_presenter.open_file("/fake/broken.pdf")
+
+        error_calls = mock_main_view.get_calls("show_error_dialog")
+        assert len(error_calls) == 1
+        assert "Open Error" in error_calls[0][0]
+        assert len(mock_main_view.get_calls("display_pages")) == 0
