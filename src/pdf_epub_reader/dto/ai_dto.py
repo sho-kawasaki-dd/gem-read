@@ -75,9 +75,15 @@ class CacheStatus:
 
     Phase 1 では簡易表示しか扱わないが、TTL やトークン数まで保持しておくことで
     Phase 5 で詳細ダイアログを作るときに型を再設計せずに済む。
+
+    Phase 7 で ``model_name``（キャッシュ紐付きモデル名）と
+    ``expire_time``（ISO 形式の有効期限）を追加。
+    キャッシュ管理ダイアログでの詳細表示やモデル一致判定に使用する。
     """
 
     is_active: bool = False
     ttl_seconds: int | None = None
     token_count: int | None = None
     cache_name: str | None = None
+    model_name: str | None = None
+    expire_time: str | None = None

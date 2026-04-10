@@ -16,6 +16,7 @@ from pdf_epub_reader.models.document_model import DocumentModel
 from pdf_epub_reader.presenters.main_presenter import MainPresenter
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
 from pdf_epub_reader.utils.config import ENV_GEMINI_API_KEY, load_config
+from pdf_epub_reader.views.cache_dialog import CacheDialog
 from pdf_epub_reader.views.main_window import MainWindow
 from pdf_epub_reader.views.settings_dialog import SettingsDialog
 from pdf_epub_reader.views.side_panel_view import SidePanelView
@@ -50,6 +51,7 @@ async def _app_main() -> None:
         config=config,
         settings_view_factory=lambda: SettingsDialog(main_window),
         ai_model=ai_model,
+        cache_dialog_view_factory=lambda: CacheDialog(main_window),
     )
 
     main_window.show()

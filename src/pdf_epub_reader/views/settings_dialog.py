@@ -36,6 +36,8 @@ from PySide6.QtWidgets import (
 )
 
 from pdf_epub_reader.utils.config import (
+    CACHE_TTL_MAX,
+    CACHE_TTL_MIN,
     DPI_MAX,
     DPI_MIN,
     JPEG_QUALITY_MAX,
@@ -146,6 +148,12 @@ class SettingsDialog(QDialog):
         self._system_prompt_edit.setAcceptRichText(False)
         ai_layout.addRow("Translation Prompt:", self._system_prompt_edit)
 
+        # Context Cache TTL
+        self._cache_ttl_spin = QSpinBox()
+        self._cache_ttl_spin.setRange(CACHE_TTL_MIN, CACHE_TTL_MAX)
+        self._cache_ttl_spin.setSuffix(" min")
+        ai_layout.addRow("Cache TTL:", self._cache_ttl_spin)
+
         self._tabs.addTab(ai_tab, "AI Models")
 
         # --- ボタン行 ---
@@ -224,6 +232,9 @@ class SettingsDialog(QDialog):
     def get_system_prompt_translation(self) -> str:
         return self._system_prompt_edit.toPlainText()
 
+    def get_cache_ttl_minutes(self) -> int:
+        return self._cache_ttl_spin.value()
+
     # =========================================================================
     # ISettingsDialogView — Setters
     # =========================================================================
@@ -292,6 +303,9 @@ class SettingsDialog(QDialog):
 
     def set_system_prompt_translation(self, value: str) -> None:
         self._system_prompt_edit.setPlainText(value)
+
+    def set_cache_ttl_minutes(self, value: int) -> None:
+        self._cache_ttl_spin.setValue(value)
 
     def set_available_models_for_selection(
         self, models: list[tuple[str, str]]

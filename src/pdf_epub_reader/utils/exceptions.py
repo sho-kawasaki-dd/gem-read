@@ -100,6 +100,14 @@ class AIAPIError(AIError):
         self.message = message
 
 
+class AICacheError(AIError):
+    """Context Cache 操作の失敗を表す例外。
+
+    キャッシュ作成失敗（トークン不足等）やキャッシュ TTL 更新失敗時に送出する。
+    Presenter はステータスバーにエラー通知し、キャッシュなしで動作を継続する。
+    """
+
+
 class AIRateLimitError(AIAPIError):
     """429 レート制限エラー（リトライ上限超過後に送出）。
 

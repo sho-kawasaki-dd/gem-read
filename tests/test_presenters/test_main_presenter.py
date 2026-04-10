@@ -9,14 +9,22 @@ from __future__ import annotations
 import pytest
 
 from tests.mocks.mock_models import MockAIModel, MockDocumentModel
-from tests.mocks.mock_views import MockMainView, MockSettingsDialogView, MockSidePanelView
+from tests.mocks.mock_views import (
+    MockCacheDialogView,
+    MockMainView,
+    MockSettingsDialogView,
+    MockSidePanelView,
+)
 
-from pdf_epub_reader.dto import RectCoords
+from pdf_epub_reader.dto import CacheStatus, ModelInfo, RectCoords
 from pdf_epub_reader.interfaces.model_interfaces import IDocumentModel
 from pdf_epub_reader.interfaces.view_interfaces import IMainView, ISidePanelView
 from pdf_epub_reader.presenters.main_presenter import MainPresenter
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
 from pdf_epub_reader.utils.config import AppConfig
+
+
+from pdf_epub_reader.utils.exceptions import AIKeyMissingError
 
 
 class TestProtocolConformance:
@@ -570,3 +578,385 @@ class TestSettingsFlow:
         )
         # 例外が発生しないこと
         presenter._on_settings_requested()
+
+
+class TestCacheCreateFlow:
+    """Phase 7: キャッシュ作成オーケストレーションを検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_cache_create_calls_model_and_updates_panel(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """キャッシュ作成がモデルを呼び、パネルのステータスを更新すること。"""
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            ai_model=mock_ai_model,
+        )
+        # ドキュメントを事前に開く
+        await presenter.open_file("/fake/doc.pdf")
+        mock_main_view.calls.clear()
+        mock_ai_model.calls.clear()
+
+        await presenter._do_cache_create()
+
+        # extract_all_text が呼ばれたこと
+        assert len(mock_document_model.get_calls("extract_all_text")) >= 1
+        # create_cache が呼ばれたこと
+        create_calls = mock_ai_model.get_calls("create_cache")
+        assert len(create_calls) == 1
+        # display_name に "pdf-reader:" が含まれること
+        assert "pdf-reader:" in create_calls[0][2]
+        # パネルに active ステータスが設定されたこと
+        active_calls = mock_side_panel_view.get_calls("set_cache_active")
+        assert active_calls[-1] == (True,)
+        # ステータスバーに完了メッセージが出ること
+        status_msgs = mock_main_view.get_calls("show_status_message")
+        assert any("作成完了" in msg[0] for msg in status_msgs)
+
+    @pytest.mark.asyncio
+    async def test_cache_create_error_shows_status(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """キャッシュ作成失敗時にステータスメッセージが出ること。"""
+        mock_ai_model._should_fail_create_cache = True
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            ai_model=mock_ai_model,
+        )
+        await presenter.open_file("/fake/doc.pdf")
+        mock_main_view.calls.clear()
+
+        await presenter._do_cache_create()
+
+        status_msgs = mock_main_view.get_calls("show_status_message")
+        assert any("失敗" in msg[0] for msg in status_msgs)
+
+    @pytest.mark.asyncio
+    async def test_cache_create_without_document_is_noop(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """ドキュメント未オープン時はキャッシュ作成しないこと。"""
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            ai_model=mock_ai_model,
+        )
+        await presenter._do_cache_create()
+
+        assert len(mock_ai_model.get_calls("create_cache")) == 0
+
+
+class TestCacheInvalidateOnOpen:
+    """Phase 7: ドキュメント切替時のキャッシュ自動削除を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_open_file_invalidates_existing_cache(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """既存キャッシュがある状態で open_file するとキャッシュが削除されること。"""
+        # get_cache_status が active を返すよう差し替え
+        mock_ai_model.get_cache_status = lambda: _async_return(  # type: ignore[assignment]
+            CacheStatus(is_active=True, cache_name="old-cache")
+        )
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            ai_model=mock_ai_model,
+        )
+
+        await presenter.open_file("/fake/doc.pdf")
+
+        # invalidate_cache が呼ばれたこと
+        assert len(mock_ai_model.get_calls("invalidate_cache")) >= 1
+
+
+class TestCacheManagementDialog:
+    """Phase 7: キャッシュ管理ダイアログのフローを検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_dialog_update_ttl(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """ダイアログで update_ttl アクションが実行されること。"""
+        mock_dialog = MockCacheDialogView()
+        mock_dialog._show_return = "update_ttl"
+        mock_dialog._ttl_value = 120
+
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            ai_model=mock_ai_model,
+            cache_dialog_view_factory=lambda: mock_dialog,
+        )
+
+        await presenter._do_cache_management()
+
+        ttl_calls = mock_ai_model.get_calls("update_cache_ttl")
+        assert len(ttl_calls) == 1
+        assert ttl_calls[0] == (120,)
+        status_msgs = mock_main_view.get_calls("show_status_message")
+        assert any("120" in msg[0] for msg in status_msgs)
+
+    @pytest.mark.asyncio
+    async def test_dialog_close_is_noop(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """ダイアログで None（閉じる）が返るとき何も実行しないこと。"""
+        mock_dialog = MockCacheDialogView()
+        mock_dialog._show_return = None  # 閉じる
+
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            ai_model=mock_ai_model,
+            cache_dialog_view_factory=lambda: mock_dialog,
+        )
+        mock_ai_model.calls.clear()
+
+        await presenter._do_cache_management()
+
+        # get_cache_status, list_caches 以外のメソッドは呼ばれないこと
+        action_calls = [
+            name
+            for name, _ in mock_ai_model.calls
+            if name not in ("get_cache_status", "list_caches")
+        ]
+        assert action_calls == []
+
+    @pytest.mark.asyncio
+    async def test_dialog_without_factory_is_noop(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """cache_dialog_view_factory=None の場合は安全に無視されること。"""
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            ai_model=mock_ai_model,
+            cache_dialog_view_factory=None,
+        )
+        # 例外が発生しないこと
+        await presenter._do_cache_management()
+
+
+class TestValidateModelsOnStartup:
+    """Phase 7 Bugfix: 起動時バックグラウンドモデル検証を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_valid_model_continues(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """config のモデルが有効な場合、何も変更しないこと。"""
+        config = AppConfig(
+            gemini_model_name="models/gemini-test",
+            selected_models=["models/gemini-test"],
+        )
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=config,
+            ai_model=mock_ai_model,
+        )
+        # ensure_future で発火されたタスクを消化する
+        import asyncio
+        await asyncio.sleep(0)
+
+        # gemini_model_name は変更されない
+        assert config.gemini_model_name == "models/gemini-test"
+
+    @pytest.mark.asyncio
+    async def test_invalid_model_clears_config(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """config のモデルが Fetch リストに無い場合、config をクリアすること。"""
+        config = AppConfig(
+            gemini_model_name="models/deprecated-model",
+            selected_models=["models/deprecated-model"],
+        )
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        from unittest.mock import patch
+        with patch("pdf_epub_reader.presenters.main_presenter.save_config"):
+            presenter = MainPresenter(
+                view=mock_main_view,
+                document_model=mock_document_model,
+                panel_presenter=panel,
+                config=config,
+                ai_model=mock_ai_model,
+            )
+            import asyncio
+            await asyncio.sleep(0)
+
+        assert config.gemini_model_name == ""
+        status_msgs = mock_main_view.get_calls("show_status_message")
+        assert any("モデルが未設定" in msg[0] or "無効" in msg[0] for msg in status_msgs)
+
+    @pytest.mark.asyncio
+    async def test_empty_model_clears_config(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """gemini_model_name が空の場合、config クリア + 案内が出ること。"""
+        config = AppConfig(gemini_model_name="")
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        from unittest.mock import patch
+        with patch("pdf_epub_reader.presenters.main_presenter.save_config"):
+            presenter = MainPresenter(
+                view=mock_main_view,
+                document_model=mock_document_model,
+                panel_presenter=panel,
+                config=config,
+                ai_model=mock_ai_model,
+            )
+            import asyncio
+            await asyncio.sleep(0)
+
+        status_msgs = mock_main_view.get_calls("show_status_message")
+        assert any("モデルが未設定" in msg[0] or "無効" in msg[0] for msg in status_msgs)
+
+    @pytest.mark.asyncio
+    async def test_fetch_failure_continues_with_existing(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """ネットワークエラー時は既存設定で続行し、警告を出すこと。"""
+        from unittest.mock import AsyncMock
+        mock_ai_model.list_available_models = AsyncMock(
+            side_effect=Exception("Network error")
+        )
+        config = AppConfig(
+            gemini_model_name="models/existing",
+            selected_models=["models/existing"],
+        )
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=config,
+            ai_model=mock_ai_model,
+        )
+        import asyncio
+        await asyncio.sleep(0)
+
+        # config は変更されない
+        assert config.gemini_model_name == "models/existing"
+        status_msgs = mock_main_view.get_calls("show_status_message")
+        assert any("失敗" in msg[0] for msg in status_msgs)
+
+    @pytest.mark.asyncio
+    async def test_no_api_key_shows_message(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """API キー未設定時にステータスメッセージが出ること。"""
+        from unittest.mock import AsyncMock
+        mock_ai_model.list_available_models = AsyncMock(
+            side_effect=AIKeyMissingError("API キーが設定されていません")
+        )
+        config = AppConfig()
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=config,
+            ai_model=mock_ai_model,
+        )
+        import asyncio
+        await asyncio.sleep(0)
+
+        status_msgs = mock_main_view.get_calls("show_status_message")
+        assert any("API キー" in msg[0] for msg in status_msgs)
+
+
+# --- Helpers ---
+
+async def _async_return(value):
+    """簡易 async 値返却ヘルパー。"""
+    return value

@@ -53,7 +53,7 @@ MAX_RECENT_FILES = 10
 ENV_GEMINI_API_KEY = "GEMINI_API_KEY"
 
 # --- AI デフォルト設定 ---
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite-preview-06-17"
+DEFAULT_GEMINI_MODEL = ""
 DEFAULT_OUTPUT_LANGUAGE = "日本語"
 DEFAULT_TRANSLATION_PROMPT = (
     "あなたは学術文書の翻訳者です。与えられたテキストを {output_language} に翻訳してください。\n"
@@ -75,6 +75,11 @@ JPEG_QUALITY_MIN = 1
 JPEG_QUALITY_MAX = 100
 PAGE_CACHE_MIN = 1
 PAGE_CACHE_MAX = 500
+
+# --- Context Cache 設定 (Phase 7) ---
+DEFAULT_CACHE_TTL_MINUTES = 60
+CACHE_TTL_MIN = 1
+CACHE_TTL_MAX = 1440
 
 
 # ---------------------------------------------------------------------------
@@ -122,10 +127,14 @@ class AppConfig:
     # システムプロンプト・出力言語を永続化する。
     gemini_model_name: str = DEFAULT_GEMINI_MODEL
     selected_models: list[str] = field(
-        default_factory=lambda: [DEFAULT_GEMINI_MODEL]
+        default_factory=list
     )
     system_prompt_translation: str = DEFAULT_TRANSLATION_PROMPT
     output_language: str = DEFAULT_OUTPUT_LANGUAGE
+
+    # Phase 7: Context Cache 設定
+    # サーバー側キャッシュの有効期間（分）。設定ダイアログの AI Models タブで変更可能。
+    cache_ttl_minutes: int = DEFAULT_CACHE_TTL_MINUTES
 
 
 def _get_config_path() -> Path:

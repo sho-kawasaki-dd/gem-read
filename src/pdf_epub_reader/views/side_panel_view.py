@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QTabWidget,
@@ -213,6 +214,9 @@ class SidePanelView(QWidget):
         self._on_tab_changed: Callable[[str], None] | None = None
         self._on_force_image_toggled: Callable[[bool], None] | None = None
         self._on_model_changed: Callable[[str], None] | None = None
+        self._on_cache_create_requested: Callable[[], None] | None = None
+        self._on_cache_invalidate_requested: Callable[[], None] | None = None
+        self._cache_is_active: bool = False
 
         # --- ウィジェット構築 ---
         layout = QVBoxLayout(self)
@@ -314,15 +318,22 @@ class SidePanelView(QWidget):
 
         self._tab_widget.addTab(custom_tab, "カスタムプロンプト")
 
-        # キャッシュステータス
+        # キャッシュステータス + トグルボタン
+        cache_row = QHBoxLayout()
         self._cache_label = QLabel("キャッシュステータス: ---")
-        layout.addWidget(self._cache_label)
+        cache_row.addWidget(self._cache_label, 1)
+        self._cache_toggle_btn = QPushButton("作成")
+        self._cache_toggle_btn.setFixedWidth(60)
+        self._cache_toggle_btn.clicked.connect(self._fire_cache_toggle)
+        cache_row.addWidget(self._cache_toggle_btn)
+        layout.addLayout(cache_row)
 
         # ローディング中に無効化する全ボタンのリスト
         self._all_buttons = [
             self._translate_btn,
             self._explain_btn,
             self._submit_btn,
+            self._cache_toggle_btn,
         ]
 
     # --- ISidePanelView Display commands ---
@@ -411,15 +422,24 @@ class SidePanelView(QWidget):
     # --- Phase 6: モデル選択 ---
 
     def set_available_models(self, model_names: list[str]) -> None:
-        """モデル選択プルダウンの選択肢を設定する。"""
+        """モデル選択プルダウンの選択肢を設定する。
+
+        空リストの場合は「モデル未設定」プレースホルダーを表示して disabled にする。
+        """
         current = self._model_combo.currentText()
         self._model_combo.blockSignals(True)
         self._model_combo.clear()
-        self._model_combo.addItems(model_names)
-        # 元の選択を復元できる場合は復元
-        idx = self._model_combo.findText(current)
-        if idx >= 0:
-            self._model_combo.setCurrentIndex(idx)
+        if model_names:
+            self._model_combo.addItems(model_names)
+            # 元の選択を復元できる場合は復元
+            idx = self._model_combo.findText(current)
+            if idx >= 0:
+                self._model_combo.setCurrentIndex(idx)
+            self._model_combo.setEnabled(True)
+            self._model_combo.setPlaceholderText("")
+        else:
+            self._model_combo.setPlaceholderText("モデル未設定")
+            self._model_combo.setEnabled(False)
         self._model_combo.blockSignals(False)
 
     def set_selected_model(self, model_name: str) -> None:
@@ -433,6 +453,44 @@ class SidePanelView(QWidget):
     ) -> None:
         """モデル選択プルダウンの変更時コールバックを登録する。"""
         self._on_model_changed = cb
+
+    def set_model_combo_enabled(self, enabled: bool) -> None:
+        """モデル選択プルダウンの有効/無効を切り替える。"""
+        self._model_combo.setEnabled(enabled)
+        if not enabled and self._model_combo.count() == 0:
+            self._model_combo.setPlaceholderText("モデル未設定")
+
+    # --- Phase 7: キャッシュ操作 ---
+
+    def set_on_cache_create_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """キャッシュ作成ボタン押下時のコールバックを登録する。"""
+        self._on_cache_create_requested = cb
+
+    def set_on_cache_invalidate_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """キャッシュ削除ボタン押下時のコールバックを登録する。"""
+        self._on_cache_invalidate_requested = cb
+
+    def set_cache_active(self, active: bool) -> None:
+        """キャッシュ状態に応じてトグルボタンのテキストを切り替える。"""
+        self._cache_is_active = active
+        self._cache_toggle_btn.setText("削除" if active else "作成")
+
+    def set_cache_button_enabled(self, enabled: bool) -> None:
+        """キャッシュトグルボタンの有効/無効を制御する。"""
+        self._cache_toggle_btn.setEnabled(enabled)
+
+    def show_confirm_dialog(self, title: str, message: str) -> bool:
+        """確認ダイアログを表示し、OK なら True を返す。"""
+        result = QMessageBox.question(
+            self, title, message,
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        return result == QMessageBox.StandardButton.Ok
 
     # --- Internal event handlers ---
 
@@ -457,6 +515,15 @@ class SidePanelView(QWidget):
         """モデルプルダウンの変更をコールバックに変換する。"""
         if self._on_model_changed and model_name:
             self._on_model_changed(model_name)
+
+    def _fire_cache_toggle(self) -> None:
+        """キャッシュトグルボタンのクリックを状態に応じたコールバックに変換する。"""
+        if self._cache_is_active:
+            if self._on_cache_invalidate_requested:
+                self._on_cache_invalidate_requested()
+        else:
+            if self._on_cache_create_requested:
+                self._on_cache_create_requested()
 
     def _handle_tab_changed(self, index: int) -> None:
         """QTabWidget のタブ切り替えシグナルをコールバックに変換する。"""

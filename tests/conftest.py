@@ -79,7 +79,9 @@ def panel_presenter(
     サイドパネル単体の振る舞いを確認したいテストでは、
     このフィクスチャを使うことで毎回同じ構成を簡単に再利用できる。
     """
-    return PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
+    presenter = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
+    presenter.set_selected_model("models/gemini-2.0-flash")
+    return presenter
 
 
 @pytest.fixture

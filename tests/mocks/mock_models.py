@@ -165,6 +165,9 @@ class MockAIModel:
     def __init__(self) -> None:
         # API 呼び出しの代わりに、要求内容と戻り値だけを deterministic にする。
         self.calls: list[tuple[str, tuple]] = []
+        # テストでキャッシュ操作の失敗を制御するフラグ。
+        self._should_fail_create_cache: bool = False
+        self._should_fail_update_ttl: bool = False
 
     async def analyze(self, request: AnalysisRequest) -> AnalysisResult:
         # Request の内容に応じて戻り値を少し変えることで、
@@ -178,14 +181,26 @@ class MockAIModel:
             raw_response="Raw: " + request.text,
         )
 
-    async def create_cache(self, full_text: str) -> CacheStatus:
-        """キャッシュ作成成功時を模した固定レスポンスを返す。"""
-        self.calls.append(("create_cache", (full_text,)))
+    async def create_cache(
+        self,
+        full_text: str,
+        *,
+        model_name: str | None = None,
+        display_name: str | None = None,
+    ) -> CacheStatus:
+        """キャッシュ作成のダミー実装。"""
+        self.calls.append((
+            "create_cache", (full_text, model_name, display_name)
+        ))
+        if self._should_fail_create_cache:
+            from pdf_epub_reader.utils.exceptions import AICacheError
+            raise AICacheError("Mock cache creation failed")
         return CacheStatus(
             is_active=True,
             ttl_seconds=3600,
             token_count=1000,
             cache_name="mock-cache",
+            model_name=model_name or "mock-model",
         )
 
     async def get_cache_status(self) -> CacheStatus:
@@ -197,10 +212,29 @@ class MockAIModel:
         """キャッシュ無効化呼び出しを記録する。"""
         self.calls.append(("invalidate_cache", ()))
 
-    async def count_tokens(self, text: str) -> int:
+    async def count_tokens(
+        self, text: str, *, model_name: str | None = None
+    ) -> int:
         """単語数ベースの簡易トークン数を返すダミー実装。"""
-        self.calls.append(("count_tokens", (text,)))
+        self.calls.append(("count_tokens", (text, model_name)))
         return len(text.split())
+
+    async def update_cache_ttl(self, ttl_minutes: int) -> CacheStatus:
+        """TTL 更新のダミー実装。"""
+        self.calls.append(("update_cache_ttl", (ttl_minutes,)))
+        if self._should_fail_update_ttl:
+            from pdf_epub_reader.utils.exceptions import AICacheError
+            raise AICacheError("Mock TTL update failed")
+        return CacheStatus(
+            is_active=True,
+            ttl_seconds=ttl_minutes * 60,
+            cache_name="mock-cache",
+        )
+
+    async def list_caches(self) -> list[CacheStatus]:
+        """アプリ用キャッシュ一覧のダミー実装。"""
+        self.calls.append(("list_caches", ()))
+        return []
 
     async def list_available_models(self) -> list[ModelInfo]:
         """モデル一覧取得のダミー実装。"""

@@ -9,7 +9,14 @@ from __future__ import annotations
 
 import asyncio
 
-from pdf_epub_reader.dto import AnalysisMode, AnalysisRequest, SelectionContent
+from collections.abc import Callable
+
+from pdf_epub_reader.dto import (
+    AnalysisMode,
+    AnalysisRequest,
+    CacheStatus,
+    SelectionContent,
+)
 from pdf_epub_reader.interfaces.model_interfaces import IAIModel
 from pdf_epub_reader.interfaces.view_interfaces import ISidePanelView
 from pdf_epub_reader.utils.exceptions import (
@@ -37,6 +44,10 @@ class PanelPresenter:
         self._force_include_image: bool = False
         # Phase 6: リクエスト単位のモデル選択
         self._current_model: str | None = None
+        # Phase 7: キャッシュ状態と MainPresenter 向けコールバック
+        self._cache_status = CacheStatus()
+        self._on_cache_create_handler: Callable[[], None] | None = None
+        self._on_cache_invalidate_handler: Callable[[], None] | None = None
 
         # View は「どの関数を呼ぶか」だけを知ればよい。
         # 実際の処理内容は Presenter 側に閉じ込める。
@@ -44,6 +55,10 @@ class PanelPresenter:
         self._view.set_on_custom_prompt_submitted(self._on_custom_prompt_submitted)
         self._view.set_on_force_image_toggled(self._on_force_image_toggled)
         self._view.set_on_model_changed(self._on_model_changed)
+        self._view.set_on_cache_create_requested(self._fire_cache_create)
+        self._view.set_on_cache_invalidate_requested(
+            self._fire_cache_invalidate
+        )
 
     # --- Public API (called by MainPresenter) ---
 
@@ -87,6 +102,38 @@ class PanelPresenter:
         self._current_model = model_name
         self._view.set_selected_model(model_name)
 
+    def get_current_model(self) -> str | None:
+        """サイドパネルで現在選択中のモデル名を返す。
+
+        MainPresenter がキャッシュ作成時に使用するモデルを取得するために呼ぶ。
+        モデル未選択時は None を返す。
+        """
+        return self._current_model
+
+    # --- Phase 7: キャッシュ連携 ---
+
+    def set_on_cache_create_handler(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """MainPresenter が登録するキャッシュ作成ハンドラ。"""
+        self._on_cache_create_handler = cb
+
+    def set_on_cache_invalidate_handler(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """MainPresenter が登録するキャッシュ削除ハンドラ。"""
+        self._on_cache_invalidate_handler = cb
+
+    def update_cache_status(self, status: CacheStatus) -> None:
+        """キャッシュ状態を内部に保持し、View を更新する。"""
+        self._cache_status = status
+        self._view.set_cache_active(status.is_active)
+        if status.is_active:
+            brief = f"キャッシュ: ON ({status.token_count or '?'} tokens)"
+        else:
+            brief = "キャッシュ: OFF"
+        self._view.update_cache_status_brief(brief)
+
     # --- Private callback handlers ---
 
     def _on_force_image_toggled(self, checked: bool) -> None:
@@ -94,8 +141,36 @@ class PanelPresenter:
         self._force_include_image = checked
 
     def _on_model_changed(self, model_name: str) -> None:
-        """モデルプルダウンの変更を内部状態に反映する。"""
+        """モデルプルダウンの変更を内部状態に反映する。
+
+        キャッシュが active かつモデルが異なる場合は確認ダイアログを出す。
+        OK → invalidate ハンドラ発火 + モデル更新
+        Cancel → プルダウンを元のモデルに戻す
+        """
+        if (
+            self._cache_status.is_active
+            and self._cache_status.model_name
+            and self._cache_status.model_name != model_name
+        ):
+            ok = self._view.show_confirm_dialog(
+                "モデル変更確認",
+                "キャッシュは現在のモデル専用です。"
+                "モデルを変更するとキャッシュが削除されます。\n"
+                "続行しますか？",
+            )
+            if not ok:
+                self._view.set_selected_model(
+                    self._cache_status.model_name
+                )
+                return
+            if self._on_cache_invalidate_handler:
+                self._on_cache_invalidate_handler()
         self._current_model = model_name
+
+    _MODEL_UNSET_MSG = (
+        "⚠️ モデルが未設定です。"
+        "Preferences (Ctrl+,) → AI Models タブで Fetch Models を実行してください。"
+    )
 
     def _on_translate_requested(self, include_explanation: bool) -> None:
         """翻訳ボタン押下を受け取り、非同期処理を開始する。"""
@@ -107,6 +182,9 @@ class PanelPresenter:
     async def _do_translate(self, include_explanation: bool) -> None:
         """翻訳モードで AI 解析を実行し、結果を View に返す。"""
         if not self._selected_text:
+            return
+        if not self._current_model:
+            self._view.update_result_text(self._MODEL_UNSET_MSG)
             return
         self._view.show_loading(True)
         try:
@@ -147,6 +225,9 @@ class PanelPresenter:
         """カスタムプロンプトモードで AI 解析を実行する。"""
         if not self._selected_text:
             return
+        if not self._current_model:
+            self._view.update_result_text(self._MODEL_UNSET_MSG)
+            return
         self._view.show_loading(True)
         try:
             request = AnalysisRequest(
@@ -173,6 +254,19 @@ class PanelPresenter:
             )
         finally:
             self._view.show_loading(False)
+
+    def _fire_cache_create(self) -> None:
+        """View のキャッシュ作成ボタンを MainPresenter のハンドラに中継する。"""
+        if not self._current_model:
+            self._view.update_result_text(self._MODEL_UNSET_MSG)
+            return
+        if self._on_cache_create_handler:
+            self._on_cache_create_handler()
+
+    def _fire_cache_invalidate(self) -> None:
+        """View のキャッシュ削除ボタンを MainPresenter のハンドラに中継する。"""
+        if self._on_cache_invalidate_handler:
+            self._on_cache_invalidate_handler()
 
     # --- Private helpers ---
 

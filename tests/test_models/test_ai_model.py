@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pdf_epub_reader.dto import AnalysisMode, AnalysisRequest, ModelInfo
+from pdf_epub_reader.dto import AnalysisMode, AnalysisRequest, CacheStatus, ModelInfo
 from pdf_epub_reader.models.ai_model import (
     AIModel,
     _CUSTOM_PROMPT_SYSTEM_TEMPLATE,
@@ -18,6 +18,7 @@ from pdf_epub_reader.models.ai_model import (
 )
 from pdf_epub_reader.utils.config import AppConfig, DEFAULT_TRANSLATION_PROMPT, DEFAULT_EXPLANATION_ADDENDUM
 from pdf_epub_reader.utils.exceptions import (
+    AICacheError,
     AIAPIError,
     AIKeyMissingError,
     AIRateLimitError,
@@ -582,3 +583,448 @@ class TestExplanationMode:
 
         assert result.translated_text == "翻訳のみの結果"
         assert result.explanation is None
+
+
+# ======================================================================
+# Phase 7: Context Caching テスト群
+# ======================================================================
+
+
+def _make_mock_cache(**overrides) -> MagicMock:
+    """SDK が返すキャッシュオブジェクトの Mock を作る。"""
+    cache = MagicMock()
+    cache.name = overrides.get("name", "caches/test-cache-123")
+    cache.model = overrides.get("model", "models/gemini-test")
+    cache.display_name = overrides.get("display_name", "pdf-reader: test.pdf")
+    cache.expire_time = overrides.get("expire_time", None)
+    usage = MagicMock()
+    usage.total_token_count = overrides.get("total_token_count", 5000)
+    cache.usage_metadata = usage
+    return cache
+
+
+class TestCountTokens:
+    """count_tokens() の動作を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_count_tokens_returns_total(self) -> None:
+        """正常時にトークン数が返ること。"""
+        model = _build_model()
+        result_mock = MagicMock()
+        result_mock.total_tokens = 42
+        model._client.aio.models.count_tokens = AsyncMock(
+            return_value=result_mock
+        )
+
+        count = await model.count_tokens("Hello world")
+
+        assert count == 42
+        model._client.aio.models.count_tokens.assert_awaited_once()
+        call_kw = model._client.aio.models.count_tokens.call_args
+        assert call_kw.kwargs["contents"] == "Hello world"
+
+    @pytest.mark.asyncio
+    async def test_count_tokens_with_model_name(self) -> None:
+        """model_name を指定するとそのモデルが使われること。"""
+        model = _build_model()
+        result_mock = MagicMock()
+        result_mock.total_tokens = 10
+        model._client.aio.models.count_tokens = AsyncMock(
+            return_value=result_mock
+        )
+
+        await model.count_tokens("text", model_name="custom-model")
+
+        call_kw = model._client.aio.models.count_tokens.call_args
+        assert call_kw.kwargs["model"] == "custom-model"
+
+    @pytest.mark.asyncio
+    async def test_count_tokens_api_error_wraps(self) -> None:
+        """API エラーが AIAPIError にラップされること。"""
+        model = _build_model()
+        exc = _make_api_error(code=400, message="Bad Request")
+        with patch(
+            "pdf_epub_reader.models.ai_model.genai_errors.APIError",
+            type(exc),
+        ):
+            model._client.aio.models.count_tokens = AsyncMock(
+                side_effect=exc
+            )
+            with pytest.raises(AIAPIError):
+                await model.count_tokens("text")
+
+
+class TestCreateCache:
+    """create_cache() の動作を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_create_cache_success(self) -> None:
+        """正常時に CacheStatus(is_active=True) が返り、内部状態が設定されること。"""
+        model = _build_model()
+        mock_cache = _make_mock_cache()
+        model._client.aio.caches.create = AsyncMock(
+            return_value=mock_cache
+        )
+
+        status = await model.create_cache(
+            "full text", display_name="pdf-reader: test.pdf"
+        )
+
+        assert status.is_active is True
+        assert status.cache_name == "caches/test-cache-123"
+        assert status.model_name == "models/gemini-test"
+        assert status.token_count == 5000
+        assert model._cache_name == "caches/test-cache-123"
+        assert model._cache_model == "models/gemini-test"
+
+    @pytest.mark.asyncio
+    async def test_create_cache_passes_display_name_and_ttl(self) -> None:
+        """display_name と TTL が SDK に渡されること。"""
+        model = _build_model(cache_ttl_minutes=30)
+        mock_cache = _make_mock_cache()
+        model._client.aio.caches.create = AsyncMock(
+            return_value=mock_cache
+        )
+
+        await model.create_cache(
+            "text",
+            model_name="custom-model",
+            display_name="pdf-reader: doc.pdf",
+        )
+
+        call_kw = model._client.aio.caches.create.call_args
+        assert call_kw.kwargs["model"] == "custom-model"
+        cfg = call_kw.kwargs["config"]
+        assert cfg.display_name == "pdf-reader: doc.pdf"
+        assert cfg.ttl == "1800s"
+
+    @pytest.mark.asyncio
+    async def test_create_cache_error_raises_cache_error(self) -> None:
+        """SDK エラーが AICacheError にラップされること。"""
+        model = _build_model()
+        model._client.aio.caches.create = AsyncMock(
+            side_effect=Exception("Token count too low")
+        )
+
+        with pytest.raises(AICacheError, match="Token count too low"):
+            await model.create_cache("short text")
+
+
+class TestGetCacheStatus:
+    """get_cache_status() の動作を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_no_cache_returns_inactive(self) -> None:
+        """キャッシュ未作成時は is_active=False が返ること。"""
+        model = _build_model()
+        status = await model.get_cache_status()
+        assert status.is_active is False
+
+    @pytest.mark.asyncio
+    async def test_active_cache_returns_status(self) -> None:
+        """キャッシュ有効時に最新状態が返ること。"""
+        from datetime import datetime, timedelta, timezone
+        model = _build_model()
+        model._cache_name = "caches/test-123"
+        model._cache_model = "models/gemini-test"
+
+        future = datetime.now(timezone.utc) + timedelta(hours=1)
+        mock_cache = _make_mock_cache(expire_time=future)
+        model._client.aio.caches.get = AsyncMock(return_value=mock_cache)
+
+        status = await model.get_cache_status()
+
+        assert status.is_active is True
+        assert status.token_count == 5000
+
+    @pytest.mark.asyncio
+    async def test_expired_cache_clears_state(self) -> None:
+        """expire 済みキャッシュは内部状態がクリアされること。"""
+        from datetime import datetime, timedelta, timezone
+        model = _build_model()
+        model._cache_name = "caches/test-123"
+        model._cache_model = "models/gemini-test"
+
+        past = datetime.now(timezone.utc) - timedelta(hours=1)
+        mock_cache = _make_mock_cache(expire_time=past)
+        model._client.aio.caches.get = AsyncMock(return_value=mock_cache)
+
+        status = await model.get_cache_status()
+
+        assert status.is_active is False
+        assert model._cache_name is None
+        assert model._cache_model is None
+
+    @pytest.mark.asyncio
+    async def test_get_cache_error_clears_state(self) -> None:
+        """API エラー時に内部状態がクリアされ is_active=False が返ること。"""
+        model = _build_model()
+        model._cache_name = "caches/deleted"
+        model._cache_model = "models/gemini-test"
+        model._client.aio.caches.get = AsyncMock(
+            side_effect=Exception("Not found")
+        )
+
+        status = await model.get_cache_status()
+
+        assert status.is_active is False
+        assert model._cache_name is None
+
+
+class TestInvalidateCache:
+    """invalidate_cache() の動作を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_invalidate_calls_delete(self) -> None:
+        """キャッシュ有効時に delete が呼ばれ内部状態がクリアされること。"""
+        model = _build_model()
+        model._cache_name = "caches/test-123"
+        model._cache_model = "models/gemini-test"
+        model._client.aio.caches.delete = AsyncMock()
+
+        await model.invalidate_cache()
+
+        model._client.aio.caches.delete.assert_awaited_once()
+        assert model._cache_name is None
+        assert model._cache_model is None
+
+    @pytest.mark.asyncio
+    async def test_invalidate_no_cache_is_noop(self) -> None:
+        """キャッシュ未作成時は何も起きないこと。"""
+        model = _build_model()
+        await model.invalidate_cache()
+        # 例外なしで完了
+
+    @pytest.mark.asyncio
+    async def test_invalidate_already_deleted_logs_only(self) -> None:
+        """既に削除済みの場合は例外なしでログのみ出力すること。"""
+        model = _build_model()
+        model._cache_name = "caches/already-deleted"
+        model._cache_model = "models/gemini-test"
+        model._client.aio.caches.delete = AsyncMock(
+            side_effect=Exception("Not found")
+        )
+
+        await model.invalidate_cache()  # 例外は送出されない
+        assert model._cache_name is None
+
+
+class TestAnalyzeWithCache:
+    """analyze() のキャッシュ統合ロジックを検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_analyze_with_active_cache_sends_cached_content(self) -> None:
+        """キャッシュ active かつモデル一致時に cached_content が付与されること。"""
+        model = _build_model(gemini_model_name="models/gemini-test")
+        model._cache_name = "caches/test-123"
+        model._cache_model = "models/gemini-test"
+
+        mock_resp = _make_mock_response("cached result")
+        mock_resp.usage_metadata = None
+        model._client.aio.models.generate_content = AsyncMock(
+            return_value=mock_resp
+        )
+
+        request = AnalysisRequest(
+            text="Hello", mode=AnalysisMode.TRANSLATION
+        )
+        result = await model.analyze(request)
+
+        assert result.translated_text == "cached result"
+        call_kw = model._client.aio.models.generate_content.call_args
+        config = call_kw.kwargs["config"]
+        assert config.cached_content == "caches/test-123"
+
+    @pytest.mark.asyncio
+    async def test_analyze_model_mismatch_no_cache(self) -> None:
+        """キャッシュのモデルとリクエストモデルが不一致なら cached_content=None。"""
+        model = _build_model(gemini_model_name="models/gemini-test")
+        model._cache_name = "caches/test-123"
+        model._cache_model = "models/gemini-other"
+
+        mock_resp = _make_mock_response("no cache")
+        mock_resp.usage_metadata = None
+        model._client.aio.models.generate_content = AsyncMock(
+            return_value=mock_resp
+        )
+
+        request = AnalysisRequest(
+            text="Hello", mode=AnalysisMode.TRANSLATION
+        )
+        await model.analyze(request)
+
+        call_kw = model._client.aio.models.generate_content.call_args
+        config = call_kw.kwargs["config"]
+        assert config.cached_content is None
+
+    @pytest.mark.asyncio
+    async def test_analyze_cache_failure_fallback(self) -> None:
+        """キャッシュ付きリクエスト失敗時にキャッシュなしでリトライすること。"""
+        model = _build_model(gemini_model_name="models/gemini-test")
+        model._cache_name = "caches/test-123"
+        model._cache_model = "models/gemini-test"
+
+        exc = _make_api_error(code=400, message="Cache expired")
+        mock_resp = _make_mock_response("fallback result")
+        mock_resp.usage_metadata = None
+
+        with patch(
+            "pdf_epub_reader.models.ai_model.genai_errors.APIError",
+            type(exc),
+        ):
+            model._client.aio.models.generate_content = AsyncMock(
+                side_effect=[exc, mock_resp]
+            )
+
+            request = AnalysisRequest(
+                text="Hello", mode=AnalysisMode.TRANSLATION
+            )
+            result = await model.analyze(request)
+
+        assert result.translated_text == "fallback result"
+        # キャッシュ状態がクリアされている
+        assert model._cache_name is None
+        assert model._cache_model is None
+
+    @pytest.mark.asyncio
+    async def test_analyze_cache_rate_limit_not_retried(self) -> None:
+        """キャッシュ付き 429 エラーはフォールバックせず AIRateLimitError になること。"""
+        model = _build_model(gemini_model_name="models/gemini-test")
+        model._cache_name = "caches/test-123"
+        model._cache_model = "models/gemini-test"
+
+        exc = _make_api_error(code=429, message="Rate limited")
+
+        with patch(
+            "pdf_epub_reader.models.ai_model.genai_errors.APIError",
+            type(exc),
+        ):
+            model._client.aio.models.generate_content = AsyncMock(
+                side_effect=[exc] * _MAX_RETRIES
+            )
+
+            with patch(
+                "pdf_epub_reader.models.ai_model.asyncio.sleep",
+                new_callable=AsyncMock,
+            ):
+                request = AnalysisRequest(
+                    text="Hello", mode=AnalysisMode.TRANSLATION
+                )
+                with pytest.raises(AIRateLimitError):
+                    await model.analyze(request)
+
+
+class TestUpdateCacheTtl:
+    """update_cache_ttl() の動作を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_update_ttl_success(self) -> None:
+        """TTL 更新成功時に CacheStatus が返ること。"""
+        model = _build_model()
+        model._cache_name = "caches/test-123"
+        mock_cache = _make_mock_cache()
+        model._client.aio.caches.update = AsyncMock(
+            return_value=mock_cache
+        )
+
+        status = await model.update_cache_ttl(120)
+
+        assert status.is_active is True
+        assert status.ttl_seconds == 7200
+        call_kw = model._client.aio.caches.update.call_args
+        assert call_kw.kwargs["config"].ttl == "7200s"
+
+    @pytest.mark.asyncio
+    async def test_update_ttl_no_cache_raises(self) -> None:
+        """キャッシュ未作成時に AICacheError が送出されること。"""
+        model = _build_model()
+        with pytest.raises(AICacheError):
+            await model.update_cache_ttl(60)
+
+
+class TestListCaches:
+    """list_caches() の動作を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_list_caches_filters_by_prefix(self) -> None:
+        """pdf-reader: プレフィックス付きキャッシュのみ返ること。"""
+        model = _build_model()
+
+        cache_app = _make_mock_cache(
+            name="caches/app-1",
+            display_name="pdf-reader: test.pdf",
+        )
+        cache_other = _make_mock_cache(
+            name="caches/other-1",
+            display_name="some-other-app",
+        )
+
+        async def _fake_list():
+            for c in [cache_app, cache_other]:
+                yield c
+
+        model._client.aio.caches.list = AsyncMock(
+            return_value=_fake_list()
+        )
+
+        result = await model.list_caches()
+
+        assert len(result) == 1
+        assert result[0].cache_name == "caches/app-1"
+
+    @pytest.mark.asyncio
+    async def test_list_caches_empty(self) -> None:
+        """キャッシュが無い場合は空リストが返ること。"""
+        model = _build_model()
+
+        async def _fake_list():
+            return
+            yield  # async generator
+
+        model._client.aio.caches.list = AsyncMock(
+            return_value=_fake_list()
+        )
+
+        result = await model.list_caches()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_list_caches_api_error_wraps(self) -> None:
+        """API エラーが AIAPIError にラップされること。"""
+        model = _build_model()
+        exc = _make_api_error(code=500, message="Server error")
+        with patch(
+            "pdf_epub_reader.models.ai_model.genai_errors.APIError",
+            type(exc),
+        ):
+            model._client.aio.caches.list = AsyncMock(side_effect=exc)
+            with pytest.raises(AIAPIError):
+                await model.list_caches()
+
+
+class TestCreateCacheUnsupportedModel:
+    """Phase 7 Bugfix: キャッシュ非対応モデルのエラーメッセージ変換を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_unsupported_model_error_converted(self) -> None:
+        """'not supported for createCachedContent' エラーが専用メッセージに変換されること。"""
+        model = _build_model()
+        model._client.aio.caches.create = AsyncMock(
+            side_effect=Exception(
+                "models/gemini-flash is not supported for createCachedContent"
+            )
+        )
+
+        with pytest.raises(AICacheError, match="コンテキストキャッシュをサポートしていません"):
+            await model.create_cache("full text", model_name="models/gemini-flash")
+
+    @pytest.mark.asyncio
+    async def test_other_cache_error_preserved(self) -> None:
+        """その他のキャッシュ作成エラーは元のメッセージが維持されること。"""
+        model = _build_model()
+        model._client.aio.caches.create = AsyncMock(
+            side_effect=Exception("Token count too low")
+        )
+
+        with pytest.raises(AICacheError, match="Token count too low"):
+            await model.create_cache("short text")

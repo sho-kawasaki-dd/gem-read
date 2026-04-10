@@ -84,6 +84,7 @@ class SettingsPresenter:
         self._view.set_system_prompt_translation(
             config.system_prompt_translation
         )
+        self._view.set_cache_ttl_minutes(config.cache_ttl_minutes)
 
     def _read_config_from_view(self) -> AppConfig:
         """ダイアログの現在値から AppConfig を生成する。
@@ -104,6 +105,7 @@ class SettingsPresenter:
             selected_models=self._view.get_selected_models(),
             output_language=self._view.get_output_language(),
             system_prompt_translation=self._view.get_system_prompt_translation(),
+            cache_ttl_minutes=self._view.get_cache_ttl_minutes(),
             # ダイアログ対象外のフィールドは既存値を引き継ぐ
             window_width=self._config.window_width,
             window_height=self._config.window_height,

@@ -4,8 +4,9 @@ Presenter からは ``await ai_model.analyze(request)`` の形で呼び出され
 API キー未設定でもインスタンス化は可能だが、API 呼び出し時に
 ``AIKeyMissingError`` を送出する（ドキュメント閲覧専用利用を妨げない）。
 
-Context Caching 関連メソッド（create_cache / get_cache_status /
-invalidate_cache / count_tokens）は Phase 7 で本実装に差し替える。
+Context Caching は google-genai SDK の Explicit Caching API で実装。
+キャッシュが active かつモデル一致時に ``analyze()`` で ``cached_content``
+パラメータを自動付与し、失敗時はキャッシュなしでフォールバックする。
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from pdf_epub_reader.dto import (
 )
 from pdf_epub_reader.utils.config import AppConfig, DEFAULT_EXPLANATION_ADDENDUM
 from pdf_epub_reader.utils.exceptions import (
+    AICacheError,
     AIAPIError,
     AIKeyMissingError,
     AIRateLimitError,
@@ -66,6 +68,11 @@ class AIModel:
         self._client: genai.Client | None = None
         if api_key:
             self._client = genai.Client(api_key=api_key)
+        # Phase 7: キャッシュの内部状態
+        # 作成済みキャッシュの名前 (SDK の resource name) とモデル名を保持し、
+        # analyze() でキャッシュ統合を判定する。
+        self._cache_name: str | None = None
+        self._cache_model: str | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -73,6 +80,11 @@ class AIModel:
 
     async def analyze(self, request: AnalysisRequest) -> AnalysisResult:
         """テキスト（+画像）を Gemini API に送信し解析結果を返す。
+
+        キャッシュが active かつリクエストのモデルと一致する場合、
+        ``cached_content`` パラメータを自動付与する。キャッシュ付き
+        リクエストが非レートリミットエラーで失敗した場合はキャッシュを
+        内部クリアし、キャッシュなしで 1 回リトライする。
 
         Args:
             request: 解析要求。mode / text / images / model_name 等を含む。
@@ -93,11 +105,45 @@ class AIModel:
         )
         contents = self._build_contents(request)
 
-        config = genai_types.GenerateContentConfig(
-            system_instruction=system_instruction,
+        # キャッシュ統合: active かつモデル一致時に cached_content を付与
+        use_cache = (
+            self._cache_name is not None
+            and self._cache_model == model_name
         )
 
-        response = await self._call_with_retry(model_name, contents, config)
+        config = genai_types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            cached_content=self._cache_name if use_cache else None,
+        )
+
+        if use_cache:
+            try:
+                response = await self._call_with_retry(
+                    model_name, contents, config
+                )
+            except AIRateLimitError:
+                raise
+            except AIAPIError:
+                # キャッシュ付きリクエスト失敗 → キャッシュを内部クリアし
+                # キャッシュなしで 1 回リトライ
+                logger.warning(
+                    "キャッシュ付きリクエスト失敗、キャッシュなしでリトライ"
+                )
+                self._cache_name = None
+                self._cache_model = None
+                config = genai_types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                )
+                response = await self._call_with_retry(
+                    model_name, contents, config
+                )
+        else:
+            response = await self._call_with_retry(
+                model_name, contents, config
+            )
+
+        # usage_metadata ログ出力
+        self._log_usage_metadata(response)
 
         return self._parse_response(request, response)
 
@@ -143,26 +189,261 @@ class AIModel:
         """
         self._config = config
 
-    # --- Phase 7 スタブ ---
+    # --- Phase 7: Context Caching 本実装 ---
 
-    async def create_cache(self, full_text: str) -> CacheStatus:
-        """Phase 7 で本実装に差し替える。"""
-        return CacheStatus(
-            is_active=True,
-            ttl_seconds=3600,
-            token_count=len(full_text.split()),
-        )
+    async def count_tokens(
+        self, text: str, *, model_name: str | None = None
+    ) -> int:
+        """テキストのトークン数を Gemini API で計測する。
+
+        Args:
+            text: 計測対象のテキスト。
+            model_name: 使用するモデル名。None ならデフォルトモデルを使用。
+
+        Returns:
+            トークン数。
+
+        Raises:
+            AIKeyMissingError: API キーが未設定の場合。
+            AIAPIError: API 通信エラー。
+        """
+        self._ensure_client()
+        assert self._client is not None
+
+        resolved_model = model_name or self._config.gemini_model_name
+        try:
+            result = await self._client.aio.models.count_tokens(
+                model=resolved_model, contents=text
+            )
+            return result.total_tokens
+        except genai_errors.APIError as exc:
+            raise AIAPIError(
+                str(exc), status_code=getattr(exc, "code", None)
+            ) from exc
+
+    async def create_cache(
+        self,
+        full_text: str,
+        *,
+        model_name: str | None = None,
+        display_name: str | None = None,
+    ) -> CacheStatus:
+        """ドキュメント全文テキストの Context Cache を作成する。
+
+        system_instruction はキャッシュに含めない（翻訳/カスタムプロンプトで
+        システム指示が異なるため、リクエスト時に個別指定する）。
+
+        Args:
+            full_text: キャッシュ対象の全文テキスト。
+            model_name: キャッシュ紐付きモデル名。None ならデフォルトモデル。
+            display_name: キャッシュの表示名。Presenter がファイル名を渡す。
+
+        Returns:
+            作成されたキャッシュの状態。
+
+        Raises:
+            AIKeyMissingError: API キーが未設定の場合。
+            AICacheError: キャッシュ作成に失敗した場合。
+        """
+        self._ensure_client()
+        assert self._client is not None
+
+        resolved_model = model_name or self._config.gemini_model_name
+        ttl = f"{self._config.cache_ttl_minutes * 60}s"
+
+        try:
+            cache = await self._client.aio.caches.create(
+                model=resolved_model,
+                config=genai_types.CreateCachedContentConfig(
+                    contents=[full_text],
+                    display_name=display_name,
+                    ttl=ttl,
+                ),
+            )
+            self._cache_name = cache.name
+            self._cache_model = cache.model
+            return CacheStatus(
+                is_active=True,
+                ttl_seconds=self._config.cache_ttl_minutes * 60,
+                token_count=getattr(
+                    cache.usage_metadata, "total_token_count", None
+                ) if cache.usage_metadata else None,
+                cache_name=cache.name,
+                model_name=cache.model,
+                expire_time=(
+                    cache.expire_time.isoformat()
+                    if cache.expire_time
+                    else None
+                ),
+            )
+        except Exception as exc:
+            msg = str(exc)
+            if "not supported for createCachedContent" in msg:
+                raise AICacheError(
+                    f"このモデルはコンテキストキャッシュをサポートしていません: {resolved_model}"
+                ) from exc
+            raise AICacheError(msg) from exc
 
     async def get_cache_status(self) -> CacheStatus:
-        """Phase 7 で本実装に差し替える。"""
-        return CacheStatus(is_active=False)
+        """現在のキャッシュ状態を取得する。
+
+        内部に保持しているキャッシュ名で最新情報を API から取得し、
+        expire 済みの場合は内部状態をクリアして ``is_active=False`` を返す。
+
+        Returns:
+            キャッシュの最新状態。
+
+        Raises:
+            AIKeyMissingError: API キーが未設定の場合。
+        """
+        if self._cache_name is None:
+            return CacheStatus(is_active=False)
+
+        self._ensure_client()
+        assert self._client is not None
+
+        try:
+            cache = await self._client.aio.caches.get(
+                name=self._cache_name
+            )
+            # expire 済みチェック
+            if cache.expire_time:
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc)
+                if cache.expire_time <= now:
+                    self._cache_name = None
+                    self._cache_model = None
+                    return CacheStatus(is_active=False)
+
+            ttl_seconds = None
+            if cache.expire_time:
+                from datetime import datetime, timezone
+                remaining = (
+                    cache.expire_time - datetime.now(timezone.utc)
+                ).total_seconds()
+                ttl_seconds = max(0, int(remaining))
+
+            return CacheStatus(
+                is_active=True,
+                ttl_seconds=ttl_seconds,
+                token_count=getattr(
+                    cache.usage_metadata, "total_token_count", None
+                ) if cache.usage_metadata else None,
+                cache_name=cache.name,
+                model_name=cache.model,
+                expire_time=(
+                    cache.expire_time.isoformat()
+                    if cache.expire_time
+                    else None
+                ),
+            )
+        except Exception:
+            # キャッシュ取得失敗（既に削除済み等）→ 内部状態クリア
+            self._cache_name = None
+            self._cache_model = None
+            return CacheStatus(is_active=False)
 
     async def invalidate_cache(self) -> None:
-        """Phase 7 で本実装に差し替える。"""
+        """現在のキャッシュを削除する。
 
-    async def count_tokens(self, text: str) -> int:
-        """Phase 7 で本実装に差し替える。"""
-        return len(text.split())
+        既に削除済みの場合はログのみ出力し、例外は送出しない。
+        """
+        if self._cache_name is None:
+            return
+
+        if self._client is not None:
+            try:
+                await self._client.aio.caches.delete(
+                    name=self._cache_name
+                )
+            except Exception as exc:
+                logger.warning("キャッシュ削除失敗（既に削除済みの可能性）: %s", exc)
+
+        self._cache_name = None
+        self._cache_model = None
+
+    async def update_cache_ttl(self, ttl_minutes: int) -> CacheStatus:
+        """現在のキャッシュの TTL を更新する。
+
+        Args:
+            ttl_minutes: 新しい TTL（分）。
+
+        Returns:
+            更新後のキャッシュのステータス。
+
+        Raises:
+            AICacheError: キャッシュが存在しない、または更新に失敗した場合。
+        """
+        if self._cache_name is None:
+            raise AICacheError("アクティブなキャッシュがありません")
+
+        self._ensure_client()
+        assert self._client is not None
+
+        ttl = f"{ttl_minutes * 60}s"
+        try:
+            cache = await self._client.aio.caches.update(
+                name=self._cache_name,
+                config=genai_types.UpdateCachedContentConfig(ttl=ttl),
+            )
+            return CacheStatus(
+                is_active=True,
+                ttl_seconds=ttl_minutes * 60,
+                token_count=getattr(
+                    cache.usage_metadata, "total_token_count", None
+                ) if cache.usage_metadata else None,
+                cache_name=cache.name,
+                model_name=cache.model,
+                expire_time=(
+                    cache.expire_time.isoformat()
+                    if cache.expire_time
+                    else None
+                ),
+            )
+        except Exception as exc:
+            raise AICacheError(str(exc)) from exc
+
+    async def list_caches(self) -> list[CacheStatus]:
+        """アプリ用キャッシュ一覧を取得する。
+
+        ``display_name`` が ``"pdf-reader:"`` で始まるキャッシュのみフィルタし、
+        ``CacheStatus`` DTO のリストで返す。
+
+        Returns:
+            アプリ用キャッシュの一覧。
+
+        Raises:
+            AIKeyMissingError: API キーが未設定の場合。
+            AIAPIError: API 通信エラー。
+        """
+        self._ensure_client()
+        assert self._client is not None
+
+        try:
+            result: list[CacheStatus] = []
+            async for cache in await self._client.aio.caches.list():
+                dn = cache.display_name or ""
+                if not dn.startswith("pdf-reader:"):
+                    continue
+                result.append(CacheStatus(
+                    is_active=True,
+                    ttl_seconds=None,
+                    token_count=getattr(
+                        cache.usage_metadata, "total_token_count", None
+                    ) if cache.usage_metadata else None,
+                    cache_name=cache.name,
+                    model_name=cache.model,
+                    expire_time=(
+                        cache.expire_time.isoformat()
+                        if cache.expire_time
+                        else None
+                    ),
+                ))
+            return result
+        except genai_errors.APIError as exc:
+            raise AIAPIError(
+                str(exc), status_code=getattr(exc, "code", None)
+            ) from exc
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -172,6 +453,25 @@ class AIModel:
         """クライアントが初期化済みであることを確認する。"""
         if self._client is None:
             raise AIKeyMissingError("API キーが設定されていません")
+
+    @staticmethod
+    def _log_usage_metadata(
+        response: genai_types.GenerateContentResponse,
+    ) -> None:
+        """レスポンスの usage_metadata をログ出力する。
+
+        キャッシュヒットの確認に使用。``cached_content_token_count`` が
+        0 より大きければキャッシュが効いていることが分かる。
+        """
+        meta = getattr(response, "usage_metadata", None)
+        if meta is None:
+            return
+        logger.info(
+            "usage_metadata: prompt_tokens=%s, cached_tokens=%s, candidates_tokens=%s",
+            getattr(meta, "prompt_token_count", None),
+            getattr(meta, "cached_content_token_count", None),
+            getattr(meta, "candidates_token_count", None),
+        )
 
     def _build_system_instruction(
         self, mode: AnalysisMode, *, include_explanation: bool = False

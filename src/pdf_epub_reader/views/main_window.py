@@ -173,6 +173,16 @@ class MainWindow(QMainWindow):
         preferences_action.triggered.connect(self._handle_settings_requested)
         edit_menu.addAction(preferences_action)
 
+        # --- キャッシュメニュー ---
+        cache_menu = menubar.addMenu("キャッシュ(&C)")
+
+        cache_mgmt_action = QAction("キャッシュ管理(&M)...", self)
+        cache_mgmt_action.setShortcut(QKeySequence("Ctrl+Shift+G"))
+        cache_mgmt_action.triggered.connect(
+            self._handle_cache_management_requested
+        )
+        cache_menu.addAction(cache_mgmt_action)
+
     # =========================================================================
     # ステータスバー構築
     # =========================================================================
@@ -339,6 +349,11 @@ class MainWindow(QMainWindow):
         """Edit > Preferences / Ctrl+, ハンドラ。コールバック経由で Presenter に通知する。"""
         if self._on_settings_requested:
             self._on_settings_requested()
+
+    def _handle_cache_management_requested(self) -> None:
+        """キャッシュ(&C) > キャッシュ管理 / Ctrl+Alt+G ハンドラ。"""
+        if self._on_cache_management_requested:
+            self._on_cache_management_requested()
 
     def _handle_page_spinbox_changed(self, value: int) -> None:
         """ページスピンボックスの値変更でスクロールを実行する。"""

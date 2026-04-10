@@ -14,7 +14,7 @@ import pytest
 from tests.mocks.mock_models import MockAIModel
 from tests.mocks.mock_views import MockSidePanelView
 
-from pdf_epub_reader.dto import AnalysisMode, AnalysisResult
+from pdf_epub_reader.dto import AnalysisMode, AnalysisResult, CacheStatus
 from pdf_epub_reader.dto.document_dto import RectCoords, SelectionContent
 from pdf_epub_reader.interfaces.model_interfaces import IAIModel
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
@@ -310,6 +310,7 @@ class TestErrorHandling:
         presenter = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
+        presenter.set_selected_model("models/gemini-2.0-flash")
         presenter.set_selected_text("Hello")
         await presenter._do_translate(include_explanation=False)
 
@@ -328,6 +329,7 @@ class TestErrorHandling:
         presenter = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
+        presenter.set_selected_model("models/gemini-2.0-flash")
         presenter.set_selected_text("Hello")
         await presenter._do_translate(include_explanation=False)
 
@@ -348,6 +350,7 @@ class TestErrorHandling:
         presenter = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
+        presenter.set_selected_model("models/gemini-2.0-flash")
         presenter.set_selected_text("Hello")
         await presenter._do_translate(include_explanation=False)
 
@@ -366,6 +369,7 @@ class TestErrorHandling:
         presenter = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
+        presenter.set_selected_model("models/gemini-2.0-flash")
         presenter.set_selected_text("Hello")
         await presenter._do_custom_prompt("Summarize")
 
@@ -384,6 +388,7 @@ class TestErrorHandling:
         presenter = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
+        presenter.set_selected_model("models/gemini-2.0-flash")
         presenter.set_selected_text("Hello")
         await presenter._do_translate(include_explanation=False)
 
@@ -413,8 +418,8 @@ class TestModelSelection:
         """set_selected_model が View に伝播すること。"""
         panel_presenter.set_selected_model("model-x")
         calls = mock_side_panel_view.get_calls("set_selected_model")
-        assert len(calls) == 1
-        assert calls[0] == ("model-x",)
+        # fixture が初期モデルを設定するため 2 回呼ばれる
+        assert calls[-1] == ("model-x",)
 
     def test_model_changed_updates_internal_state(
         self,
@@ -442,14 +447,270 @@ class TestModelSelection:
         assert analyze_calls[0][0].model_name == "gemini-2.0-pro"
 
     @pytest.mark.asyncio
-    async def test_no_model_selected_passes_none(
+    async def test_no_model_selected_shows_warning(
         self,
-        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
         mock_ai_model: MockAIModel,
     ) -> None:
-        """モデル未選択時は model_name が None であること。"""
-        panel_presenter.set_selected_text("Test text")
-        await panel_presenter._do_translate(include_explanation=False)
+        """モデル未選択時はガードが作動し、AI 呼び出しが行われないこと。"""
+        presenter = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
+        presenter.set_selected_text("Test text")
+        await presenter._do_translate(include_explanation=False)
 
         analyze_calls = mock_ai_model.get_calls("analyze")
-        assert analyze_calls[0][0].model_name is None
+        assert len(analyze_calls) == 0
+        result_calls = mock_side_panel_view.get_calls("update_result_text")
+        assert len(result_calls) == 1
+        assert "モデルが未設定" in result_calls[0][0]
+
+
+class TestCacheHandlers:
+    """Phase 7: キャッシュ作成/削除ハンドラの呼出確認を検証する。"""
+
+    def test_cache_create_handler_called(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        """キャッシュ作成ボタンで登録ハンドラが呼ばれること。"""
+        called = []
+        panel_presenter.set_on_cache_create_handler(lambda: called.append("create"))
+        mock_side_panel_view.simulate_cache_create_requested()
+        assert called == ["create"]
+
+    def test_cache_invalidate_handler_called(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        """キャッシュ削除ボタンで登録ハンドラが呼ばれること。"""
+        called = []
+        panel_presenter.set_on_cache_invalidate_handler(
+            lambda: called.append("invalidate")
+        )
+        # キャッシュ active 状態にして削除ボタンを押す
+        panel_presenter.update_cache_status(
+            CacheStatus(is_active=True, cache_name="c1", model_name="m1")
+        )
+        mock_side_panel_view.simulate_cache_invalidate_requested()
+        assert called == ["invalidate"]
+
+    def test_update_cache_status_active(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        """update_cache_status(active) で View が ON 表示に更新されること。"""
+        status = CacheStatus(
+            is_active=True, token_count=5000, cache_name="c1"
+        )
+        panel_presenter.update_cache_status(status)
+
+        active_calls = mock_side_panel_view.get_calls("set_cache_active")
+        assert active_calls[-1] == (True,)
+
+        brief_calls = mock_side_panel_view.get_calls(
+            "update_cache_status_brief"
+        )
+        assert "ON" in brief_calls[-1][0]
+        assert "5000" in brief_calls[-1][0]
+
+    def test_update_cache_status_inactive(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        """update_cache_status(inactive) で View が OFF 表示に更新されること。"""
+        panel_presenter.update_cache_status(CacheStatus())
+
+        active_calls = mock_side_panel_view.get_calls("set_cache_active")
+        assert active_calls[-1] == (False,)
+
+        brief_calls = mock_side_panel_view.get_calls(
+            "update_cache_status_brief"
+        )
+        assert "OFF" in brief_calls[-1][0]
+
+
+class TestModelChangeWithCache:
+    """Phase 7: キャッシュ active 時のモデル変更確認ダイアログを検証する。"""
+
+    def test_model_change_with_active_cache_confirm_ok(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """キャッシュ active + モデル変更 → OK で invalidate ハンドラ発火。"""
+        presenter = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter.update_cache_status(
+            CacheStatus(
+                is_active=True, cache_name="c1", model_name="model-a"
+            )
+        )
+        invalidated = []
+        presenter.set_on_cache_invalidate_handler(
+            lambda: invalidated.append(True)
+        )
+        mock_side_panel_view._confirm_dialog_return = True
+        mock_side_panel_view.simulate_model_changed("model-b")
+
+        assert invalidated == [True]
+        assert presenter._current_model == "model-b"
+
+    def test_model_change_with_active_cache_confirm_cancel(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """キャッシュ active + モデル変更 → Cancel でモデルがリバートされること。"""
+        presenter = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter.update_cache_status(
+            CacheStatus(
+                is_active=True, cache_name="c1", model_name="model-a"
+            )
+        )
+        mock_side_panel_view._confirm_dialog_return = False
+        mock_side_panel_view.simulate_model_changed("model-b")
+
+        # モデルは元に戻される
+        revert_calls = mock_side_panel_view.get_calls("set_selected_model")
+        assert revert_calls[-1] == ("model-a",)
+        # 内部状態は変更されていない
+        assert presenter._current_model is None
+
+    def test_model_change_same_model_no_dialog(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """同一モデルへの変更ではダイアログが出ないこと。"""
+        presenter = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter.update_cache_status(
+            CacheStatus(
+                is_active=True, cache_name="c1", model_name="model-a"
+            )
+        )
+        mock_side_panel_view.calls.clear()
+        mock_side_panel_view.simulate_model_changed("model-a")
+
+        dialog_calls = mock_side_panel_view.get_calls("show_confirm_dialog")
+        assert len(dialog_calls) == 0
+        assert presenter._current_model == "model-a"
+
+    def test_model_change_without_cache_no_dialog(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        """キャッシュ inactive 時はダイアログなしでモデル切替されること。"""
+        mock_side_panel_view.simulate_model_changed("any-model")
+
+        dialog_calls = mock_side_panel_view.get_calls("show_confirm_dialog")
+        assert len(dialog_calls) == 0
+        assert panel_presenter._current_model == "any-model"
+
+
+class TestGetCurrentModel:
+    """Phase 7 Bugfix: get_current_model() の動作を検証する。"""
+
+    def test_initial_model_is_none(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """初期状態では get_current_model が None を返すこと。"""
+        presenter = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
+        assert presenter.get_current_model() is None
+
+    def test_set_selected_model_updates_getter(
+        self,
+        panel_presenter: PanelPresenter,
+    ) -> None:
+        """set_selected_model 後に get_current_model が正しい値を返すこと。"""
+        panel_presenter.set_selected_model("gemini-2.0-pro")
+        assert panel_presenter.get_current_model() == "gemini-2.0-pro"
+
+    def test_model_changed_via_view_updates_getter(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        """View からのモデル変更が get_current_model に反映されること。"""
+        mock_side_panel_view.simulate_model_changed("new-model")
+        assert panel_presenter.get_current_model() == "new-model"
+
+
+class TestModelUnsetGuard:
+    """Phase 7 Bugfix: モデル未設定時のガードを検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_translate_with_no_model_shows_warning(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """モデル未設定時の翻訳要求でエラーメッセージが表示されること。"""
+        presenter = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
+        presenter.set_selected_text("Hello")
+        await presenter._do_translate(include_explanation=False)
+
+        # AI は呼ばれない
+        assert len(mock_ai_model.get_calls("analyze")) == 0
+        # 警告メッセージが表示される
+        result_calls = mock_side_panel_view.get_calls("update_result_text")
+        assert len(result_calls) == 1
+        assert "モデルが未設定" in result_calls[0][0]
+
+    @pytest.mark.asyncio
+    async def test_custom_prompt_with_no_model_shows_warning(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """モデル未設定時のカスタムプロンプトでエラーメッセージが表示されること。"""
+        presenter = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
+        presenter.set_selected_text("Hello")
+        await presenter._do_custom_prompt("Summarize")
+
+        assert len(mock_ai_model.get_calls("analyze")) == 0
+        result_calls = mock_side_panel_view.get_calls("update_result_text")
+        assert len(result_calls) == 1
+        assert "モデルが未設定" in result_calls[0][0]
+
+    def test_cache_create_with_no_model_shows_warning(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """モデル未設定時のキャッシュ作成でエラーメッセージが表示されること。"""
+        presenter = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
+        called = []
+        presenter.set_on_cache_create_handler(lambda: called.append(True))
+        mock_side_panel_view.simulate_cache_create_requested()
+
+        # ハンドラは呼ばれない
+        assert called == []
+        # 警告メッセージが表示される
+        result_calls = mock_side_panel_view.get_calls("update_result_text")
+        assert len(result_calls) == 1
+        assert "モデルが未設定" in result_calls[0][0]
+
+    @pytest.mark.asyncio
+    async def test_translate_with_model_set_proceeds(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """モデルが設定されている場合は通常通り翻訳が実行されること。"""
+        panel_presenter.set_selected_model("gemini-pro")
+        panel_presenter.set_selected_text("Hello")
+        await panel_presenter._do_translate(include_explanation=False)
+
+        assert len(mock_ai_model.get_calls("analyze")) == 1

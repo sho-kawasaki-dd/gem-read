@@ -17,7 +17,7 @@ from typing import Protocol, runtime_checkable
 
 from typing import Literal
 
-from pdf_epub_reader.dto import PageData, RectCoords
+from pdf_epub_reader.dto import CacheStatus, PageData, RectCoords
 
 
 @runtime_checkable
@@ -199,10 +199,91 @@ class ISidePanelView(Protocol):
         """モデル選択プルダウンの現在値を設定する。"""
         ...
 
+    def set_model_combo_enabled(self, enabled: bool) -> None:
+        """モデル選択プルダウンの有効/無効を切り替える。
+
+        モデル未設定時に disabled にし、プレースホルダーを表示する。
+        """
+        ...
+
     def set_on_model_changed(
         self, cb: Callable[[str], None]
     ) -> None:
         """モデル選択プルダウンの変更時コールバックを登録する。"""
+        ...
+
+    # --- Phase 7: キャッシュ操作 ---
+
+    def set_on_cache_create_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """キャッシュ作成ボタン押下時のコールバックを登録する。"""
+        ...
+
+    def set_on_cache_invalidate_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """キャッシュ削除ボタン押下時のコールバックを登録する。"""
+        ...
+
+    def set_cache_active(self, active: bool) -> None:
+        """キャッシュ状態に応じてトグルボタンのテキストを切り替える。
+
+        active=True → "削除" 表示、active=False → "作成" 表示。
+        """
+        ...
+
+    def set_cache_button_enabled(self, enabled: bool) -> None:
+        """キャッシュ操作中にトグルボタンを無効化する。"""
+        ...
+
+    def show_confirm_dialog(self, title: str, message: str) -> bool:
+        """確認ダイアログを表示し、ユーザーの OK/Cancel を返す。
+
+        モデル切替時のキャッシュ破棄確認等で使用する。
+        Passive View の例外的な同期メソッド。
+        """
+        ...
+
+
+@runtime_checkable
+class ICacheDialogView(Protocol):
+    """キャッシュ管理ダイアログが満たすべき契約。
+
+    Phase 7 で導入。2 タブ構成のモーダルダイアログ:
+    - タブ1「現在のキャッシュ」: ステータス表示 + 作成/削除/TTL 更新
+    - タブ2「キャッシュ確認」: アプリ用キャッシュ一覧テーブル + 選択行削除
+    """
+
+    # --- タブ1: 現在のキャッシュ ---
+
+    def set_cache_name(self, name: str) -> None: ...
+    def set_cache_model(self, model: str) -> None: ...
+    def set_cache_token_count(self, count: int | None) -> None: ...
+    def set_cache_ttl_seconds(self, seconds: int | None) -> None: ...
+    def set_cache_expire_time(self, expire_time: str | None) -> None: ...
+    def set_cache_is_active(self, active: bool) -> None: ...
+    def set_ttl_spin_value(self, minutes: int) -> None: ...
+    def get_new_ttl_minutes(self) -> int: ...
+
+    # --- タブ2: キャッシュ確認 ---
+
+    def set_cache_list(self, items: list[CacheStatus]) -> None:
+        """アプリ用キャッシュ一覧をテーブルに設定する。"""
+        ...
+
+    def get_selected_cache_name(self) -> str | None:
+        """テーブルで選択されているキャッシュの name を返す。"""
+        ...
+
+    # --- Lifecycle ---
+
+    def show(self) -> str | None:
+        """ダイアログをモーダル表示し、ユーザーアクションを返す。
+
+        Returns:
+            "delete" / "update_ttl" / "create" / "delete_selected" / None（閉じる）
+        """
         ...
 
 
@@ -258,6 +339,10 @@ class ISettingsDialogView(Protocol):
         """翻訳モード用システムプロンプトを取得する。"""
         ...
 
+    def get_cache_ttl_minutes(self) -> int:
+        """Context Cache の TTL（分）を取得する。"""
+        ...
+
     # --- Phase 6: AI Models タブ Setters ---
 
     def set_gemini_model_name(self, value: str) -> None:
@@ -274,6 +359,10 @@ class ISettingsDialogView(Protocol):
 
     def set_system_prompt_translation(self, value: str) -> None:
         """翻訳モード用システムプロンプトを設定する。"""
+        ...
+
+    def set_cache_ttl_minutes(self, value: int) -> None:
+        """Context Cache の TTL（分）を設定する。"""
         ...
 
     def set_available_models_for_selection(

@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from pdf_epub_reader.dto import PageData, RectCoords
+from pdf_epub_reader.dto.ai_dto import CacheStatus
 
 
 class MockMainView:
@@ -174,6 +175,10 @@ class MockSidePanelView:
         self._on_tab_changed: Callable[[str], None] | None = None
         self._on_force_image_toggled: Callable[[bool], None] | None = None
         self._on_model_changed: Callable[[str], None] | None = None
+        self._on_cache_create_requested: Callable[[], None] | None = None
+        self._on_cache_invalidate_requested: Callable[[], None] | None = None
+        self._cache_is_active: bool = False
+        self._confirm_dialog_return: bool = True
 
     # --- Display commands ---
 
@@ -226,6 +231,32 @@ class MockSidePanelView:
     ) -> None:
         self._on_model_changed = cb
 
+    def set_model_combo_enabled(self, enabled: bool) -> None:
+        self.calls.append(("set_model_combo_enabled", (enabled,)))
+
+    # --- Phase 7: キャッシュ操作 ---
+
+    def set_on_cache_create_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        self._on_cache_create_requested = cb
+
+    def set_on_cache_invalidate_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        self._on_cache_invalidate_requested = cb
+
+    def set_cache_active(self, active: bool) -> None:
+        self.calls.append(("set_cache_active", (active,)))
+        self._cache_is_active = active
+
+    def set_cache_button_enabled(self, enabled: bool) -> None:
+        self.calls.append(("set_cache_button_enabled", (enabled,)))
+
+    def show_confirm_dialog(self, title: str, message: str) -> bool:
+        self.calls.append(("show_confirm_dialog", (title, message)))
+        return self._confirm_dialog_return
+
     # --- Simulation helpers ---
 
     def simulate_translate_requested(self, include_explanation: bool) -> None:
@@ -243,6 +274,14 @@ class MockSidePanelView:
     def simulate_model_changed(self, model_name: str) -> None:
         if self._on_model_changed:
             self._on_model_changed(model_name)
+
+    def simulate_cache_create_requested(self) -> None:
+        if self._on_cache_create_requested:
+            self._on_cache_create_requested()
+
+    def simulate_cache_invalidate_requested(self) -> None:
+        if self._on_cache_invalidate_requested:
+            self._on_cache_invalidate_requested()
 
     # --- Helpers ---
 
@@ -268,10 +307,11 @@ class MockSettingsDialogView:
             "auto_detect_embedded_images": True,
             "auto_detect_math_fonts": True,
             "high_quality_downscale": True,
-            "gemini_model_name": "gemini-2.5-flash-lite-preview-06-17",
-            "selected_models": ["gemini-2.5-flash-lite-preview-06-17"],
+            "gemini_model_name": "",
+            "selected_models": [],
             "output_language": "日本語",
             "system_prompt_translation": "",
+            "cache_ttl_minutes": 60,
         }
         # exec_dialog が返す固定値。True = OK、False = Cancel。
         self._exec_return: bool = True
@@ -353,6 +393,9 @@ class MockSettingsDialogView:
     def get_system_prompt_translation(self) -> str:
         return self._values["system_prompt_translation"]
 
+    def get_cache_ttl_minutes(self) -> int:
+        return self._values["cache_ttl_minutes"]
+
     # --- Phase 6: AI Models タブ Setters ---
 
     def set_gemini_model_name(self, value: str) -> None:
@@ -370,6 +413,10 @@ class MockSettingsDialogView:
     def set_system_prompt_translation(self, value: str) -> None:
         self.calls.append(("set_system_prompt_translation", (value,)))
         self._values["system_prompt_translation"] = value
+
+    def set_cache_ttl_minutes(self, value: int) -> None:
+        self.calls.append(("set_cache_ttl_minutes", (value,)))
+        self._values["cache_ttl_minutes"] = value
 
     def set_available_models_for_selection(
         self, models: list[tuple[str, str]]
@@ -397,6 +444,67 @@ class MockSettingsDialogView:
     def simulate_fetch_models_requested(self) -> None:
         if self._on_fetch_models_requested:
             self._on_fetch_models_requested()
+
+    # --- Helpers ---
+
+    def get_calls(self, method_name: str) -> list[tuple]:
+        """指定メソッドの呼び出し引数一覧を返す。"""
+        return [args for name, args in self.calls if name == method_name]
+
+
+class MockCacheDialogView:
+    """ICacheDialogView を満たすテスト用ダミー実装。"""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple]] = []
+        # show() が返す固定値。テスト側で変更可能。
+        self._show_return: str | None = None
+        self._ttl_value: int = 60
+        self._selected_cache_name: str | None = None
+        self._cache_list: list[CacheStatus] = []
+
+    # --- タブ1: 現在のキャッシュ setter ---
+
+    def set_cache_name(self, name: str) -> None:
+        self.calls.append(("set_cache_name", (name,)))
+
+    def set_cache_model(self, model: str) -> None:
+        self.calls.append(("set_cache_model", (model,)))
+
+    def set_cache_token_count(self, count: int | None) -> None:
+        self.calls.append(("set_cache_token_count", (count,)))
+
+    def set_cache_ttl_seconds(self, seconds: int | None) -> None:
+        self.calls.append(("set_cache_ttl_seconds", (seconds,)))
+
+    def set_cache_expire_time(self, expire_time: str | None) -> None:
+        self.calls.append(("set_cache_expire_time", (expire_time,)))
+
+    def set_cache_is_active(self, active: bool) -> None:
+        self.calls.append(("set_cache_is_active", (active,)))
+
+    def set_ttl_spin_value(self, minutes: int) -> None:
+        self.calls.append(("set_ttl_spin_value", (minutes,)))
+        # テスト側で _ttl_value を事前設定していない場合のみ反映する。
+        # テスト側は __init__ 後に _ttl_value を変更してユーザー入力を模擬する。
+
+    def get_new_ttl_minutes(self) -> int:
+        return self._ttl_value
+
+    # --- タブ2: キャッシュ確認 ---
+
+    def set_cache_list(self, items: list[CacheStatus]) -> None:
+        self.calls.append(("set_cache_list", (items,)))
+        self._cache_list = items
+
+    def get_selected_cache_name(self) -> str | None:
+        return self._selected_cache_name
+
+    # --- Lifecycle ---
+
+    def show(self) -> str | None:
+        self.calls.append(("show", ()))
+        return self._show_return
 
     # --- Helpers ---
 

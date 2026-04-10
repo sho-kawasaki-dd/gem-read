@@ -64,7 +64,9 @@ pdf-epub_reader_with_Gemini/
 │       ├── presenters/
 │       │   ├── __init__.py
 │       │   ├── main_presenter.py    # アプリ全体の進行
-│       │   └── panel_presenter.py   # サイドパネル領域の進行
+│       │   ├── panel_presenter.py   # サイドパネル領域の進行
+│       │   ├── settings_presenter.py # 設定ダイアログの進行
+│       │   └── cache_presenter.py   # キャッシュ管理ダイアログの進行
 │       │
 │       ├── models/                  # Qt非依存（純粋Python + asyncio）
 │       │   ├── __init__.py
@@ -74,7 +76,9 @@ pdf-epub_reader_with_Gemini/
 │       ├── views/                   # PySide6 実装 (interfacesを満たすこと)
 │       │   ├── __init__.py
 │       │   ├── main_window.py       # 大枠のレイアウトとスクロールビュー
-│       │   └── side_panel_view.py   # AI結果表示、操作パネル
+│       │   ├── side_panel_view.py   # AI結果表示、操作パネル
+│       │   ├── settings_dialog.py   # 設定ダイアログ
+│       │   └── cache_dialog.py      # キャッシュ管理ダイアログ
 │       │
 │       ├── infrastructure/          # Qt ↔ asyncio 橋渡し
 │       │   ├── __init__.py
@@ -95,7 +99,8 @@ pdf-epub_reader_with_Gemini/
 │   └── test_presenters/
 │       ├── __init__.py
 │       ├── test_main_presenter.py
-│       └── test_panel_presenter.py
+│       ├── test_panel_presenter.py
+│       └── test_cache_presenter.py
 │
 ├── .env.example                     # 環境変数テンプレート（GEMINI_API_KEY等）
 ├── .gitignore
@@ -129,10 +134,10 @@ pdf-epub_reader_with_Gemini/
 
 **DPI の役割分担:**
 
-| 名前 | 値 | 用途 |
-| --- | --- | --- |
-| `_base_dpi` | `AppConfig.default_dpi`（デフォルト 144） | シーン座標計算（プレースホルダー配置）、PDF ポイント⇔ピクセル座標変換 |
-| `_render_dpi` | `_base_dpi × devicePixelRatio` | Model への実レンダリング指示。高 DPI モニターでの物理ピクセル活用 |
+| 名前          | 値                                        | 用途                                                                  |
+| ------------- | ----------------------------------------- | --------------------------------------------------------------------- |
+| `_base_dpi`   | `AppConfig.default_dpi`（デフォルト 144） | シーン座標計算（プレースホルダー配置）、PDF ポイント⇔ピクセル座標変換 |
+| `_render_dpi` | `_base_dpi × devicePixelRatio`            | Model への実レンダリング指示。高 DPI モニターでの物理ピクセル活用     |
 
 - **Presenter** は初期化時に `IMainView.get_device_pixel_ratio()` で画面の DPR を取得し、`_render_dpi = int(_base_dpi * dpr)` を算出する。ズーム変更時に DPI は再計算 **しない**。
 - **View** はレンダリング済み `QPixmap` に `setDevicePixelRatio(dpr)` を設定する。Qt がシーン上の論理サイズ（`_base_dpi` 相当）に自動マッピングしつつ、物理ピクセルをフル活用する。
@@ -141,39 +146,82 @@ pdf-epub_reader_with_Gemini/
 
 **高 DPI モニター対応の例:**
 
-| 環境 | DPR | `_base_dpi` | `_render_dpi` | A4 論理幅 (px) | A4 物理幅 (px) |
-| --- | --- | --- | --- | --- | --- |
-| 標準モニター (100%) | 1.0 | 144 | 144 | 1190 | 1190 |
-| Windows 150% スケーリング | 1.5 | 144 | 216 | 1190 | 1786 |
-| Retina / 4K (200%) | 2.0 | 144 | 288 | 1190 | 2381 |
+| 環境                      | DPR | `_base_dpi` | `_render_dpi` | A4 論理幅 (px) | A4 物理幅 (px) |
+| ------------------------- | --- | ----------- | ------------- | -------------- | -------------- |
+| 標準モニター (100%)       | 1.0 | 144         | 144           | 1190           | 1190           |
+| Windows 150% スケーリング | 1.5 | 144         | 216           | 1190           | 1786           |
+| Retina / 4K (200%)        | 2.0 | 144         | 288           | 1190           | 2381           |
 
 ### **4.2. AI解析機能とコンテキストキャッシュ**
 
 - **View:** 「解析実行」や「全文キャッシュ有効化」ボタンが押されたら、シグナルを発火するのみ。ローディングアニメーションの開始/停止はPresenterからのメソッド呼び出し（例: `view.show_loading()`）で行う。サイドパネル上部にモデル選択用のプルダウンメニュー（QComboBox）を配置し、ユーザーが API リクエスト時に使用するモデルを設定ダイアログで選択されたモデル群の中から切り替え可能にする。
 - **Presenter:** `await model.analyze(request)` で非同期呼び出し。結果の DTO（翻訳テキストやトークン数）が返ってきたら、`view.update_result_text(text)` を呼び出す。AI 関連の例外（`AIKeyMissingError`, `AIAPIError`, `AIRateLimitError`）を catch し、エラーメッセージを結果パネルに表示する。初期化時に `AppConfig.selected_models` からサイドパネルのモデルプルダウンを設定する。
-- **Model:** `google-genai` SDK の `genai.Client` を使い、Gemini API と通信（I/O-bound → ネイティブ `await client.aio.models.generate_content(...)`）。API 仕様に依存する処理はすべてここにカプセル化する。API キー未設定時もインスタンス化可能とし、API 呼び出し時に `AIKeyMissingError` を送出する（ドキュメント閲覧のみの利用を妨げない）。429/5xx エラーに対しては最大3回の指数バックオフリトライ（1s→2s→4s）を行い、`google-genai` の例外は `AIAPIError`/`AIRateLimitError` にラップして Presenter に返す。32kトークン未満でのContext Cachingエラーを回避するための自動フォールバックロジック等は Phase 7 で組み込む。
+- **Model:** `google-genai` SDK の `genai.Client` を使い、Gemini API と通信（I/O-bound → ネイティブ `await client.aio.models.generate_content(...)`）。API 仕様に依存する処理はすべてここにカプセル化する。API キー未設定時もインスタンス化可能とし、API 呼び出し時に `AIKeyMissingError` を送出する（ドキュメント閲覧のみの利用を妨げない）。429/5xx エラーに対しては最大3回の指数バックオフリトライ（1s→2s→4s）を行い、`google-genai` の例外は `AIAPIError`/`AIRateLimitError` にラップして Presenter に返す。
+
+#### **Context Caching アーキテクチャ**
+
+google-genai SDK の Explicit Caching API を用い、ドキュメント全文テキストをサーバー側にキャッシュすることで、繰り返しの解析リクエストにおけるトークンコストを削減する。
+
+**キャッシュのライフサイクル:**
+
+| イベント                                     | 動作                                                                                                                             |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| ユーザーが「全文キャッシュを作成」ボタン押下 | Presenter が `DocumentModel.extract_all_text()` → `AIModel.create_cache(full_text, model_name=..., display_name=...)` を順次呼出 |
+| キャッシュ作成成功                           | `CacheStatus(is_active=True, ...)` をサイドパネルに反映。以降の `analyze()` で `cached_content` パラメータを自動付与             |
+| キャッシュ作成失敗（トークン不足等）         | `AICacheError` を catch し、ステータスバーに通知。キャッシュなしで動作継続（自動フォールバック）                                 |
+| `analyze()` でキャッシュ付きリクエスト失敗   | キャッシュを内部クリアし、キャッシュなしで 1 回リトライ                                                                          |
+| ドキュメント切替                             | `open_file()` の先頭で既存キャッシュを `invalidate_cache()` で自動削除                                                           |
+| サイドパネルでモデル切替                     | キャッシュがモデルに紐づくため、不一致時は確認ダイアログ → OK で invalidate、Cancel でモデル選択をリバート                       |
+
+**キャッシュの設計方針:**
+
+- `system_instruction` はキャッシュに含めない（翻訳/カスタムプロンプトでシステム指示が異なるため、リクエスト時に個別指定）
+- キャッシュ対象はドキュメント全文テキストのみ（画像はキャッシュしない）
+- `display_name` に `"pdf-reader: {filename}"` プレフィックスを設定し、`list_caches()` でアプリ用キャッシュのみフィルタリング可能にする
+- `analyze()` のレスポンスから `usage_metadata`（`prompt_token_count`, `cached_content_token_count`, `candidates_token_count`）を `logger.info` で出力し、キャッシュヒットを実行時に確認可能にする
+- キャッシュ TTL は `AppConfig.cache_ttl_minutes`（デフォルト 60 分）で設定可能
+
+**キャッシュ管理 UI:**
+
+- サイドパネルにキャッシュ作成/削除のトグルボタンを配置
+- メニューバー「キャッシュ(&C)」→「キャッシュ管理(&M)...」（キーバインド: **Ctrl+Alt+G**）から専用ダイアログを起動
+- キャッシュ管理ダイアログは 2 タブ構成: タブ1「現在のキャッシュ」（ステータス表示＋作成/削除/TTL 更新）、タブ2「キャッシュ確認」（`list_caches()` でアプリ用キャッシュ一覧をテーブル表示＋選択行の削除）
+- ダイアログ表示前に `await ai_model.list_caches()` + `await ai_model.get_cache_status()` でデータを事前取得し、`CachePresenter` に渡す（モーダル同期パターン）
 
 #### **モデル選択アーキテクチャ**
 
 ユーザーは設定ダイアログ（AI Models タブ）から利用可能なモデルの一覧を API 経由で取得し、使用するモデルを複数選択できる。選択されたモデル群はサイドパネルのプルダウンメニューに表示され、リクエスト単位でモデルを切り替え可能にする。
 
-| 項目 | 詳細 |
-| --- | --- |
-| デフォルトモデル | `gemini-3.1-flash-lite-preview`（`AppConfig.gemini_model_name`） |
-| モデル一覧取得 | 設定ダイアログの「Fetch Models」ボタン押下時に `IAIModel.list_available_models()` を非同期呼び出し |
-| モデル選択の永続化 | `AppConfig.selected_models: list[str]` に JSON 永続化 |
-| リクエスト単位の指定 | `AnalysisRequest.model_name` フィールドで Presenter がモデル名を渡す |
-| サイドパネル | QComboBox で `selected_models` から選択。変更時にコールバックで Presenter に通知 |
+| 項目                 | 詳細                                                                                               |
+| -------------------- | -------------------------------------------------------------------------------------------------- |
+| デフォルトモデル     | 空文字 `""`（`AppConfig.gemini_model_name`）。初回起動時はモデル未設定状態                         |
+| デフォルト選択リスト | 空リスト `[]`（`AppConfig.selected_models`）。Fetch Models 実施後にユーザーが選択                  |
+| モデル一覧取得       | 設定ダイアログの「Fetch Models」ボタン押下時に `IAIModel.list_available_models()` を非同期呼び出し |
+| モデル選択の永続化   | `AppConfig.selected_models: list[str]` に JSON 永続化                                              |
+| リクエスト単位の指定 | `AnalysisRequest.model_name` フィールドで Presenter がモデル名を渡す                               |
+| サイドパネル         | QComboBox で `selected_models` から選択。変更時にコールバックで Presenter に通知                   |
+| モデル未設定時       | QComboBox を disabled にし「モデル未設定」プレースホルダーを表示。翻訳・キャッシュ作成を拒否       |
+
+**起動時バックグラウンドモデル検証:**
+
+`MainPresenter` は起動直後に `asyncio.ensure_future()` でバックグラウンドモデル検証を行う。UI 表示はブロックしない。
+
+| 状態                                  | 動作                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------- |
+| Fetch 成功 + `gemini_model_name` 有効 | そのまま継続                                                                    |
+| Fetch 成功 + `gemini_model_name` 無効 | config をクリア + `save_config()` 永続化 + ステータス案内 + プルダウン disabled |
+| API キー未設定                        | ステータス「API キーを設定してください (Preferences → AI Models)」              |
+| ネットワークエラー等                  | ステータス警告 + 既存設定で続行（オフライン利用を妨げない）                     |
 
 #### **システムプロンプトと出力言語**
 
 システムプロンプトは `AppConfig` で設定可能とし、`{output_language}` プレースホルダーを含むテンプレート文字列とする。AIModel は API 呼び出し直前にプレースホルダーを置換する。
 
-| 設定項目 | AppConfig フィールド | デフォルト値 |
-| --- | --- | --- |
+| 設定項目                       | AppConfig フィールド        | デフォルト値                                                                                 |
+| ------------------------------ | --------------------------- | -------------------------------------------------------------------------------------------- |
 | 翻訳モード用システムプロンプト | `system_prompt_translation` | 「テキストを {output_language} に翻訳。数式は LaTeX、化学式は `\ce{}`、Markdown 形式で回答」 |
-| カスタムプロンプトモード用 | （固定） | 「{output_language} で回答してください。Markdown 形式で回答してください。」 |
-| 出力言語 | `output_language` | `"日本語"` |
+| カスタムプロンプトモード用     | （固定）                    | 「{output_language} で回答してください。Markdown 形式で回答してください。」                  |
+| 出力言語                       | `output_language`           | `"日本語"`                                                                                   |
 
 これらは設定ダイアログの AI Models タブから編集可能とする。
 
@@ -181,12 +229,13 @@ pdf-epub_reader_with_Gemini/
 
 AI 関連の例外はすべて `utils/exceptions.py` に定義し、Model が送出 → Presenter が catch → View に表示する流れを徹底する。
 
-| 例外クラス | 送出条件 | Presenter の対応 |
-| --- | --- | --- |
-| `AIError` | AI 系基底例外 | — |
-| `AIKeyMissingError(AIError)` | API キーが未設定のまま API 呼び出し | 結果パネルに「API キーが設定されていません」を表示 |
-| `AIAPIError(AIError)` | API 通信エラー一般（`status_code`, `message` 属性付き） | 結果パネルにエラー詳細を表示 |
-| `AIRateLimitError(AIAPIError)` | 429 レート制限（リトライ上限超過後） | 結果パネルに「API レート制限」を表示 |
+| 例外クラス                     | 送出条件                                                | Presenter の対応                                     |
+| ------------------------------ | ------------------------------------------------------- | ---------------------------------------------------- |
+| `AIError`                      | AI 系基底例外                                           | —                                                    |
+| `AIKeyMissingError(AIError)`   | API キーが未設定のまま API 呼び出し                     | 結果パネルに「API キーが設定されていません」を表示   |
+| `AIAPIError(AIError)`          | API 通信エラー一般（`status_code`, `message` 属性付き） | 結果パネルにエラー詳細を表示                         |
+| `AIRateLimitError(AIAPIError)` | 429 レート制限（リトライ上限超過後）                    | 結果パネルに「API レート制限」を表示                 |
+| `AICacheError(AIError)`        | キャッシュ作成失敗・トークン不足等（Phase 7 で追加）    | ステータスバーにエラー通知、キャッシュなしで動作継続 |
 
 ### **4.3. マルチモーダル矩形選択機能**
 
@@ -271,7 +320,32 @@ Gemini の応答は Markdown 形式（見出し、箇条書き、コードブロ
   - `_parse_response()` を更新し、`include_explanation=True` かつ TRANSLATION モード時に `raw_text` を `---` 区切りで分割（前半 → `translated_text`、後半 → `explanation`）。区切りなしの場合は全体を `translated_text`、`explanation=None` とする。Presenter の既存結合ロジック（`translated_text + "\n\n---\n\n" + explanation`）をそのまま活用する。
   - テスト: `test_ai_model.py` に解説モードのシステム指示検証・`---` 分割検証・区切りなし検証の3件を追加。`test_panel_presenter.py` の既存 `test_translate_with_explanation` がパスすることを確認（MockAIModel は既に `explanation` を返すため変更不要）。
 
-- **Phase 7: Context Cachingの実装:** 全文抽出とキャッシュ作成機能、最小トークン制限の回避ロジックをModelに組み込み、Presenter経由でView（有効期限やステータス）を更新する。Phase 6 でスタブ維持とした以下のメソッドを本実装に差し替える: `AIModel.create_cache(full_text)` — Context Caching 作成、`AIModel.get_cache_status()` — キャッシュ状態取得、`AIModel.invalidate_cache()` — キャッシュ無効化、`AIModel.count_tokens(text)` — トークンカウント（キャッシュ判定に必要）。また `analyze()` 内で既存キャッシュがある場合に `cached_content` パラメータを使用する分岐を追加する。キャッシュ管理 UI（サイドパネルのキャッシュステータス更新）もこのフェーズで実装する。
+- **Phase 7: Context Caching の実装:** Phase 6 でスタブ維持とした 4 メソッドを google-genai SDK の Explicit Caching API で本実装に差し替え、`analyze()` にキャッシュ自動付与＋フォールバックロジックを追加する。キャッシュ管理 UI（サイドパネルのステータス表示＋トグルボタン、専用ダイアログ）もこのフェーズで実装する。
+
+  **A. Foundation（DTO・Config・例外）:**
+  `CacheStatus` DTO に `model_name: str | None`（キャッシュ紐付きモデル名）と `expire_time: str | None`（ISO 形式の有効期限）を追加する。`utils/exceptions.py` に `AICacheError(AIError)` を追加する（キャッシュ作成失敗・トークン不足等で送出）。`AppConfig` に `cache_ttl_minutes: int`（デフォルト 60 分）フィールドとバリデーション定数（`CACHE_TTL_MIN=1`, `CACHE_TTL_MAX=1440`）を追加し、設定ダイアログの AI Models タブに TTL スピナーを設ける。
+
+  **B. AIModel コア実装:**
+  `IAIModel` Protocol を更新し、`create_cache(full_text, *, model_name=None, display_name=None)` / `count_tokens(text, *, model_name=None)` にモデル名パラメータを追加する。`update_cache_ttl(ttl_minutes) -> CacheStatus` と `list_caches() -> list[CacheStatus]` を新設する。
+  - `count_tokens`: `await client.aio.models.count_tokens(model=..., contents=text)` で実トークン数を取得。SDK エラーは `AIAPIError` でラップ。
+  - `create_cache`: 内部状態 `_cache_name` / `_cache_model` を保持。`await client.aio.caches.create(model=..., config=CreateCachedContentConfig(contents=[full_text], display_name="pdf-reader: {filename}", ttl=...))` で作成。`system_instruction` はキャッシュに含めない（翻訳/カスタムでシステム指示が異なるため）。SDK エラーは `AICacheError` で送出。
+  - `get_cache_status`: `await client.aio.caches.get(name=...)` で最新状態取得。expire 済みなら内部状態をクリアして `is_active=False` を返却。
+  - `invalidate_cache`: `await client.aio.caches.delete(name=...)` + 内部状態クリア。既に削除済みの場合はログのみ。
+  - `analyze()` にキャッシュ統合: キャッシュ active かつモデル一致時に `GenerateContentConfig(cached_content=self._cache_name, system_instruction=...)` を付与。キャッシュ付きリクエストが非レートリミットエラーで失敗した場合、キャッシュを内部クリアしキャッシュなしで 1 回リトライ。レスポンスの `usage_metadata` から `prompt_token_count`, `cached_content_token_count`, `candidates_token_count` を `logger.info` で出力。
+  - `update_cache_ttl`: `await client.aio.caches.update(name=..., config=UpdateCachedContentConfig(ttl=...))` で TTL 更新。
+  - `list_caches`: `client.aio.caches.list()` で全キャッシュ取得 → `display_name.startswith("pdf-reader:")` でフィルタ → `CacheStatus` DTO リストを返却。
+
+  **C. View インターフェース・サイドパネル:**
+  `ISidePanelView` にキャッシュ作成/削除コールバック登録（`set_on_cache_create_requested`, `set_on_cache_invalidate_requested`）、ボタン状態制御（`set_cache_active`, `set_cache_button_enabled`）、モデル切替確認ダイアログ（`show_confirm_dialog`）を追加する。`ICacheDialogView` Protocol を新設し、2 タブ構成（「現在のキャッシュ」＝ステータス表示＋操作、「キャッシュ確認」＝アプリ用キャッシュ一覧テーブル）をサポートする。`SidePanelView` に既存のキャッシュステータスラベル横にトグルボタンを追加する。
+
+  **D. Presenter 更新:**
+  `PanelPresenter` にキャッシュ状態の内部管理、MainPresenter へのコールバック委譲（`set_on_cache_create_handler` / `set_on_cache_invalidate_handler`）、`update_cache_status` 公開メソッド、モデル切替時のキャッシュ一致確認ロジックを追加する。`PanelPresenter` に `get_current_model() -> str | None` 公開 getter を追加し、サイドパネルで選択中のモデルを外部から取得可能にする。モデル未設定（`_current_model` が空/None）時は翻訳・カスタムプロンプト・キャッシュ作成を拒否し、結果パネルに設定案内を表示する。`MainPresenter` にキャッシュ作成オーケストレーション（`extract_all_text` → `create_cache`）を追加し、キャッシュ作成時のモデル名は `panel_presenter.get_current_model()` から取得する（`config.gemini_model_name` ではない）。ドキュメント切替時の自動 invalidate、キャッシュ管理ダイアログ起動（`_on_cache_management_requested` を async 本実装化。表示前に `await list_caches()` + `await get_cache_status()` でデータ取得）を追加する。メニューバー「キャッシュ(&C)」→「キャッシュ管理(&M)...」（キーバインド: **Ctrl+Alt+G**）を追加する。`AIModel.create_cache()` でキャッシュ非対応モデルのエラー（`"not supported for createCachedContent"`）を検出し、`AICacheError("このモデルはコンテキストキャッシュをサポートしていません")` に変換する。起動時バックグラウンドモデル検証（`_validate_models_on_startup`）を追加する（詳細はモデル選択アーキテクチャの節を参照）。
+
+  **E. キャッシュ管理ダイアログ:**
+  `CachePresenter`（`presenters/cache_presenter.py`）を新設し、ダイアログ表示＋ユーザーアクション（作成/削除/TTL 更新/一覧から選択削除）の取得を担当する。`CacheDialog`（`views/cache_dialog.py`）を新設し、QDialog モーダルで 2 タブ構成（タブ1: 現在のキャッシュ情報＋操作ボタン、タブ2: `list_caches()` 結果のテーブル表示＋選択行削除）を実装する。
+
+  **F. テスト:**
+  MockAIModel にキャッシュ関連パラメータ・メソッドを追加。MockSidePanelView にキャッシュ UI メソッドを追加。MockCacheDialogView を新設。`test_ai_model.py` にキャッシュメソッドの単体テスト（~12 件: count_tokens, create_cache, get_cache_status, invalidate_cache, analyze with cache + fallback, update_cache_ttl, list_caches）を追加。`test_panel_presenter.py` にキャッシュフローテスト（~6 件）、`test_main_presenter.py` にオーケストレーションテスト（~5 件）、`test_cache_presenter.py` を新設（~3 件）。
 
 ## **7. 推奨リファレンス**
 

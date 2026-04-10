@@ -10,21 +10,28 @@ MainPresenter の役割は、メインウィンドウで発生したユーザー
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 
 from pdf_epub_reader.dto import PageData, RectCoords
 from pdf_epub_reader.interfaces.model_interfaces import IAIModel, IDocumentModel
 from pdf_epub_reader.interfaces.view_interfaces import (
+    ICacheDialogView,
     IMainView,
     ISettingsDialogView,
 )
+from pdf_epub_reader.presenters.cache_presenter import CachePresenter
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
 from pdf_epub_reader.presenters.settings_presenter import SettingsPresenter
-from pdf_epub_reader.utils.config import AppConfig
+from pdf_epub_reader.utils.config import AppConfig, save_config
 from pdf_epub_reader.utils.exceptions import (
+    AICacheError,
+    AIKeyMissingError,
     DocumentOpenError,
     DocumentPasswordRequired,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MainPresenter:
@@ -42,6 +49,7 @@ class MainPresenter:
         config: AppConfig | None = None,
         settings_view_factory: Callable[[], ISettingsDialogView] | None = None,
         ai_model: IAIModel | None = None,
+        cache_dialog_view_factory: Callable[[], ICacheDialogView] | None = None,
     ) -> None:
         """依存オブジェクトを受け取り、View のイベントを購読する。
 
@@ -64,6 +72,7 @@ class MainPresenter:
         self._config = config or AppConfig()
         self._settings_view_factory = settings_view_factory
         self._ai_model = ai_model
+        self._cache_dialog_view_factory = cache_dialog_view_factory
         self._base_dpi: int = self._config.default_dpi
         dpr = self._view.get_device_pixel_ratio()
         self._render_dpi: int = int(self._base_dpi * dpr)
@@ -89,6 +98,18 @@ class MainPresenter:
             self._config.gemini_model_name
         )
 
+        # Phase 7: キャッシュ操作のコールバックを登録
+        self._panel_presenter.set_on_cache_create_handler(
+            self._on_cache_create
+        )
+        self._panel_presenter.set_on_cache_invalidate_handler(
+            self._on_cache_invalidate
+        )
+
+        # Phase 7 Bugfix: 起動時バックグラウンドモデル検証
+        if self._ai_model is not None:
+            asyncio.ensure_future(self._validate_models_on_startup())
+
     # --- Public API ---
 
     async def open_file(self, file_path: str) -> None:
@@ -101,6 +122,18 @@ class MainPresenter:
         ユーザーが入力したパスワードで再試行する。
         """
         self._view.show_status_message(f"Opening {file_path}...")
+
+        # Phase 7: 既存キャッシュがあれば破棄する
+        if self._ai_model is not None:
+            try:
+                status = await self._ai_model.get_cache_status()
+                if status.is_active:
+                    await self._ai_model.invalidate_cache()
+                    from pdf_epub_reader.dto import CacheStatus
+                    self._panel_presenter.update_cache_status(CacheStatus())
+            except Exception:
+                logger.debug("Cache invalidation on open_file skipped", exc_info=True)
+
         try:
             doc_info = await self._document_model.open_document(file_path)
         except DocumentPasswordRequired as e:
@@ -216,12 +249,175 @@ class MainPresenter:
         self._view.set_zoom_level(level)
 
     def _on_cache_management_requested(self) -> None:
-        """キャッシュ管理 UI を開くための拡張ポイント。
+        """キャッシュ管理ダイアログを開くための非同期エントリポイント。
 
-        詳細なダイアログや操作は Phase 5 で実装する。
-        ここでは「イベントの受け口」を先に置き、将来の接続位置を固定している。
+        Phase E で CachePresenter + CacheDialog と統合予定。
         """
-        pass
+        asyncio.ensure_future(self._do_cache_management())
+
+    async def _do_cache_management(self) -> None:
+        """キャッシュ管理ダイアログの非同期本体。"""
+        if self._ai_model is None or self._cache_dialog_view_factory is None:
+            return
+
+        # データ取得
+        try:
+            cache_status = await self._ai_model.get_cache_status()
+            cache_list = await self._ai_model.list_caches()
+        except Exception:
+            logger.warning("Failed to fetch cache data", exc_info=True)
+            self._view.show_status_message(
+                "キャッシュ情報の取得に失敗しました"
+            )
+            return
+
+        # ダイアログ表示
+        dialog_view = self._cache_dialog_view_factory()
+        presenter = CachePresenter(
+            dialog_view, cache_status, cache_list, self._config
+        )
+        action, new_ttl, selected_name = presenter.show()
+
+        if action is None:
+            return
+
+        # アクション実行
+        try:
+            if action == "create":
+                await self._do_cache_create()
+            elif action == "delete":
+                await self._do_cache_invalidate()
+            elif action == "update_ttl":
+                status = await self._ai_model.update_cache_ttl(new_ttl)
+                self._panel_presenter.update_cache_status(status)
+                self._view.show_status_message(
+                    f"TTL を {new_ttl} 分に更新しました"
+                )
+            elif action == "delete_selected" and selected_name:
+                # 選択行のキャッシュを削除（外部キャッシュ含む）
+                original_name = self._ai_model._cache_name if hasattr(self._ai_model, '_cache_name') else None  # noqa: E501
+                try:
+                    # 一時的に _cache_name を差し替えて invalidate を呼ぶ
+                    if hasattr(self._ai_model, '_cache_name'):
+                        self._ai_model._cache_name = selected_name  # type: ignore[attr-defined]
+                    await self._ai_model.invalidate_cache()
+                    self._view.show_status_message(
+                        "選択キャッシュを削除しました"
+                    )
+                finally:
+                    if hasattr(self._ai_model, '_cache_name'):
+                        self._ai_model._cache_name = original_name  # type: ignore[attr-defined]
+                # 現在のキャッシュが削除されたものと同じならステータス更新
+                if cache_status.cache_name == selected_name:
+                    from pdf_epub_reader.dto import CacheStatus as CS
+                    self._panel_presenter.update_cache_status(CS())
+        except Exception as exc:
+            logger.warning("Cache management action failed", exc_info=True)
+            self._view.show_status_message(f"操作失敗: {exc}")
+
+    # --- Phase 7 Bugfix: 起動時バックグラウンドモデル検証 ---
+
+    async def _validate_models_on_startup(self) -> None:
+        """起動直後にバックグラウンドで Gemini API のモデル一覧を取得し、
+        config に保存されたモデルが有効か検証する。
+
+        - Fetch 成功 + gemini_model_name が有効 → そのまま継続
+        - Fetch 成功 + gemini_model_name が無効/空 → config クリア + 永続化 + 案内
+        - AIKeyMissingError → ステータスに API キー設定案内
+        - ネットワークエラー等 → 警告 + 既存設定で続行
+        """
+        assert self._ai_model is not None
+
+        try:
+            available = await self._ai_model.list_available_models()
+        except AIKeyMissingError:
+            self._view.show_status_message(
+                "API キーを設定してください (Preferences → AI Models)"
+            )
+            return
+        except Exception:
+            logger.warning(
+                "起動時モデル検証: モデル一覧取得失敗、既存設定で続行",
+                exc_info=True,
+            )
+            self._view.show_status_message(
+                "⚠️ モデル一覧の取得に失敗しました。既存設定で続行します。"
+            )
+            return
+
+        available_ids = {m.model_id for m in available}
+        current_model = self._config.gemini_model_name
+
+        if current_model and current_model in available_ids:
+            # 有効なモデル → そのまま継続
+            return
+
+        # gemini_model_name が空 or Fetch リストに無い → config クリア
+        self._config.gemini_model_name = ""
+        save_config(self._config)
+
+        self._panel_presenter.set_available_models(
+            self._config.selected_models
+        )
+        self._panel_presenter.set_selected_model("")
+        self._view.show_status_message(
+            "⚠️ モデルが未設定または無効です。"
+            "Preferences (Ctrl+,) → AI Models タブで設定してください。"
+        )
+
+    # --- Phase 7: キャッシュ操作 ---
+
+    def _on_cache_create(self) -> None:
+        """キャッシュ作成ボタンからの非同期操作を開始する。"""
+        asyncio.ensure_future(self._do_cache_create())
+
+    async def _do_cache_create(self) -> None:
+        """ドキュメント全文をキャッシュする。"""
+        if self._ai_model is None:
+            return
+        doc_info = self._document_model.get_document_info()
+        if doc_info is None:
+            self._view.show_status_message("ドキュメントが開かれていません")
+            return
+
+        self._panel_presenter._view.set_cache_button_enabled(False)
+        self._view.show_status_message("キャッシュを作成中...")
+        try:
+            full_text = await self._document_model.extract_all_text()
+            display_name = f"pdf-reader: {doc_info.file_path.split('/')[-1].split(chr(92))[-1]}"
+            status = await self._ai_model.create_cache(
+                full_text,
+                model_name=self._panel_presenter.get_current_model(),
+                display_name=display_name,
+            )
+            self._panel_presenter.update_cache_status(status)
+            self._view.show_status_message(
+                f"キャッシュ作成完了 ({status.token_count or '?'} tokens)"
+            )
+        except AICacheError as exc:
+            self._view.show_status_message(f"キャッシュ作成失敗: {exc}")
+            logger.warning("Cache creation failed", exc_info=True)
+        finally:
+            self._panel_presenter._view.set_cache_button_enabled(True)
+
+    def _on_cache_invalidate(self) -> None:
+        """キャッシュ削除ボタンからの非同期操作を開始する。"""
+        asyncio.ensure_future(self._do_cache_invalidate())
+
+    async def _do_cache_invalidate(self) -> None:
+        """キャッシュを無効化する。"""
+        if self._ai_model is None:
+            return
+        self._panel_presenter._view.set_cache_button_enabled(False)
+        try:
+            await self._ai_model.invalidate_cache()
+            from pdf_epub_reader.dto import CacheStatus
+            self._panel_presenter.update_cache_status(CacheStatus())
+            self._view.show_status_message("キャッシュを削除しました")
+        except Exception:
+            logger.warning("Cache invalidation failed", exc_info=True)
+        finally:
+            self._panel_presenter._view.set_cache_button_enabled(True)
 
     def _on_pages_needed(self, page_numbers: list[int]) -> None:
         """View からページ画像の要求を受け取り、非同期レンダリングを開始する。"""
