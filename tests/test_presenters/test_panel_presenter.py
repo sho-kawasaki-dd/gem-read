@@ -7,15 +7,22 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from tests.mocks.mock_models import MockAIModel
 from tests.mocks.mock_views import MockSidePanelView
 
-from pdf_epub_reader.dto import AnalysisMode
+from pdf_epub_reader.dto import AnalysisMode, AnalysisResult
 from pdf_epub_reader.dto.document_dto import RectCoords, SelectionContent
 from pdf_epub_reader.interfaces.model_interfaces import IAIModel
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
+from pdf_epub_reader.utils.exceptions import (
+    AIAPIError,
+    AIKeyMissingError,
+    AIRateLimitError,
+)
 
 
 class TestProtocolConformance:
@@ -287,3 +294,162 @@ class TestMultimodalAnalysis:
         request = analyze_calls[0][0]
         assert request.images == [b"image-bytes"]
         assert request.mode == AnalysisMode.CUSTOM_PROMPT
+
+
+class TestErrorHandling:
+    """Phase 6: AI エラー発生時の View 表示を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_key_missing_shows_error_in_view(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """AIKeyMissingError 発生時にエラーメッセージが表示されること。"""
+        mock_ai_model.analyze = AsyncMock(side_effect=AIKeyMissingError())
+        presenter = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter.set_selected_text("Hello")
+        await presenter._do_translate(include_explanation=False)
+
+        result_calls = mock_side_panel_view.get_calls("update_result_text")
+        assert len(result_calls) == 1
+        assert "API キー" in result_calls[0][0]
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_shows_error_in_view(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """AIRateLimitError 発生時にレート制限メッセージが表示されること。"""
+        mock_ai_model.analyze = AsyncMock(side_effect=AIRateLimitError())
+        presenter = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter.set_selected_text("Hello")
+        await presenter._do_translate(include_explanation=False)
+
+        result_calls = mock_side_panel_view.get_calls("update_result_text")
+        assert len(result_calls) == 1
+        assert "レート制限" in result_calls[0][0]
+
+    @pytest.mark.asyncio
+    async def test_api_error_shows_details_in_view(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """AIAPIError 発生時にエラー詳細が表示されること。"""
+        mock_ai_model.analyze = AsyncMock(
+            side_effect=AIAPIError("Something went wrong", status_code=500)
+        )
+        presenter = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter.set_selected_text("Hello")
+        await presenter._do_translate(include_explanation=False)
+
+        result_calls = mock_side_panel_view.get_calls("update_result_text")
+        assert len(result_calls) == 1
+        assert "Something went wrong" in result_calls[0][0]
+
+    @pytest.mark.asyncio
+    async def test_custom_prompt_key_missing_shows_error(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """カスタムプロンプトでも AIKeyMissingError がハンドルされること。"""
+        mock_ai_model.analyze = AsyncMock(side_effect=AIKeyMissingError())
+        presenter = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter.set_selected_text("Hello")
+        await presenter._do_custom_prompt("Summarize")
+
+        result_calls = mock_side_panel_view.get_calls("update_result_text")
+        assert len(result_calls) == 1
+        assert "API キー" in result_calls[0][0]
+
+    @pytest.mark.asyncio
+    async def test_loading_cleared_on_error(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """エラー発生時でもローディングが解除されること。"""
+        mock_ai_model.analyze = AsyncMock(side_effect=AIRateLimitError())
+        presenter = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter.set_selected_text("Hello")
+        await presenter._do_translate(include_explanation=False)
+
+        loading_calls = mock_side_panel_view.get_calls("show_loading")
+        assert loading_calls[-1] == (False,)
+
+
+class TestModelSelection:
+    """Phase 6: モデル選択の状態管理と AnalysisRequest 伝播を検証する。"""
+
+    def test_set_available_models_propagates_to_view(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        """set_available_models が View に伝播すること。"""
+        panel_presenter.set_available_models(["model-a", "model-b"])
+        calls = mock_side_panel_view.get_calls("set_available_models")
+        assert len(calls) == 1
+        assert calls[0] == (["model-a", "model-b"],)
+
+    def test_set_selected_model_propagates_to_view(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        """set_selected_model が View に伝播すること。"""
+        panel_presenter.set_selected_model("model-x")
+        calls = mock_side_panel_view.get_calls("set_selected_model")
+        assert len(calls) == 1
+        assert calls[0] == ("model-x",)
+
+    def test_model_changed_updates_internal_state(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        """View のモデル変更が内部状態に反映されること。"""
+        mock_side_panel_view.simulate_model_changed("new-model")
+        assert panel_presenter._current_model == "new-model"
+
+    @pytest.mark.asyncio
+    async def test_selected_model_passed_in_request(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_ai_model: MockAIModel,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        """選択されたモデルが AnalysisRequest.model_name に入ること。"""
+        mock_side_panel_view.simulate_model_changed("gemini-2.0-pro")
+        panel_presenter.set_selected_text("Test text")
+        await panel_presenter._do_translate(include_explanation=False)
+
+        analyze_calls = mock_ai_model.get_calls("analyze")
+        assert len(analyze_calls) == 1
+        assert analyze_calls[0][0].model_name == "gemini-2.0-pro"
+
+    @pytest.mark.asyncio
+    async def test_no_model_selected_passes_none(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """モデル未選択時は model_name が None であること。"""
+        panel_presenter.set_selected_text("Test text")
+        await panel_presenter._do_translate(include_explanation=False)
+
+        analyze_calls = mock_ai_model.get_calls("analyze")
+        assert analyze_calls[0][0].model_name is None

@@ -13,7 +13,7 @@ import asyncio
 from collections.abc import Callable
 
 from pdf_epub_reader.dto import PageData, RectCoords
-from pdf_epub_reader.interfaces.model_interfaces import IDocumentModel
+from pdf_epub_reader.interfaces.model_interfaces import IAIModel, IDocumentModel
 from pdf_epub_reader.interfaces.view_interfaces import (
     IMainView,
     ISettingsDialogView,
@@ -41,6 +41,7 @@ class MainPresenter:
         panel_presenter: PanelPresenter,
         config: AppConfig | None = None,
         settings_view_factory: Callable[[], ISettingsDialogView] | None = None,
+        ai_model: IAIModel | None = None,
     ) -> None:
         """依存オブジェクトを受け取り、View のイベントを購読する。
 
@@ -62,6 +63,7 @@ class MainPresenter:
         self._panel_presenter = panel_presenter
         self._config = config or AppConfig()
         self._settings_view_factory = settings_view_factory
+        self._ai_model = ai_model
         self._base_dpi: int = self._config.default_dpi
         dpr = self._view.get_device_pixel_ratio()
         self._render_dpi: int = int(self._base_dpi * dpr)
@@ -78,6 +80,14 @@ class MainPresenter:
         )
         self._view.set_on_pages_needed(self._on_pages_needed)
         self._view.set_on_settings_requested(self._on_settings_requested)
+
+        # Phase 6: 初期化時にモデルリストをサイドパネルに設定する
+        self._panel_presenter.set_available_models(
+            self._config.selected_models
+        )
+        self._panel_presenter.set_selected_model(
+            self._config.gemini_model_name
+        )
 
     # --- Public API ---
 
@@ -242,7 +252,9 @@ class MainPresenter:
         if self._settings_view_factory is None:
             return
         settings_view = self._settings_view_factory()
-        presenter = SettingsPresenter(settings_view, self._config)
+        presenter = SettingsPresenter(
+            settings_view, self._config, ai_model=self._ai_model
+        )
         new_config = presenter.show()
         if new_config is not None:
             self._apply_config_changes(new_config)
@@ -257,6 +269,16 @@ class MainPresenter:
         old_hq = self._config.high_quality_downscale
         self._config = new_config
         self._document_model.update_config(new_config)
+
+        # Phase 6: AI モデルにも設定を反映し、サイドパネルのモデルリストを更新
+        if self._ai_model is not None:
+            self._ai_model.update_config(new_config)
+        self._panel_presenter.set_available_models(
+            new_config.selected_models
+        )
+        self._panel_presenter.set_selected_model(
+            new_config.gemini_model_name
+        )
 
         # 高品質縮小の ON/OFF が変わった場合は View に即反映する。
         if old_hq != new_config.high_quality_downscale:

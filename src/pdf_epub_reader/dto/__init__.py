@@ -10,6 +10,7 @@ from pdf_epub_reader.dto.ai_dto import (
     AnalysisRequest,
     AnalysisResult,
     CacheStatus,
+    ModelInfo,
 )
 from pdf_epub_reader.dto.document_dto import (
     DocumentInfo,
@@ -26,6 +27,7 @@ __all__ = [
     "AnalysisResult",
     "CacheStatus",
     "DocumentInfo",
+    "ModelInfo",
     "PageData",
     "RectCoords",
     "SelectionContent",

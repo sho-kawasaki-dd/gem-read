@@ -189,6 +189,22 @@ class ISidePanelView(Protocol):
         """
         ...
 
+    # --- Phase 6: モデル選択 ---
+
+    def set_available_models(self, model_names: list[str]) -> None:
+        """モデル選択プルダウンの選択肢を設定する。"""
+        ...
+
+    def set_selected_model(self, model_name: str) -> None:
+        """モデル選択プルダウンの現在値を設定する。"""
+        ...
+
+    def set_on_model_changed(
+        self, cb: Callable[[str], None]
+    ) -> None:
+        """モデル選択プルダウンの変更時コールバックを登録する。"""
+        ...
+
 
 @runtime_checkable
 class ISettingsDialogView(Protocol):
@@ -222,6 +238,66 @@ class ISettingsDialogView(Protocol):
 
     def set_on_reset_defaults(self, cb: Callable[[], None]) -> None:
         """「Reset to Defaults」ボタン押下時のコールバックを登録する。"""
+        ...
+
+    # --- Phase 6: AI Models タブ Getters ---
+
+    def get_gemini_model_name(self) -> str:
+        """デフォルトモデル名を取得する。"""
+        ...
+
+    def get_selected_models(self) -> list[str]:
+        """選択済みモデル一覧を取得する。"""
+        ...
+
+    def get_output_language(self) -> str:
+        """出力言語を取得する。"""
+        ...
+
+    def get_system_prompt_translation(self) -> str:
+        """翻訳モード用システムプロンプトを取得する。"""
+        ...
+
+    # --- Phase 6: AI Models タブ Setters ---
+
+    def set_gemini_model_name(self, value: str) -> None:
+        """デフォルトモデル名を設定する。"""
+        ...
+
+    def set_selected_models(self, value: list[str]) -> None:
+        """選択済みモデル一覧を設定する。"""
+        ...
+
+    def set_output_language(self, value: str) -> None:
+        """出力言語を設定する。"""
+        ...
+
+    def set_system_prompt_translation(self, value: str) -> None:
+        """翻訳モード用システムプロンプトを設定する。"""
+        ...
+
+    def set_available_models_for_selection(
+        self, models: list[tuple[str, str]]
+    ) -> None:
+        """Fetch で取得したモデル一覧を選択ウィジェットに設定する。
+
+        Args:
+            models: (model_id, display_name) のタプルリスト。
+        """
+        ...
+
+    def set_on_fetch_models_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """「Fetch Models」ボタン押下時のコールバックを登録する。"""
+        ...
+
+    def set_fetch_models_loading(self, loading: bool) -> None:
+        """Fetch Models のローディング表示を制御する。"""
+        ...
+
+    def show_fetch_models_error(self, message: str) -> None:
+        """Fetch Models 失敗時のエラーメッセージを表示する。"""
         ...
 
     # --- Lifecycle ---

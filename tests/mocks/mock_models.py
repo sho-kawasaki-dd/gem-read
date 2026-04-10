@@ -12,6 +12,7 @@ from pdf_epub_reader.dto import (
     AnalysisResult,
     CacheStatus,
     DocumentInfo,
+    ModelInfo,
     PageData,
     RectCoords,
     SelectionContent,
@@ -200,6 +201,17 @@ class MockAIModel:
         """単語数ベースの簡易トークン数を返すダミー実装。"""
         self.calls.append(("count_tokens", (text,)))
         return len(text.split())
+
+    async def list_available_models(self) -> list[ModelInfo]:
+        """モデル一覧取得のダミー実装。"""
+        self.calls.append(("list_available_models", ()))
+        return [
+            ModelInfo(model_id="models/gemini-test", display_name="Gemini Test"),
+        ]
+
+    def update_config(self, config) -> None:
+        """設定更新呼び出しを記録する。"""
+        self.calls.append(("update_config", (config,)))
 
     def get_calls(self, method_name: str) -> list[tuple]:
         """指定メソッドの呼び出し引数一覧を返す。"""

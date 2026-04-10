@@ -12,6 +12,11 @@ import asyncio
 from pdf_epub_reader.dto import AnalysisMode, AnalysisRequest, SelectionContent
 from pdf_epub_reader.interfaces.model_interfaces import IAIModel
 from pdf_epub_reader.interfaces.view_interfaces import ISidePanelView
+from pdf_epub_reader.utils.exceptions import (
+    AIAPIError,
+    AIKeyMissingError,
+    AIRateLimitError,
+)
 
 
 class PanelPresenter:
@@ -30,12 +35,15 @@ class PanelPresenter:
         # Phase 4: マルチモーダル対応の内部状態
         self._selected_content: SelectionContent | None = None
         self._force_include_image: bool = False
+        # Phase 6: リクエスト単位のモデル選択
+        self._current_model: str | None = None
 
         # View は「どの関数を呼ぶか」だけを知ればよい。
         # 実際の処理内容は Presenter 側に閉じ込める。
         self._view.set_on_translate_requested(self._on_translate_requested)
         self._view.set_on_custom_prompt_submitted(self._on_custom_prompt_submitted)
         self._view.set_on_force_image_toggled(self._on_force_image_toggled)
+        self._view.set_on_model_changed(self._on_model_changed)
 
     # --- Public API (called by MainPresenter) ---
 
@@ -70,11 +78,24 @@ class PanelPresenter:
             content.cropped_image,
         )
 
+    def set_available_models(self, model_names: list[str]) -> None:
+        """モデル選択プルダウンの選択肢を設定する。"""
+        self._view.set_available_models(model_names)
+
+    def set_selected_model(self, model_name: str) -> None:
+        """モデル選択プルダウンの現在値を設定する。"""
+        self._current_model = model_name
+        self._view.set_selected_model(model_name)
+
     # --- Private callback handlers ---
 
     def _on_force_image_toggled(self, checked: bool) -> None:
         """「画像としても送信」チェックボックスの状態変更を記録する。"""
         self._force_include_image = checked
+
+    def _on_model_changed(self, model_name: str) -> None:
+        """モデルプルダウンの変更を内部状態に反映する。"""
+        self._current_model = model_name
 
     def _on_translate_requested(self, include_explanation: bool) -> None:
         """翻訳ボタン押下を受け取り、非同期処理を開始する。"""
@@ -86,8 +107,6 @@ class PanelPresenter:
     async def _do_translate(self, include_explanation: bool) -> None:
         """翻訳モードで AI 解析を実行し、結果を View に返す。"""
         if not self._selected_text:
-            # 解析対象が無いときは API を呼ばず静かに抜ける。
-            # View 側に分岐を持たせないため、この判定は Presenter に置く。
             return
         self._view.show_loading(True)
         try:
@@ -96,19 +115,28 @@ class PanelPresenter:
                 mode=AnalysisMode.TRANSLATION,
                 include_explanation=include_explanation,
                 images=self._collect_images(),
+                model_name=self._current_model,
             )
             result = await self._ai_model.analyze(request)
 
-            # 翻訳結果がある場合はそれを優先し、無い場合だけ raw_response を使う。
-            # こうしておくと、将来レスポンス形式が多少揺れても表示が壊れにくい。
             display = result.translated_text or result.raw_response
             if include_explanation and result.explanation:
-                # 説明は翻訳本文と視覚的に分けたいので簡易区切りを入れる。
                 display += "\n\n---\n\n" + result.explanation
             self._view.update_result_text(display)
+        except AIKeyMissingError:
+            self._view.update_result_text(
+                "⚠️ API キーが設定されていません。"
+                "設定ダイアログまたは環境変数で GEMINI_API_KEY を設定してください。"
+            )
+        except AIRateLimitError:
+            self._view.update_result_text(
+                "⚠️ API レート制限に達しました。しばらく待ってから再試行してください。"
+            )
+        except AIAPIError as exc:
+            self._view.update_result_text(
+                f"⚠️ API エラー: {exc.message}"
+            )
         finally:
-            # 失敗時でもローディングを解除しないと UI が固まって見えるため、
-            # finally で必ず終了処理を行う。
             self._view.show_loading(False)
 
     def _on_custom_prompt_submitted(self, prompt: str) -> None:
@@ -126,11 +154,23 @@ class PanelPresenter:
                 mode=AnalysisMode.CUSTOM_PROMPT,
                 custom_prompt=prompt,
                 images=self._collect_images(),
+                model_name=self._current_model,
             )
             result = await self._ai_model.analyze(request)
-            # カスタムプロンプトでは出力形式が固定でないため、
-            # Presenter は raw_response をそのまま表示に渡す。
             self._view.update_result_text(result.raw_response)
+        except AIKeyMissingError:
+            self._view.update_result_text(
+                "⚠️ API キーが設定されていません。"
+                "設定ダイアログまたは環境変数で GEMINI_API_KEY を設定してください。"
+            )
+        except AIRateLimitError:
+            self._view.update_result_text(
+                "⚠️ API レート制限に達しました。しばらく待ってから再試行してください。"
+            )
+        except AIAPIError as exc:
+            self._view.update_result_text(
+                f"⚠️ API エラー: {exc.message}"
+            )
         finally:
             self._view.show_loading(False)
 

@@ -55,3 +55,57 @@ class DocumentRenderError(DocumentError):
     def __init__(self, page_number: int, message: str = "Render failed") -> None:
         super().__init__(message)
         self.page_number = page_number
+
+
+# ---------------------------------------------------------------------------
+# AI 関連例外
+# ---------------------------------------------------------------------------
+
+
+class AIError(Exception):
+    """AI 系の基底例外。
+
+    すべての AI 関連エラーの親クラスとして機能し、
+    Presenter が ``except AIError`` で一括 catch できるようにする。
+    """
+
+
+class AIKeyMissingError(AIError):
+    """API キーが未設定のまま API 呼び出しを試みた場合の例外。
+
+    AIModel はキー未設定でもインスタンス化を許可する（ドキュメント閲覧専用
+    利用を妨げないため）。実際の API 呼び出し時にこの例外を送出する。
+    """
+
+
+class AIAPIError(AIError):
+    """Gemini API 通信エラーの汎用例外。
+
+    google-genai SDK が返すエラーをラップし、Model 内部の SDK 依存を
+    Presenter に漏らさないようにする。
+
+    Attributes:
+        status_code: HTTP ステータスコード (不明な場合は None)。
+        message: エラーの詳細メッセージ。
+    """
+
+    def __init__(
+        self,
+        message: str = "API error",
+        *,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.message = message
+
+
+class AIRateLimitError(AIAPIError):
+    """429 レート制限エラー（リトライ上限超過後に送出）。
+
+    AIModel 内部で指数バックオフリトライを最大3回行い、
+    それでも 429 が返る場合にこの例外を Presenter へ伝播させる。
+    """
+
+    def __init__(self, message: str = "API rate limit exceeded") -> None:
+        super().__init__(message, status_code=429)

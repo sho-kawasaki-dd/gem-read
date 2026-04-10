@@ -14,6 +14,7 @@ from pdf_epub_reader.dto import (
     AnalysisResult,
     CacheStatus,
     DocumentInfo,
+    ModelInfo,
     PageData,
     RectCoords,
     SelectionContent,
@@ -72,7 +73,15 @@ class IAIModel(Protocol):
     """
 
     async def analyze(self, request: AnalysisRequest) -> AnalysisResult: ...
+    async def list_available_models(self) -> list[ModelInfo]: ...
     async def create_cache(self, full_text: str) -> CacheStatus: ...
     async def get_cache_status(self) -> CacheStatus: ...
     async def invalidate_cache(self) -> None: ...
     async def count_tokens(self, text: str) -> int: ...
+    def update_config(self, config: AppConfig) -> None:
+        """アプリケーション設定を更新する。
+
+        設定ダイアログで変更された AI 設定（モデル名・プロンプト等）を
+        AIModel に反映するために Presenter が呼び出す。
+        """
+        ...

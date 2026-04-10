@@ -52,6 +52,16 @@ MAX_RECENT_FILES = 10
 # --- 環境変数名 ---
 ENV_GEMINI_API_KEY = "GEMINI_API_KEY"
 
+# --- AI デフォルト設定 ---
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite-preview-06-17"
+DEFAULT_OUTPUT_LANGUAGE = "日本語"
+DEFAULT_TRANSLATION_PROMPT = (
+    "あなたは学術文書の翻訳者です。与えられたテキストを {output_language} に翻訳してください。\n"
+    "- 数式は LaTeX 記法（$...$ または $$...$$）で記述してください。\n"
+    "- 化学式は LaTeX の \\ce{{}} コマンドで記述してください。\n"
+    "- 回答は Markdown 形式で出力してください。"
+)
+
 # --- バリデーション定数 (Phase 5: 設定ダイアログ) ---
 DPI_MIN = 72
 DPI_MAX = 600
@@ -100,6 +110,16 @@ class AppConfig:
     # クロップ画像を Gemini Vision に送信するかを制御する。
     auto_detect_embedded_images: bool = True
     auto_detect_math_fonts: bool = True
+
+    # Phase 6: AI 設定
+    # Gemini API で使用するモデル名・選択済みモデル一覧・
+    # システムプロンプト・出力言語を永続化する。
+    gemini_model_name: str = DEFAULT_GEMINI_MODEL
+    selected_models: list[str] = field(
+        default_factory=lambda: [DEFAULT_GEMINI_MODEL]
+    )
+    system_prompt_translation: str = DEFAULT_TRANSLATION_PROMPT
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE
 
 
 def _get_config_path() -> Path:

@@ -6,15 +6,21 @@ save_config 呼び出しを検証する。
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from tests.mocks.mock_models import MockAIModel
 from tests.mocks.mock_views import MockSettingsDialogView
 
 from pdf_epub_reader.interfaces.view_interfaces import ISettingsDialogView
 from pdf_epub_reader.presenters.settings_presenter import SettingsPresenter
-from pdf_epub_reader.utils.config import AppConfig
+from pdf_epub_reader.utils.config import (
+    AppConfig,
+    DEFAULT_GEMINI_MODEL,
+    DEFAULT_OUTPUT_LANGUAGE,
+    DEFAULT_TRANSLATION_PROMPT,
+)
 
 
 @pytest.fixture
@@ -203,3 +209,161 @@ class TestResetDefaults:
         assert mock_settings_view.get_calls("set_auto_detect_math_fonts")[
             -1
         ] == (defaults.auto_detect_math_fonts,)
+
+
+class TestAISettingsPopulate:
+    """Phase 6: AI 設定のダイアログ populate / read を検証する。"""
+
+    def test_populate_sets_ai_fields(
+        self, mock_settings_view: MockSettingsDialogView
+    ) -> None:
+        """show() で AI 設定フィールドが View に populate されること。"""
+        config = AppConfig(
+            gemini_model_name="gemini-custom",
+            selected_models=["gemini-custom", "gemini-pro"],
+            output_language="English",
+            system_prompt_translation="Custom prompt {output_language}",
+        )
+        mock_settings_view._exec_return = True
+
+        presenter = SettingsPresenter(mock_settings_view, config)
+        with patch(
+            "pdf_epub_reader.presenters.settings_presenter.save_config"
+        ):
+            presenter.show()
+
+        assert mock_settings_view.get_calls("set_gemini_model_name")[0] == (
+            "gemini-custom",
+        )
+        assert mock_settings_view.get_calls("set_selected_models")[0] == (
+            ["gemini-custom", "gemini-pro"],
+        )
+        assert mock_settings_view.get_calls("set_output_language")[0] == (
+            "English",
+        )
+        assert mock_settings_view.get_calls(
+            "set_system_prompt_translation"
+        )[0] == ("Custom prompt {output_language}",)
+
+    def test_read_config_includes_ai_fields(
+        self, mock_settings_view: MockSettingsDialogView
+    ) -> None:
+        """OK 時に AI 設定が AppConfig に読み取られること。"""
+        config = AppConfig()
+        mock_settings_view._exec_return = True
+        mock_settings_view._values["gemini_model_name"] = "gemini-2.0-flash"
+        mock_settings_view._values["selected_models"] = [
+            "gemini-2.0-flash",
+            "gemini-pro",
+        ]
+        mock_settings_view._values["output_language"] = "English"
+        mock_settings_view._values["system_prompt_translation"] = "Translate to {output_language}"
+
+        presenter = SettingsPresenter(mock_settings_view, config)
+        with patch(
+            "pdf_epub_reader.presenters.settings_presenter.save_config"
+        ):
+            result = presenter.show()
+
+        assert result is not None
+        # populate で上書きされるため、初期値になる
+        assert result.gemini_model_name == DEFAULT_GEMINI_MODEL
+        assert result.output_language == DEFAULT_OUTPUT_LANGUAGE
+
+    def test_reset_sets_ai_default_values(
+        self, mock_settings_view: MockSettingsDialogView
+    ) -> None:
+        """リセット時に AI フィールドもデフォルト値になること。"""
+        config = AppConfig(
+            gemini_model_name="non-default",
+            output_language="French",
+        )
+        presenter = SettingsPresenter(mock_settings_view, config)
+        mock_settings_view.calls.clear()
+
+        mock_settings_view.simulate_reset_defaults()
+
+        defaults = AppConfig()
+        assert mock_settings_view.get_calls("set_gemini_model_name")[
+            -1
+        ] == (defaults.gemini_model_name,)
+        assert mock_settings_view.get_calls("set_output_language")[
+            -1
+        ] == (defaults.output_language,)
+        assert mock_settings_view.get_calls(
+            "set_system_prompt_translation"
+        )[-1] == (defaults.system_prompt_translation,)
+
+
+class TestFetchModels:
+    """Phase 6: Fetch Models ボタンの非同期処理を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_fetch_models_populates_view(
+        self, mock_settings_view: MockSettingsDialogView
+    ) -> None:
+        """モデル一覧が View に設定されること。"""
+        mock_ai_model = MockAIModel()
+        presenter = SettingsPresenter(
+            mock_settings_view, AppConfig(), ai_model=mock_ai_model
+        )
+
+        await presenter._fetch_models_async()
+
+        selection_calls = mock_settings_view.get_calls(
+            "set_available_models_for_selection"
+        )
+        assert len(selection_calls) == 1
+        models = selection_calls[0][0]
+        assert len(models) == 1
+        assert models[0] == ("models/gemini-test", "Gemini Test")
+
+    @pytest.mark.asyncio
+    async def test_fetch_models_shows_loading(
+        self, mock_settings_view: MockSettingsDialogView
+    ) -> None:
+        """Fetch 中にローディング表示が制御されること。"""
+        mock_ai_model = MockAIModel()
+        presenter = SettingsPresenter(
+            mock_settings_view, AppConfig(), ai_model=mock_ai_model
+        )
+
+        await presenter._fetch_models_async()
+
+        loading_calls = mock_settings_view.get_calls("set_fetch_models_loading")
+        assert loading_calls[0] == (True,)
+        assert loading_calls[-1] == (False,)
+
+    def test_fetch_without_ai_model_shows_error(
+        self, mock_settings_view: MockSettingsDialogView
+    ) -> None:
+        """ai_model が None のとき、エラーが表示されること。"""
+        presenter = SettingsPresenter(
+            mock_settings_view, AppConfig(), ai_model=None
+        )
+
+        presenter._on_fetch_models()
+
+        error_calls = mock_settings_view.get_calls("show_fetch_models_error")
+        assert len(error_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_fetch_models_error_shows_in_view(
+        self, mock_settings_view: MockSettingsDialogView
+    ) -> None:
+        """API エラー時にエラーメッセージが View に表示されること。"""
+        from pdf_epub_reader.utils.exceptions import AIAPIError
+
+        mock_ai_model = MockAIModel()
+        mock_ai_model.list_available_models = AsyncMock(
+            side_effect=AIAPIError("Network error", status_code=500)
+        )
+        presenter = SettingsPresenter(
+            mock_settings_view, AppConfig(), ai_model=mock_ai_model
+        )
+
+        await presenter._fetch_models_async()
+
+        error_calls = mock_settings_view.get_calls("show_fetch_models_error")
+        assert len(error_calls) == 1
+        assert "Network error" in error_calls[0][0]

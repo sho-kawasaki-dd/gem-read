@@ -23,6 +23,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QProgressBar,
@@ -157,9 +158,18 @@ class SidePanelView(QWidget):
         self._on_custom_prompt_submitted: Callable[[str], None] | None = None
         self._on_tab_changed: Callable[[str], None] | None = None
         self._on_force_image_toggled: Callable[[bool], None] | None = None
+        self._on_model_changed: Callable[[str], None] | None = None
 
         # --- ウィジェット構築 ---
         layout = QVBoxLayout(self)
+
+        # Phase 6: モデル選択プルダウン
+        model_row = QHBoxLayout()
+        model_row.addWidget(QLabel("モデル:"))
+        self._model_combo = QComboBox()
+        self._model_combo.currentTextChanged.connect(self._fire_model_changed)
+        model_row.addWidget(self._model_combo, 1)
+        layout.addLayout(model_row)
 
         # 選択テキスト表示
         layout.addWidget(QLabel("選択テキスト:"))
@@ -338,6 +348,32 @@ class SidePanelView(QWidget):
         """「画像としても送信」チェックボックスの切り替えコールバックを登録する。"""
         self._on_force_image_toggled = cb
 
+    # --- Phase 6: モデル選択 ---
+
+    def set_available_models(self, model_names: list[str]) -> None:
+        """モデル選択プルダウンの選択肢を設定する。"""
+        current = self._model_combo.currentText()
+        self._model_combo.blockSignals(True)
+        self._model_combo.clear()
+        self._model_combo.addItems(model_names)
+        # 元の選択を復元できる場合は復元
+        idx = self._model_combo.findText(current)
+        if idx >= 0:
+            self._model_combo.setCurrentIndex(idx)
+        self._model_combo.blockSignals(False)
+
+    def set_selected_model(self, model_name: str) -> None:
+        """モデル選択プルダウンの現在値を設定する。"""
+        idx = self._model_combo.findText(model_name)
+        if idx >= 0:
+            self._model_combo.setCurrentIndex(idx)
+
+    def set_on_model_changed(
+        self, cb: Callable[[str], None]
+    ) -> None:
+        """モデル選択プルダウンの変更時コールバックを登録する。"""
+        self._on_model_changed = cb
+
     # --- Internal event handlers ---
 
     def _fire_translate(self, include_explanation: bool) -> None:
@@ -356,6 +392,11 @@ class SidePanelView(QWidget):
         """チェックボックスの切り替えをコールバックに変換する。"""
         if self._on_force_image_toggled:
             self._on_force_image_toggled(checked)
+
+    def _fire_model_changed(self, model_name: str) -> None:
+        """モデルプルダウンの変更をコールバックに変換する。"""
+        if self._on_model_changed and model_name:
+            self._on_model_changed(model_name)
 
     def _handle_tab_changed(self, index: int) -> None:
         """QTabWidget のタブ切り替えシグナルをコールバックに変換する。"""

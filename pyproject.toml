@@ -7,7 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "PySide6>=6.7",
     "PyMuPDF>=1.24",
-    "google-generativeai>=0.8",
+    "google-genai>=1.0",
     "qasync>=0.27",
     "python-dotenv>=1.0",
     "Pillow>=10.0",

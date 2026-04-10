@@ -39,6 +39,7 @@ class AnalysisRequest:
     include_explanation: bool = False
     custom_prompt: str | None = None
     images: list[bytes] = field(default_factory=list)
+    model_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,18 @@ class AnalysisResult:
     translated_text: str | None = None
     explanation: str | None = None
     raw_response: str = ""
+
+
+@dataclass(frozen=True)
+class ModelInfo:
+    """利用可能な AI モデルの情報。
+
+    設定ダイアログでモデル一覧を表示する際や、
+    サイドパネルのプルダウンで選択肢を作る際に使用する。
+    """
+
+    model_id: str
+    display_name: str
 
 
 @dataclass(frozen=True)

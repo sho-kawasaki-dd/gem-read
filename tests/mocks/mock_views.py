@@ -173,6 +173,7 @@ class MockSidePanelView:
         self._on_custom_prompt_submitted: Callable[[str], None] | None = None
         self._on_tab_changed: Callable[[str], None] | None = None
         self._on_force_image_toggled: Callable[[bool], None] | None = None
+        self._on_model_changed: Callable[[str], None] | None = None
 
     # --- Display commands ---
 
@@ -214,6 +215,17 @@ class MockSidePanelView:
     ) -> None:
         self._on_force_image_toggled = cb
 
+    def set_available_models(self, model_names: list[str]) -> None:
+        self.calls.append(("set_available_models", (model_names,)))
+
+    def set_selected_model(self, model_name: str) -> None:
+        self.calls.append(("set_selected_model", (model_name,)))
+
+    def set_on_model_changed(
+        self, cb: Callable[[str], None]
+    ) -> None:
+        self._on_model_changed = cb
+
     # --- Simulation helpers ---
 
     def simulate_translate_requested(self, include_explanation: bool) -> None:
@@ -227,6 +239,10 @@ class MockSidePanelView:
     def simulate_force_image_toggled(self, checked: bool) -> None:
         if self._on_force_image_toggled:
             self._on_force_image_toggled(checked)
+
+    def simulate_model_changed(self, model_name: str) -> None:
+        if self._on_model_changed:
+            self._on_model_changed(model_name)
 
     # --- Helpers ---
 
@@ -252,10 +268,15 @@ class MockSettingsDialogView:
             "auto_detect_embedded_images": True,
             "auto_detect_math_fonts": True,
             "high_quality_downscale": True,
+            "gemini_model_name": "gemini-2.5-flash-lite-preview-06-17",
+            "selected_models": ["gemini-2.5-flash-lite-preview-06-17"],
+            "output_language": "日本語",
+            "system_prompt_translation": "",
         }
         # exec_dialog が返す固定値。True = OK、False = Cancel。
         self._exec_return: bool = True
         self._on_reset_defaults: Callable[[], None] | None = None
+        self._on_fetch_models_requested: Callable[[], None] | None = None
 
     # --- Getters ---
 
@@ -315,6 +336,52 @@ class MockSettingsDialogView:
     def set_on_reset_defaults(self, cb: Callable[[], None]) -> None:
         self._on_reset_defaults = cb
 
+    def set_on_fetch_models_requested(self, cb: Callable[[], None]) -> None:
+        self._on_fetch_models_requested = cb
+
+    # --- Phase 6: AI Models タブ Getters ---
+
+    def get_gemini_model_name(self) -> str:
+        return self._values["gemini_model_name"]
+
+    def get_selected_models(self) -> list[str]:
+        return self._values["selected_models"]
+
+    def get_output_language(self) -> str:
+        return self._values["output_language"]
+
+    def get_system_prompt_translation(self) -> str:
+        return self._values["system_prompt_translation"]
+
+    # --- Phase 6: AI Models タブ Setters ---
+
+    def set_gemini_model_name(self, value: str) -> None:
+        self.calls.append(("set_gemini_model_name", (value,)))
+        self._values["gemini_model_name"] = value
+
+    def set_selected_models(self, value: list[str]) -> None:
+        self.calls.append(("set_selected_models", (value,)))
+        self._values["selected_models"] = value
+
+    def set_output_language(self, value: str) -> None:
+        self.calls.append(("set_output_language", (value,)))
+        self._values["output_language"] = value
+
+    def set_system_prompt_translation(self, value: str) -> None:
+        self.calls.append(("set_system_prompt_translation", (value,)))
+        self._values["system_prompt_translation"] = value
+
+    def set_available_models_for_selection(
+        self, models: list[tuple[str, str]]
+    ) -> None:
+        self.calls.append(("set_available_models_for_selection", (models,)))
+
+    def set_fetch_models_loading(self, loading: bool) -> None:
+        self.calls.append(("set_fetch_models_loading", (loading,)))
+
+    def show_fetch_models_error(self, message: str) -> None:
+        self.calls.append(("show_fetch_models_error", (message,)))
+
     # --- Lifecycle ---
 
     def exec_dialog(self) -> bool:
@@ -326,6 +393,10 @@ class MockSettingsDialogView:
     def simulate_reset_defaults(self) -> None:
         if self._on_reset_defaults:
             self._on_reset_defaults()
+
+    def simulate_fetch_models_requested(self) -> None:
+        if self._on_fetch_models_requested:
+            self._on_fetch_models_requested()
 
     # --- Helpers ---
 
