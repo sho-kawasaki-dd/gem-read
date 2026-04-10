@@ -75,6 +75,9 @@ class MockMainView:
     def show_error_dialog(self, title: str, message: str) -> None:
         self.calls.append(("show_error_dialog", (title, message)))
 
+    def set_high_quality_downscale(self, enabled: bool) -> None:
+        self.calls.append(("set_high_quality_downscale", (enabled,)))
+
     def get_device_pixel_ratio(self) -> float:
         """テスト環境では標準 DPI モニター相当の 1.0 を返す。"""
         return 1.0
@@ -248,6 +251,7 @@ class MockSettingsDialogView:
             "page_cache_max_size": 50,
             "auto_detect_embedded_images": True,
             "auto_detect_math_fonts": True,
+            "high_quality_downscale": True,
         }
         # exec_dialog が返す固定値。True = OK、False = Cancel。
         self._exec_return: bool = True
@@ -272,6 +276,9 @@ class MockSettingsDialogView:
 
     def get_auto_detect_math_fonts(self) -> bool:
         return self._values["auto_detect_math_fonts"]
+
+    def get_high_quality_downscale(self) -> bool:
+        return self._values["high_quality_downscale"]
 
     # --- Setters ---
 
@@ -298,6 +305,10 @@ class MockSettingsDialogView:
     def set_auto_detect_math_fonts(self, value: bool) -> None:
         self.calls.append(("set_auto_detect_math_fonts", (value,)))
         self._values["auto_detect_math_fonts"] = value
+
+    def set_high_quality_downscale(self, value: bool) -> None:
+        self.calls.append(("set_high_quality_downscale", (value,)))
+        self._values["high_quality_downscale"] = value
 
     # --- Callback registration ---
 

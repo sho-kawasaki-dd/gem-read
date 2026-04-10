@@ -63,6 +63,7 @@ class SettingsPresenter:
             config.auto_detect_embedded_images
         )
         self._view.set_auto_detect_math_fonts(config.auto_detect_math_fonts)
+        self._view.set_high_quality_downscale(config.high_quality_downscale)
 
     def _read_config_from_view(self) -> AppConfig:
         """ダイアログの現在値から AppConfig を生成する。
@@ -77,6 +78,7 @@ class SettingsPresenter:
             page_cache_max_size=self._view.get_page_cache_max_size(),
             auto_detect_embedded_images=self._view.get_auto_detect_embedded_images(),
             auto_detect_math_fonts=self._view.get_auto_detect_math_fonts(),
+            high_quality_downscale=self._view.get_high_quality_downscale(),
             # ダイアログ対象外のフィールドは既存値を引き継ぐ
             window_width=self._config.window_width,
             window_height=self._config.window_height,

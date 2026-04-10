@@ -91,6 +91,10 @@ class AppConfig:
     # 最近のファイル
     recent_files: list[str] = field(default_factory=list)
 
+    # 縮小表示時に Pillow LANCZOS でリサイズして文字のジャギーを抑える。
+    # CPU 負荷が気になる場合はユーザーが OFF にできる。
+    high_quality_downscale: bool = True
+
     # Phase 4: 選択領域の自動検出設定
     # 矩形選択時に埋め込み画像やLaTeX数式フォントを自動検出し、
     # クロップ画像を Gemini Vision に送信するかを制御する。

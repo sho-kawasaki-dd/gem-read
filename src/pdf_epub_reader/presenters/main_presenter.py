@@ -254,8 +254,15 @@ class MainPresenter:
         それ以外の設定変更は DocumentModel への反映のみで済む。
         """
         old_dpi = self._config.default_dpi
+        old_hq = self._config.high_quality_downscale
         self._config = new_config
         self._document_model.update_config(new_config)
+
+        # 高品質縮小の ON/OFF が変わった場合は View に即反映する。
+        if old_hq != new_config.high_quality_downscale:
+            self._view.set_high_quality_downscale(
+                new_config.high_quality_downscale
+            )
 
         if old_dpi != new_config.default_dpi:
             self._base_dpi = new_config.default_dpi

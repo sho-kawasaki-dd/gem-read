@@ -80,6 +80,11 @@ class SettingsDialog(QDialog):
         self._cache_spin.setRange(PAGE_CACHE_MIN, PAGE_CACHE_MAX)
         rendering_layout.addRow("Page Cache Size:", self._cache_spin)
 
+        self._hq_downscale_check = QCheckBox(
+            "High-quality downscale (Lanczos)"
+        )
+        rendering_layout.addRow(self._hq_downscale_check)
+
         self._tabs.addTab(rendering_tab, "Rendering")
 
         # --- Detection タブ ---
@@ -147,6 +152,9 @@ class SettingsDialog(QDialog):
     def get_auto_detect_math_fonts(self) -> bool:
         return self._auto_math_check.isChecked()
 
+    def get_high_quality_downscale(self) -> bool:
+        return self._hq_downscale_check.isChecked()
+
     # =========================================================================
     # ISettingsDialogView — Setters
     # =========================================================================
@@ -170,6 +178,9 @@ class SettingsDialog(QDialog):
 
     def set_auto_detect_math_fonts(self, value: bool) -> None:
         self._auto_math_check.setChecked(value)
+
+    def set_high_quality_downscale(self, value: bool) -> None:
+        self._hq_downscale_check.setChecked(value)
 
     # =========================================================================
     # ISettingsDialogView — Callback registration
