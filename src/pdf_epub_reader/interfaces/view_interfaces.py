@@ -58,6 +58,15 @@ class IMainView(Protocol):
     def set_window_title(self, title: str) -> None: ...
     def show_status_message(self, message: str) -> None: ...
     def update_recent_files(self, files: list[str]) -> None: ...
+    def get_device_pixel_ratio(self) -> float:
+        """画面のデバイスピクセル比を返す。
+
+        Presenter がレンダリング DPI を算出するために使用する。
+        高 DPI モニター (Retina/4K) では 2.0、Windows 150% スケーリングでは 1.5 等。
+        標準モニターでは 1.0 を返す。
+        """
+        ...
+
     def show_error_dialog(self, title: str, message: str) -> None:
         """重大エラー発生時にモーダルダイアログを表示する。
 

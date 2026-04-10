@@ -228,7 +228,7 @@ class TestZoomFlow:
         mock_main_view: MockMainView,
         mock_document_model: MockDocumentModel,
     ) -> None:
-        """文書表示中にズームするとプレースホルダーが再配置されることを確認する。"""
+        """ズーム変更時は View のビュー変換のみ更新され、プレースホルダー再配置は行われないことを確認する。"""
 
         # 先に文書を開いておかないと get_document_info が空のままなので、
         # ズーム時の再描画条件を満たせない。
@@ -238,21 +238,17 @@ class TestZoomFlow:
 
         await main_presenter._do_zoom_changed(2.0)
 
-        # まず View の倍率表示が更新されること。
+        # View の倍率表示が更新されること。
         zoom_calls = mock_main_view.get_calls("set_zoom_level")
         assert len(zoom_calls) == 1
         assert zoom_calls[0] == (2.0,)
 
-        # ページサイズは DocumentInfo.page_sizes から DPI 換算するため、
-        # render_page はプレースホルダー配置時には呼ばれない。
+        # DPI 固定 + ビュー変換方式のため、プレースホルダー再配置は行われない。
+        assert len(mock_main_view.get_calls("display_pages")) == 0
+
+        # レンダリングも発生しない。
         assert len(mock_document_model.get_calls("render_page")) == 0
         assert len(mock_document_model.get_calls("render_page_range")) == 0
-
-        # display_pages にプレースホルダー（空 image_data）が渡されること。
-        display_calls = mock_main_view.get_calls("display_pages")
-        assert len(display_calls) == 1
-        for page in display_calls[0][0]:
-            assert page.image_data == b""
 
     @pytest.mark.asyncio
     async def test_zoom_without_document_is_noop(

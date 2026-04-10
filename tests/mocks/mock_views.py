@@ -71,6 +71,10 @@ class MockMainView:
     def show_error_dialog(self, title: str, message: str) -> None:
         self.calls.append(("show_error_dialog", (title, message)))
 
+    def get_device_pixel_ratio(self) -> float:
+        """テスト環境では標準 DPI モニター相当の 1.0 を返す。"""
+        return 1.0
+
     def show_password_dialog(self, file_path: str) -> str | None:
         """パスワード入力ダイアログの Mock。_password_dialog_return を返す。"""
         self.calls.append(("show_password_dialog", (file_path,)))

@@ -123,6 +123,30 @@ pdf-epub_reader_with_Gemini/
 - **Presenter:** 受け取った座標リストをModelに渡す（`await model.extract_text(...)`）。Modelから返ってきたデータ（bytes, dataclass等）をViewに「これを表示せよ」と命令する。
 - **Model:** PyMuPDFを操作し、指定されたページをレンダリング（CPU-bound → `run_in_executor`）。また、渡された座標から元のテキストデータを抽出する。
 
+#### **レンダリングDPIとズームのアーキテクチャ**
+
+ページ画像のレンダリング DPI とユーザーのズーム操作は **完全に分離** する。レンダリングは常に固定 DPI で行い、ズームは `QGraphicsView` のビュー変換（`setTransform` / `scale`）で制御する。これにより、ズームアウト時にも高解像度のレンダリング結果がスケール表示され、画質が維持される。
+
+**DPI の役割分担:**
+
+| 名前 | 値 | 用途 |
+| --- | --- | --- |
+| `_base_dpi` | `AppConfig.default_dpi`（デフォルト 144） | シーン座標計算（プレースホルダー配置）、PDF ポイント⇔ピクセル座標変換 |
+| `_render_dpi` | `_base_dpi × devicePixelRatio` | Model への実レンダリング指示。高 DPI モニターでの物理ピクセル活用 |
+
+- **Presenter** は初期化時に `IMainView.get_device_pixel_ratio()` で画面の DPR を取得し、`_render_dpi = int(_base_dpi * dpr)` を算出する。ズーム変更時に DPI は再計算 **しない**。
+- **View** はレンダリング済み `QPixmap` に `setDevicePixelRatio(dpr)` を設定する。Qt がシーン上の論理サイズ（`_base_dpi` 相当）に自動マッピングしつつ、物理ピクセルをフル活用する。
+- **ズーム変更時:** Presenter は `view.set_zoom_level(level)` を呼ぶのみ。View は `QGraphicsView.resetTransform()` + `scale(level, level)` でビュー変換を適用する。プレースホルダーの再配置やページの再レンダリングは不要。
+- **座標変換:** `QGraphicsView.mapToScene()` がビュー変換を自動考慮するため、ラバーバンド選択やハイライト描画の座標変換コードは `_base_dpi / 72.0` のスケール係数をそのまま使用できる。
+
+**高 DPI モニター対応の例:**
+
+| 環境 | DPR | `_base_dpi` | `_render_dpi` | A4 論理幅 (px) | A4 物理幅 (px) |
+| --- | --- | --- | --- | --- | --- |
+| 標準モニター (100%) | 1.0 | 144 | 144 | 1190 | 1190 |
+| Windows 150% スケーリング | 1.5 | 144 | 216 | 1190 | 1786 |
+| Retina / 4K (200%) | 2.0 | 144 | 288 | 1190 | 2381 |
+
 ### **4.2. AI解析機能とコンテキストキャッシュ**
 
 - **View:** 「解析実行」や「全文キャッシュ有効化」ボタンが押されたら、シグナルを発火するのみ。ローディングアニメーションの開始/停止はPresenterからのメソッド呼び出し（例: `view.show_loading()`）で行う。
@@ -192,10 +216,10 @@ Gemini の応答は Markdown 形式（見出し、箇条書き、コードブロ
 
 - **Phase 0: プロジェクト構成の作成:** ディレクトリ構成、`__init__.py`、`pyproject.toml` の依存定義、`.env.example`、`conftest.py` 等のスキャフォールドを作成する。
 - **Phase 1: インターフェースとDTOの定義:** `interfaces/view_interfaces.py` に Protocol を用いてViewが持つべきメソッドを定義する。`dto/` にデータ転送オブジェクトを定義する。その後、GUIを使わずにコンソール出力だけで動く「ダミーのView」とPresenterを作成し、ロジックの流れを確認する。
-- **Phase 2: ViewのPySide6実装:** Phase 1で定義したインターフェースを満たす `views/main_window.py` 等を実装し、`infrastructure/event_loop.py` でqasyncを設定、Presenterと結合する。
-- **Phase 3: Modelの実装 (PyMuPDF):** `document_model.py` を実装し、PDFの画像レンダリング（`run_in_executor`）と仮想スクロール向けのデータ供給、および座標からのテキスト抽出を完成させる。Phase 3 では `utils/config.py` に `AppConfig` dataclass と JSON 永続化を導入し、レンダリング設定（画像フォーマット PNG/JPEG 切替、JPEG 品質、キャッシュサイズ等）をコードレベルで変更可能にする。
+- **Phase 2: ViewのPySide6実装:** Phase 1で定義したインターフェースを満たす `views/main_window.py` 等を実装し、`infrastructure/event_loop.py` でqasyncを設定、Presenterと結合する。ズームは `QGraphicsView.setTransform()` によるビュー変換方式とし、DPI 再計算による再レンダリング方式は採用しない。`IMainView` に `get_device_pixel_ratio() -> float` を定義し、Presenter が高 DPI 環境でのレンダリング DPI を算出できるようにする。View は `QPixmap.setDevicePixelRatio()` を設定して物理ピクセルを活用する。
+- **Phase 3: Modelの実装 (PyMuPDF):** `document_model.py` を実装し、PDFの画像レンダリング（`run_in_executor`）と仮想スクロール向けのデータ供給、および座標からのテキスト抽出を完成させる。Phase 3 では `utils/config.py` に `AppConfig` dataclass と JSON 永続化を導入し、レンダリング設定（画像フォーマット PNG/JPEG 切替、JPEG 品質、キャッシュサイズ、デフォルト DPI 等）をコードレベルで変更可能にする。`AppConfig.default_dpi`（デフォルト 144）は Presenter が実際のレンダリング DPI 算出に使用する基準値であり、Model はこの値に `devicePixelRatio` を乗じた `_render_dpi` で描画する。
 - **Phase 4: マルチモーダル矩形選択の実装:** 矩形選択をテキスト専用からマルチモーダル（テキスト＋画像＋数式）に拡張する。DTO に `SelectionContent` を新設し、DocumentModel に `extract_content` メソッド（埋め込み画像検出・数式フォント検出・クロップ画像生成）を追加する。`AppConfig` に `auto_detect_embedded_images` / `auto_detect_math_fonts` トグル（デフォルト ON）を追加し JSON 永続化する。サイドパネルに「画像としても送信」チェックボックス（セッション内、デフォルト OFF）を追加し、AI 回答欄を `QWebEngineView` + `markdown` + KaTeX による Markdown・数式・化学式レンダリングに差し替える。`AnalysisRequest` に `images` フィールドを追加し、AIModel はその有無でテキストのみ / マルチモーダル API 呼び出しを切り替える。KaTeX ローカルバンドルは `src/pdf_epub_reader/resources/katex/` に `katex.min.css`、`katex.min.js`、`contrib/auto-render.min.js`、`contrib/mhchem.min.js`、`fonts/` を同梱する。追加依存: `PySide6-WebEngine`, `markdown`, KaTeX（ローカルバンドル）。詳細は `Phase4_Multimodal_Selection.md` を参照。
-- **Phase 5: 包括的設定ダイアログの実装:** Phase 3 で導入した `AppConfig` の値（Phase 4 で追加した自動検出トグルを含む）をユーザーが GUI 上で変更・保存できる設定ダイアログを実装する。対象設定項目は画像フォーマット（PNG/JPEG）、JPEG 品質、ページキャッシュ上限、デフォルト DPI、埋め込み画像自動検出、数式フォント自動検出等。MVP パターンに従い、設定ダイアログ用の View Protocol・Presenter・View 実装を追加する。設定変更は即座に `AppConfig` へ反映し、JSON ファイルへ永続化する。
+- **Phase 5: 包括的設定ダイアログの実装:** Phase 3 で導入した `AppConfig` の値（Phase 4 で追加した自動検出トグルを含む）をユーザーが GUI 上で変更・保存できる設定ダイアログを実装する。対象設定項目は画像フォーマット（PNG/JPEG）、JPEG 品質、ページキャッシュ上限、デフォルト DPI（基準 DPI。`devicePixelRatio` を乗じたレンダリング DPI は自動算出）、埋め込み画像自動検出、数式フォント自動検出等。MVP パターンに従い、設定ダイアログ用の View Protocol・Presenter・View 実装を追加する。設定変更は即座に `AppConfig` へ反映し、JSON ファイルへ永続化する。デフォルト DPI の変更はプレースホルダーの再配置とページの再レンダリングを伴う。
 - **Phase 6: Modelの実装 (Gemini API):** `ai_model.py` を `async def` で実装し、Gemini APIへの通常リクエスト（ネイティブ `await`）と結果の返却を実現する。`AnalysisRequest.images` が存在する場合はマルチモーダル入力として送信する。
 - **Phase 7: Context Cachingの実装:** 全文抽出とキャッシュ作成機能、最小トークン制限の回避ロジックをModelに組み込み、Presenter経由でView（有効期限やステータス）を更新する。
 

@@ -15,7 +15,7 @@ from pdf_epub_reader.dto import PageData, RectCoords
 from pdf_epub_reader.interfaces.model_interfaces import IDocumentModel
 from pdf_epub_reader.interfaces.view_interfaces import IMainView
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
-from pdf_epub_reader.utils.config import DEFAULT_DPI, AppConfig
+from pdf_epub_reader.utils.config import AppConfig
 from pdf_epub_reader.utils.exceptions import (
     DocumentOpenError,
     DocumentPasswordRequired,
@@ -52,7 +52,9 @@ class MainPresenter:
         self._document_model = document_model
         self._panel_presenter = panel_presenter
         self._config = config or AppConfig()
-        self._current_dpi: int = DEFAULT_DPI
+        self._base_dpi: int = self._config.default_dpi
+        dpr = self._view.get_device_pixel_ratio()
+        self._render_dpi: int = int(self._base_dpi * dpr)
         self._zoom_level: float = 1.0
 
         # View は Presenter を知らないため、ここでイベントの受け口を登録する。
@@ -104,9 +106,9 @@ class MainPresenter:
 
         self._view.set_window_title(doc_info.title or doc_info.file_path)
 
-        # 各ページの PDF ポイントサイズを DPI 換算してプレースホルダーを配置する。
+        # 各ページの PDF ポイントサイズを基準 DPI で換算してプレースホルダーを配置する。
         # 実際の画像は View がビューポートに基づいて後から要求する。
-        scale = self._current_dpi / 72.0
+        scale = self._base_dpi / 72.0
         placeholders = [
             PageData(
                 page_number=i,
@@ -163,7 +165,7 @@ class MainPresenter:
         content = await self._document_model.extract_content(
             page_number,
             rect,
-            self._current_dpi,
+            self._render_dpi,
             force_include_image=self._panel_presenter.force_include_image,
             auto_detect_embedded_images=self._config.auto_detect_embedded_images,
             auto_detect_math_fonts=self._config.auto_detect_math_fonts,
@@ -184,36 +186,13 @@ class MainPresenter:
         asyncio.ensure_future(self._do_zoom_changed(level))
 
     async def _do_zoom_changed(self, level: float) -> None:
-        """ズーム率変更に追従してプレースホルダーを再配置する。
+        """ズーム率変更を View のビュー変換に反映する。
 
-        ズーム率そのものは View に通知するが、実際に何 dpi で再レンダリングするかは
-        Presenter が判断する。再配置後は View のビューポート監視が遅延読み込みを行う。
+        DPI は固定のまま、QGraphicsView の setTransform で拡縮する。
+        プレースホルダーの再配置やページの再レンダリングは不要。
         """
         self._zoom_level = level
         self._view.set_zoom_level(level)
-
-        # 文書がまだ開かれていない状態では再レンダリングできないため、
-        # 何もせず戻る。例外にしないのは UI 操作の自然さを優先するため。
-        doc_info = self._document_model.get_document_info()
-        if doc_info is None:
-            return
-
-        # 基準 DPI にズーム倍率を掛けて「今回必要な見た目の解像度」を計算する。
-        effective_dpi = int(DEFAULT_DPI * level)
-        self._current_dpi = effective_dpi
-
-        # ズーム変更後も各ページの実サイズでプレースホルダーを再配置し、View に遅延読み込みを任せる。
-        scale = effective_dpi / 72.0
-        placeholders = [
-            PageData(
-                page_number=i,
-                image_data=b"",
-                width=int(pw * scale),
-                height=int(ph * scale),
-            )
-            for i, (pw, ph) in enumerate(doc_info.page_sizes)
-        ]
-        self._view.display_pages(placeholders)
 
     def _on_cache_management_requested(self) -> None:
         """キャッシュ管理 UI を開くための拡張ポイント。
@@ -236,7 +215,7 @@ class MainPresenter:
         pages: list[PageData] = []
         for num in page_numbers:
             page = await self._document_model.render_page(
-                num, self._current_dpi
+                num, self._render_dpi
             )
             pages.append(page)
         self._view.update_pages(pages)

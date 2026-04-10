@@ -201,15 +201,19 @@ class MainWindow(QMainWindow):
         self._doc_view.scroll_to(page_number)
 
     def set_zoom_level(self, level: float) -> None:
-        """ズームスピンボックスの値を更新する（シグナルループ防止）。"""
+        """ズームスピンボックスの値を更新し、ビュー変換で拡縮する。
+
+        DPI は固定のまま、QGraphicsView の setTransform で拡縮する。
+        これにより再レンダリングなしでズームが即座に反映される。
+        """
         self._zoom_spinbox.blockSignals(True)
         self._zoom_spinbox.setValue(int(level * 100))
         self._zoom_spinbox.blockSignals(False)
-        # _DocumentGraphicsView の内部状態を同期する。
-        # Presenter がズーム変更後にこのメソッドを呼ぶが、_doc_view 側の
-        # _current_dpi / _zoom_level が更新されないと座標変換がずれる。
-        self._doc_view._current_dpi = int(DEFAULT_DPI * level)
+        # _DocumentGraphicsView のズーム状態を同期する。
+        # DPI は固定のため _current_dpi は変更しない。
         self._doc_view._zoom_level = level
+        self._doc_view.resetTransform()
+        self._doc_view.scale(level, level)
 
     def show_selection_highlight(
         self, page_number: int, rect: RectCoords
@@ -233,6 +237,14 @@ class MainWindow(QMainWindow):
         """最近のファイルリストを差し替えてメニューを再構築する。"""
         self._settings.setValue("recent_files", files[:MAX_RECENT_FILES])
         self._rebuild_recent_menu()
+
+    def get_device_pixel_ratio(self) -> float:
+        """画面のデバイスピクセル比を返す。
+
+        Presenter がレンダリング DPI (_render_dpi = _base_dpi × dpr) を
+        算出するために使用する。OS のスケーリング設定を Qt が反映した値を返す。
+        """
+        return self.devicePixelRatio()
 
     def show_error_dialog(self, title: str, message: str) -> None:
         """重大エラー時にモーダルダイアログを表示する。"""
@@ -571,6 +583,10 @@ class _DocumentGraphicsView(QGraphicsView):
                 # 画像データが不正な場合はスキップする。
                 continue
 
+            # 高 DPI モニター対応: render_dpi で描画された画像を
+            # base_dpi 相当の論理サイズで表示するため dpr を設定する。
+            pixmap.setDevicePixelRatio(self.devicePixelRatio())
+
             # 既存アイテムをシーンから除去する。
             old_item = self._page_items[idx]
             self._scene.removeItem(old_item)
@@ -886,12 +902,10 @@ class _DocumentGraphicsView(QGraphicsView):
                 top_page = i
                 break
 
-        # 現在のズーム率でのページ高さから zoom=1.0 時のページ高さを逆算し、
-        # ビューポートに収まるズーム率を求める。
+        # シーン上のページ高さは DPI 固定で不変なので直接割るだけでよい。
         _, page_height = self._page_sizes[top_page]
-        base_height = page_height / self._zoom_level  # zoom=1.0 換算
         viewport_height = self.viewport().height()
-        new_zoom = viewport_height / base_height
+        new_zoom = viewport_height / page_height
 
         # ZOOM_MIN 〜 ZOOM_MAX でクランプする。
         new_zoom = max(ZOOM_MIN, min(new_zoom, ZOOM_MAX))
