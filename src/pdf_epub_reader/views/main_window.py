@@ -19,6 +19,7 @@ from PySide6.QtGui import (
     QDragEnterEvent,
     QDropEvent,
     QKeySequence,
+    QPainter,
     QPen,
     QPixmap,
     QShortcut,
@@ -517,6 +518,8 @@ class _DocumentGraphicsView(QGraphicsView):
         self.setAlignment(
             Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
         )
+        # 縮小時のジャギーを防ぐためバイリニア補間を有効にする。
+        self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
         # --- 内部状態 ---
         # ページごとの表示アイテム（プレースホルダーまたは画像）
