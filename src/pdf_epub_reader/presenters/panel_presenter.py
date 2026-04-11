@@ -10,12 +10,16 @@ from __future__ import annotations
 import asyncio
 
 from collections.abc import Callable
+from dataclasses import replace
 
 from pdf_epub_reader.dto import (
     AnalysisMode,
     AnalysisRequest,
     CacheStatus,
+    RectCoords,
     SelectionContent,
+    SelectionSlot,
+    SelectionSnapshot,
 )
 from pdf_epub_reader.interfaces.model_interfaces import IAIModel
 from pdf_epub_reader.interfaces.view_interfaces import ISidePanelView
@@ -29,21 +33,23 @@ from pdf_epub_reader.utils.exceptions import (
 class PanelPresenter:
     """ISidePanelView と IAIModel の調停役。
 
-    この Presenter は「どのテキストを解析対象にするか」を内部状態として保持する。
-    Phase 4 でマルチモーダル対応が追加され、選択コンテンツにクロップ画像が
-    含まれる場合は AI に画像も送信する。
+    この Presenter は「どの選択スロット集合を解析対象にするか」を内部状態として保持する。
+    Phase 5 では単一選択の内部状態をやめ、複数選択スナップショットから
+    AI 入力テキストと画像配列を組み立てる。
     """
 
     def __init__(self, view: ISidePanelView, ai_model: IAIModel) -> None:
         """依存オブジェクトを受け取り、サイドパネルのイベントを購読する。"""
         self._view = view
         self._ai_model = ai_model
-        self._selected_text: str = ""
-        # Phase 4: マルチモーダル対応の内部状態
-        self._selected_content: SelectionContent | None = None
+        self._selection_snapshot = SelectionSnapshot()
         self._force_include_image: bool = False
         # Phase 6: リクエスト単位のモデル選択
         self._current_model: str | None = None
+        self._on_selection_delete_handler: (
+            Callable[[str], None] | None
+        ) = None
+        self._on_clear_selections_handler: Callable[[], None] | None = None
         # Phase 7: キャッシュ状態と MainPresenter 向けコールバック
         self._cache_status = CacheStatus()
         self._on_cache_create_handler: Callable[[], None] | None = None
@@ -56,6 +62,12 @@ class PanelPresenter:
         self._view.set_on_translate_requested(self._on_translate_requested)
         self._view.set_on_custom_prompt_submitted(self._on_custom_prompt_submitted)
         self._view.set_on_force_image_toggled(self._on_force_image_toggled)
+        self._view.set_on_selection_delete_requested(
+            self._fire_selection_delete_requested
+        )
+        self._view.set_on_clear_selections_requested(
+            self._fire_clear_selections_requested
+        )
         self._view.set_on_model_changed(self._on_model_changed)
         self._view.set_on_cache_create_requested(self._fire_cache_create)
         self._view.set_on_cache_invalidate_requested(
@@ -77,23 +89,55 @@ class PanelPresenter:
     def set_selected_text(self, text: str) -> None:
         """現在の解析対象テキストを更新し、View にも反映する。
 
-        後方互換のために残す。新規フローでは set_selected_content を使用する。
+        後方互換のために残す。新規フローでは set_selection_snapshot を使用する。
         """
-        self._selected_text = text
-        self._selected_content = None
-        self._view.set_selected_text(text)
+        self.set_selection_snapshot(
+            SelectionSnapshot(
+                slots=(
+                    SelectionSlot(
+                        selection_id="legacy-selection",
+                        display_number=1,
+                        page_number=0,
+                        rect=RectCoords(0.0, 0.0, 0.0, 0.0),
+                        read_state="ready",
+                        extracted_text=text,
+                    ),
+                ),
+            )
+        )
 
     def set_selected_content(self, content: SelectionContent) -> None:
         """マルチモーダルコンテンツを受け取り、View にプレビューを反映する。
 
-        MainPresenter から呼ばれる。テキスト＋サムネイルを View に渡す。
-        内部状態も更新し、後続の analyze 時に画像を添付できるようにする。
+        後方互換のために残す。新規フローでは set_selection_snapshot を使用する。
         """
-        self._selected_content = content
-        self._selected_text = content.extracted_text
-        self._view.set_selected_content_preview(
-            content.extracted_text,
-            content.cropped_image,
+        self.set_selection_snapshot(
+            SelectionSnapshot(
+                slots=(
+                    SelectionSlot(
+                        selection_id="legacy-selection",
+                        display_number=1,
+                        page_number=content.page_number,
+                        rect=content.rect,
+                        read_state="ready",
+                        extracted_text=content.extracted_text,
+                        has_thumbnail=content.cropped_image is not None,
+                        content=content,
+                    ),
+                )
+            )
+        )
+
+    def set_selection_snapshot(self, snapshot: SelectionSnapshot) -> None:
+        """複数選択スナップショットを View に反映する。
+
+        Phase 3 では主に MainPresenter からの先行スロット反映に使う。
+        AI 解析入力の組み立ては Phase 5 でこの状態に寄せる。
+        """
+        self._selection_snapshot = self._normalized_snapshot(snapshot)
+        self._view.set_selection_snapshot(self._selection_snapshot)
+        self._view.set_combined_selection_preview(
+            self._build_analysis_text()
         )
 
     def set_available_models(self, model_names: list[str]) -> None:
@@ -120,6 +164,18 @@ class PanelPresenter:
     ) -> None:
         """MainPresenter が登録するキャッシュ作成ハンドラ。"""
         self._on_cache_create_handler = cb
+
+    def set_on_selection_delete_handler(
+        self, cb: Callable[[str], None]
+    ) -> None:
+        """MainPresenter が登録する選択削除ハンドラ。"""
+        self._on_selection_delete_handler = cb
+
+    def set_on_clear_selections_handler(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """MainPresenter が登録する全選択クリアハンドラ。"""
+        self._on_clear_selections_handler = cb
 
     def set_on_cache_invalidate_handler(
         self, cb: Callable[[], None]
@@ -208,7 +264,8 @@ class PanelPresenter:
 
     async def _do_translate(self, include_explanation: bool) -> None:
         """翻訳モードで AI 解析を実行し、結果を View に返す。"""
-        if not self._selected_text:
+        analysis_text = self._build_analysis_text()
+        if not analysis_text:
             return
         if not self._current_model:
             self._view.update_result_text(self._MODEL_UNSET_MSG)
@@ -216,7 +273,7 @@ class PanelPresenter:
         self._view.show_loading(True)
         try:
             request = AnalysisRequest(
-                text=self._selected_text,
+                text=analysis_text,
                 mode=AnalysisMode.TRANSLATION,
                 include_explanation=include_explanation,
                 images=self._collect_images(),
@@ -250,7 +307,8 @@ class PanelPresenter:
 
     async def _do_custom_prompt(self, prompt: str) -> None:
         """カスタムプロンプトモードで AI 解析を実行する。"""
-        if not self._selected_text:
+        analysis_text = self._build_analysis_text()
+        if not analysis_text:
             return
         if not self._current_model:
             self._view.update_result_text(self._MODEL_UNSET_MSG)
@@ -258,7 +316,7 @@ class PanelPresenter:
         self._view.show_loading(True)
         try:
             request = AnalysisRequest(
-                text=self._selected_text,
+                text=analysis_text,
                 mode=AnalysisMode.CUSTOM_PROMPT,
                 custom_prompt=prompt,
                 images=self._collect_images(),
@@ -295,15 +353,49 @@ class PanelPresenter:
         if self._on_cache_invalidate_handler:
             self._on_cache_invalidate_handler()
 
+    def _fire_selection_delete_requested(self, selection_id: str) -> None:
+        """View の個別削除要求を MainPresenter のハンドラに中継する。"""
+        if self._on_selection_delete_handler:
+            self._on_selection_delete_handler(selection_id)
+
+    def _fire_clear_selections_requested(self) -> None:
+        """View の全消去要求を MainPresenter のハンドラに中継する。"""
+        if self._on_clear_selections_handler:
+            self._on_clear_selections_handler()
+
     # --- Private helpers ---
 
-    def _collect_images(self) -> list[bytes]:
-        """現在の選択コンテンツからクロップ画像のリストを構築する。
+    def _normalized_snapshot(
+        self, snapshot: SelectionSnapshot
+    ) -> SelectionSnapshot:
+        """表示番号を現行順に詰め直したスナップショットを返す。"""
+        return SelectionSnapshot(
+            slots=tuple(
+                replace(slot, display_number=index)
+                for index, slot in enumerate(snapshot.slots, start=1)
+            )
+        )
 
-        AnalysisRequest.images に渡すための画像バイト列を収集する。
-        クロップ画像がある場合のみリストに含める。
-        """
+    def _build_analysis_text(self) -> str:
+        """AI に送る本文を選択順・明示的区切り付きで構築する。"""
+        parts: list[str] = []
+        for slot in self._selection_snapshot.slots:
+            if slot.read_state != "ready":
+                continue
+            text = slot.extracted_text.strip()
+            if not text:
+                continue
+            parts.append(
+                f"選択 {slot.display_number} / ページ {slot.page_number + 1}\n\n{text}"
+            )
+        return "\n\n".join(parts)
+
+    def _collect_images(self) -> list[bytes]:
+        """現在の選択スナップショットから cropped_image を順序通り収集する。"""
         images: list[bytes] = []
-        if self._selected_content and self._selected_content.cropped_image:
-            images.append(self._selected_content.cropped_image)
+        for slot in self._selection_snapshot.slots:
+            if slot.read_state != "ready" or slot.content is None:
+                continue
+            if slot.content.cropped_image:
+                images.append(slot.content.cropped_image)
         return images

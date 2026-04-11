@@ -20,6 +20,7 @@ from PySide6.QtGui import (
     QColor,
     QDragEnterEvent,
     QDropEvent,
+    QFont,
     QKeySequence,
     QPainter,
     QPen,
@@ -28,9 +29,11 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QFileDialog,
+    QGraphicsItem,
     QGraphicsPixmapItem,
     QGraphicsRectItem,
     QGraphicsScene,
+    QGraphicsTextItem,
     QGraphicsView,
     QHBoxLayout,
     QInputDialog,
@@ -47,7 +50,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from pdf_epub_reader.dto import PageData, RectCoords, ToCEntry
+from pdf_epub_reader.dto import (
+    PageData,
+    RectCoords,
+    SelectionSlot,
+    SelectionSnapshot,
+    ToCEntry,
+)
 from pdf_epub_reader.utils.config import (
     BOOKMARK_PANEL_WIDTH,
     DEFAULT_DPI,
@@ -84,6 +93,10 @@ class MainWindow(QMainWindow):
         self._on_file_open_requested: Callable[[], None] | None = None
         self._on_file_dropped: Callable[[str], None] | None = None
         self._on_recent_file_selected: Callable[[str], None] | None = None
+        self._on_selection_requested: (
+            Callable[[int, RectCoords, bool], None] | None
+        ) = None
+        self._on_selection_clear_requested: Callable[[], None] | None = None
         self._on_zoom_changed: Callable[[float], None] | None = None
         self._on_bookmark_selected: Callable[[int], None] | None = None
         self._on_cache_management_requested: Callable[[], None] | None = None
@@ -153,6 +166,13 @@ class MainWindow(QMainWindow):
         fit_height_shortcut = QShortcut(QKeySequence("Ctrl+H"), self)
         fit_height_shortcut.activated.connect(
             self._doc_view.fit_to_page_height
+        )
+
+        self._clear_selection_shortcut = QShortcut(
+            QKeySequence("Esc"), self
+        )
+        self._clear_selection_shortcut.activated.connect(
+            self._handle_selection_clear_requested
         )
 
     # =========================================================================
@@ -277,12 +297,23 @@ class MainWindow(QMainWindow):
         self._doc_view.scale(level, level)
         # 縮小時は LANCZOS リサイズで画像を差し替える。
         self._doc_view._apply_zoom_resize(level)
+        self._doc_view.refresh_selection_overlays()
 
     def show_selection_highlight(
         self, page_number: int, rect: RectCoords
     ) -> None:
         """指定ページの指定矩形に半透明のハイライトを重ねる。"""
         self._doc_view.add_highlight(page_number, rect)
+
+    def show_selection_highlights(
+        self, snapshot: SelectionSnapshot
+    ) -> None:
+        """複数選択スナップショットを描画に反映する。
+
+        Phase 2 の複数オーバーレイ化までは暫定的に 0 件ならクリア、
+        1 件以上なら末尾スロットのみを単一ハイライトとして表示する。
+        """
+        self._doc_view.set_selection_snapshot(snapshot)
 
     def clear_selection(self) -> None:
         """選択ハイライトを除去する。"""
@@ -352,6 +383,18 @@ class MainWindow(QMainWindow):
     ) -> None:
         self._doc_view._on_area_selected = cb
 
+    def set_on_selection_requested(
+        self, cb: Callable[[int, RectCoords, bool], None]
+    ) -> None:
+        self._on_selection_requested = cb
+        self._doc_view._on_selection_requested = cb
+
+    def set_on_selection_clear_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        self._on_selection_clear_requested = cb
+        self._doc_view._on_selection_clear_requested = cb
+
     def set_on_zoom_changed(self, cb: Callable[[float], None]) -> None:
         self._on_zoom_changed = cb
         self._doc_view._on_zoom_changed = cb
@@ -410,6 +453,11 @@ class MainWindow(QMainWindow):
         """キャッシュ(&C) > キャッシュ管理 / Ctrl+Alt+G ハンドラ。"""
         if self._on_cache_management_requested:
             self._on_cache_management_requested()
+
+    def _handle_selection_clear_requested(self) -> None:
+        """Esc による全選択クリア要求を Presenter に通知する。"""
+        if self._on_selection_clear_requested:
+            self._on_selection_clear_requested()
 
     def _handle_toggle_bookmark(self, checked: bool) -> None:
         """しおりパネルの表示/非表示を切り替える。"""
@@ -644,13 +692,24 @@ class _DocumentGraphicsView(QGraphicsView):
         self._page_sizes: list[tuple[int, int]] = []
         # 画像がセット済みのページ番号
         self._rendered_pages: set[int] = set()
-        # 選択ハイライトアイテム
-        self._highlight_item: QGraphicsRectItem | None = None
+        # 複数選択オーバーレイ（selection_id -> items）
+        self._selection_overlays: dict[
+            str,
+            tuple[QGraphicsRectItem, QGraphicsRectItem, QGraphicsTextItem],
+        ] = {}
+        self._selection_snapshot = SelectionSnapshot()
+        self._badge_font = QFont()
+        self._badge_font.setPointSize(9)
+        self._badge_font.setBold(True)
 
         # --- コールバック ---
         self._on_area_selected: (
             Callable[[int, RectCoords], None] | None
         ) = None
+        self._on_selection_requested: (
+            Callable[[int, RectCoords, bool], None] | None
+        ) = None
+        self._on_selection_clear_requested: Callable[[], None] | None = None
         self._on_zoom_changed: Callable[[float], None] | None = None
         self._on_pages_needed: Callable[[list[int]], None] | None = None
         self._on_visible_page_changed: (
@@ -675,6 +734,7 @@ class _DocumentGraphicsView(QGraphicsView):
         )
         self._rubber_band_active = False
         self._drag_start = None
+        self._drag_append_mode = False
 
         # --- ドラッグ&ドロップ（左ペイン対応） ---
         self.setAcceptDrops(True)
@@ -695,7 +755,8 @@ class _DocumentGraphicsView(QGraphicsView):
         self._page_sizes.clear()
         self._rendered_pages.clear()
         self._original_images.clear()
-        self._highlight_item = None
+        self._selection_overlays.clear()
+        self._selection_snapshot = SelectionSnapshot()
 
         y_offset = 0.0
         for page in pages:
@@ -874,6 +935,7 @@ class _DocumentGraphicsView(QGraphicsView):
         """リサイズ時にもビューポート監視を呼ぶ。"""
         super().resizeEvent(event)
         self._check_visible_pages()
+        self.refresh_selection_overlays()
 
     # =====================================================================
     # ビューポート外画像の解放
@@ -960,6 +1022,9 @@ class _DocumentGraphicsView(QGraphicsView):
         if event.button() == Qt.MouseButton.LeftButton:
             self._rubber_band_active = True
             self._drag_start = event.position().toPoint()
+            self._drag_append_mode = bool(
+                event.modifiers() & Qt.KeyboardModifier.ControlModifier
+            )
             self._rubber_band.setGeometry(
                 self._drag_start.x(), self._drag_start.y(), 0, 0
             )
@@ -994,6 +1059,7 @@ class _DocumentGraphicsView(QGraphicsView):
                 or abs(drag_end.y() - self._drag_start.y()) < 5
             ):
                 self._drag_start = None
+                self._drag_append_mode = False
                 super().mouseReleaseEvent(event)
                 return
 
@@ -1001,6 +1067,8 @@ class _DocumentGraphicsView(QGraphicsView):
             scene_start = self.mapToScene(self._drag_start)
             scene_end = self.mapToScene(drag_end)
             self._drag_start = None
+            append_mode = self._drag_append_mode
+            self._drag_append_mode = False
 
             # どのページ上かを判定する。
             page_number: int | None = None
@@ -1035,7 +1103,9 @@ class _DocumentGraphicsView(QGraphicsView):
                 y1=max(pdf_y0, pdf_y1),
             )
 
-            if self._on_area_selected:
+            if self._on_selection_requested:
+                self._on_selection_requested(page_number, rect, append_mode)
+            elif self._on_area_selected:
                 self._on_area_selected(page_number, rect)
 
         super().mouseReleaseEvent(event)
@@ -1065,33 +1135,146 @@ class _DocumentGraphicsView(QGraphicsView):
     # =====================================================================
 
     def add_highlight(self, page_number: int, rect: RectCoords) -> None:
-        """指定ページの指定矩形に半透明のハイライトを重ねる。"""
-        self.clear_highlight()
-        if page_number < 0 or page_number >= len(self._page_rects):
-            return
+        """単一選択 API 互換のため、単独スロットとして描画する。"""
+        self.set_selection_snapshot(
+            SelectionSnapshot(
+                slots=(
+                    SelectionSlot(
+                        selection_id="legacy-selection",
+                        display_number=1,
+                        page_number=page_number,
+                        rect=rect,
+                        read_state="ready",
+                    ),
+                )
+            )
+        )
 
-        # PDF 座標 → ピクセル座標に逆変換する。
+    def clear_highlight(self) -> None:
+        """すべての選択ハイライトを除去する。"""
+        self.set_selection_snapshot(SelectionSnapshot())
+
+    def set_selection_snapshot(self, snapshot: SelectionSnapshot) -> None:
+        """複数選択スナップショットを保持し、全オーバーレイを再同期する。"""
+        self._selection_snapshot = snapshot
+        self.refresh_selection_overlays()
+
+    def refresh_selection_overlays(self) -> None:
+        """保持している全選択オーバーレイの位置と番号を再計算する。"""
+        active_ids = {slot.selection_id for slot in self._selection_snapshot.slots}
+        stale_ids = [
+            selection_id
+            for selection_id in self._selection_overlays
+            if selection_id not in active_ids
+        ]
+        for selection_id in stale_ids:
+            self._remove_selection_overlay(selection_id)
+
+        for slot in self._selection_snapshot.slots:
+            scene_rect = self._make_scene_selection_rect(
+                slot.page_number, slot.rect
+            )
+            if scene_rect is None:
+                self._remove_selection_overlay(slot.selection_id)
+                continue
+            rect_item, badge_item, badge_text_item = (
+                self._get_or_create_selection_overlay(slot.selection_id)
+            )
+            pen, brush, badge_pen, badge_brush = self._selection_style(
+                slot.read_state
+            )
+            rect_item.setPen(pen)
+            rect_item.setBrush(brush)
+            rect_item.setRect(scene_rect)
+
+            badge_item.setPen(badge_pen)
+            badge_item.setBrush(badge_brush)
+
+            badge_text = str(slot.display_number)
+            if badge_text_item.toPlainText() != badge_text:
+                badge_text_item.setPlainText(badge_text)
+            text_rect = badge_text_item.boundingRect()
+            badge_width = max(18.0, text_rect.width() + 8.0)
+            badge_height = max(18.0, text_rect.height() + 4.0)
+            badge_item.setRect(0.0, 0.0, badge_width, badge_height)
+            badge_item.setPos(scene_rect.left() + 6.0, scene_rect.top() + 6.0)
+            badge_text_item.setPos(
+                (badge_width - text_rect.width()) / 2.0,
+                (badge_height - text_rect.height()) / 2.0 - 1.0,
+            )
+
+    def _make_scene_selection_rect(
+        self, page_number: int, rect: RectCoords
+    ) -> QRectF | None:
+        """選択矩形をページローカル座標からシーン座標へ変換する。"""
+        if page_number < 0 or page_number >= len(self._page_rects):
+            return None
+
         scale = self._current_dpi / 72.0
-        px_rect = QRectF(
+        scene_rect = QRectF(
             rect.x0 * scale,
             rect.y0 * scale,
             (rect.x1 - rect.x0) * scale,
             (rect.y1 - rect.y0) * scale,
         )
-        # ページのシーン上の位置にオフセットする。
         page_rect = self._page_rects[page_number]
-        px_rect.translate(page_rect.x(), page_rect.y())
-        self._highlight_item = self._scene.addRect(
-            px_rect,
-            QPen(QColor(0, 120, 215)),
-            QBrush(QColor(0, 120, 215, 60)),
-        )
+        scene_rect.translate(page_rect.x(), page_rect.y())
+        return scene_rect
 
-    def clear_highlight(self) -> None:
-        """選択ハイライトを除去する。"""
-        if self._highlight_item:
-            self._scene.removeItem(self._highlight_item)
-            self._highlight_item = None
+    def _get_or_create_selection_overlay(
+        self, selection_id: str
+    ) -> tuple[QGraphicsRectItem, QGraphicsRectItem, QGraphicsTextItem]:
+        """選択 ID に対応する矩形と番号バッジを生成または再利用する。"""
+        overlay = self._selection_overlays.get(selection_id)
+        if overlay is not None:
+            return overlay
+
+        rect_item = self._scene.addRect(QRectF())
+        rect_item.setZValue(10)
+
+        badge_item = QGraphicsRectItem()
+        badge_item.setFlag(
+            QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True
+        )
+        badge_item.setZValue(20)
+        self._scene.addItem(badge_item)
+
+        badge_text_item = QGraphicsTextItem(badge_item)
+        badge_text_item.setDefaultTextColor(QColor(255, 255, 255))
+        badge_text_item.setFont(self._badge_font)
+        badge_text_item.setZValue(1)
+
+        overlay = (rect_item, badge_item, badge_text_item)
+        self._selection_overlays[selection_id] = overlay
+        return overlay
+
+    def _remove_selection_overlay(self, selection_id: str) -> None:
+        """指定した選択 ID のオーバーレイをシーンから除去する。"""
+        overlay = self._selection_overlays.pop(selection_id, None)
+        if overlay is None:
+            return
+
+        rect_item, badge_item, _ = overlay
+        self._scene.removeItem(rect_item)
+        self._scene.removeItem(badge_item)
+
+    def _selection_style(
+        self, read_state: str
+    ) -> tuple[QPen, QBrush, QPen, QBrush]:
+        """読取状態に応じた矩形と番号バッジのスタイルを返す。"""
+        if read_state == "error":
+            base = QColor(196, 64, 64)
+        elif read_state == "pending":
+            base = QColor(217, 122, 0)
+        else:
+            base = QColor(0, 120, 215)
+
+        return (
+            QPen(base, 1.2),
+            QBrush(QColor(base.red(), base.green(), base.blue(), 48)),
+            QPen(QColor(base.red(), base.green(), base.blue(), 220), 1.0),
+            QBrush(QColor(base.red(), base.green(), base.blue(), 188)),
+        )
 
     # =====================================================================
     # ページジャンプ

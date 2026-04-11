@@ -20,21 +20,26 @@ from pathlib import Path
 
 import markdown
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QKeySequence, QPixmap, QShortcut
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
+    QSplitter,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
+
+from pdf_epub_reader.dto import SelectionSlot, SelectionSnapshot
 
 
 # タブインデックスと AnalysisMode.value の対応。
@@ -178,6 +183,20 @@ class CollapsibleSection(QWidget):
         """子ウィジェットを追加するための内部レイアウトを返す。"""
         return self._content_layout
 
+    def is_expanded(self) -> bool:
+        """現在展開中かどうかを返す。"""
+        return self._expanded
+
+    def set_expanded(self, expanded: bool) -> None:
+        """展開状態を明示的に切り替える。"""
+        if self._expanded == expanded:
+            return
+        self._toggle()
+
+    def toggle(self) -> None:
+        """展開状態をトグルする。"""
+        self._toggle()
+
     def _header_text(self) -> str:
         prefix = "▼" if self._expanded else "▶"
         return f"{prefix} {self._title}"
@@ -186,18 +205,125 @@ class CollapsibleSection(QWidget):
         self._expanded = not self._expanded
         self._content.setVisible(self._expanded)
         self._toggle_btn.setText(self._header_text())
+        self.updateGeometry()
+
+
+class _SelectionCard(QFrame):
+    """1 件分の選択スロットを表示するカード。"""
+
+    def __init__(
+        self,
+        slot: SelectionSlot,
+        on_delete_requested: Callable[[str], None] | None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setStyleSheet(
+            "QFrame {"
+            "border: 1px solid #d0d7de;"
+            "border-radius: 8px;"
+            "background: #fbfcfe;"
+            "}"
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+
+        header_row = QHBoxLayout()
+        header_row.setSpacing(8)
+
+        badge = QLabel(str(slot.display_number))
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setFixedSize(22, 22)
+        badge.setStyleSheet(
+            "background: rgba(0, 120, 215, 0.86);"
+            "color: white;"
+            "border-radius: 11px;"
+            "font-weight: bold;"
+        )
+        header_row.addWidget(badge)
+
+        header_text = QLabel(f"ページ {slot.page_number + 1}")
+        header_text.setStyleSheet("font-weight: bold;")
+        header_row.addWidget(header_text)
+
+        state_label = QLabel(self._state_text(slot))
+        state_label.setStyleSheet(self._state_style(slot))
+        header_row.addWidget(state_label)
+        header_row.addStretch(1)
+
+        delete_button = QPushButton("削除")
+        delete_button.setFixedHeight(24)
+        delete_button.clicked.connect(
+            lambda: on_delete_requested and on_delete_requested(slot.selection_id)
+        )
+        header_row.addWidget(delete_button)
+        layout.addLayout(header_row)
+
+        preview_label = QLabel(self._preview_text(slot))
+        preview_label.setWordWrap(True)
+        preview_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        preview_label.setStyleSheet("color: #334155;")
+        layout.addWidget(preview_label)
+
+        if slot.content and slot.content.cropped_image:
+            thumbnail = QPixmap()
+            thumbnail.loadFromData(slot.content.cropped_image)
+            if not thumbnail.isNull():
+                thumbnail_label = QLabel()
+                thumbnail_label.setPixmap(
+                    thumbnail.scaledToHeight(
+                        72, mode=Qt.TransformationMode.SmoothTransformation
+                    )
+                )
+                layout.addWidget(thumbnail_label)
+
+    def _state_text(self, slot: SelectionSlot) -> str:
+        if slot.read_state == "pending":
+            return "読み取り中"
+        if slot.read_state == "error":
+            return "失敗"
+        return "準備完了"
+
+    def _state_style(self, slot: SelectionSlot) -> str:
+        if slot.read_state == "pending":
+            color = "#b45309"
+            background = "#fef3c7"
+        elif slot.read_state == "error":
+            color = "#b91c1c"
+            background = "#fee2e2"
+        else:
+            color = "#166534"
+            background = "#dcfce7"
+        return (
+            f"color: {color};"
+            f"background: {background};"
+            "border-radius: 10px;"
+            "padding: 2px 8px;"
+        )
+
+    def _preview_text(self, slot: SelectionSlot) -> str:
+        if slot.read_state == "pending":
+            return "選択内容を抽出しています..."
+        if slot.read_state == "error":
+            return slot.error_message or "抽出に失敗しました。削除して再試行できます。"
+
+        text = slot.extracted_text.strip() or "抽出テキストはありません"
+        text = text.replace("\n", " ")
+        if len(text) > 140:
+            return text[:137] + "..."
+        return text
 
 
 class SidePanelView(QWidget):
     """ISidePanelView Protocol を満たすサイドパネル実装。
 
-    上から順に「選択テキスト（折りたたみ可能）」
-    「ローディングバー」「タブ（翻訳 / カスタム）」「キャッシュステータス」
-    を縦積みし、ボタンイベントはコールバックで外部に通知する。
-
-    Phase 4 で AI 回答欄を QWebEngineView + KaTeX に差し替え、
-    Markdown・数式・化学式のレンダリングに対応した。
-    Phase 6.5 で選択プレビュー部分を CollapsibleSection で折りたたみ可能にした。
+    選択一覧セクションと AI 応答セクションを縦 splitter で並べ、
+    それぞれ CollapsibleSection として折りたためるようにする。
     """
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -214,10 +340,16 @@ class SidePanelView(QWidget):
         self._on_custom_prompt_submitted: Callable[[str], None] | None = None
         self._on_tab_changed: Callable[[str], None] | None = None
         self._on_force_image_toggled: Callable[[bool], None] | None = None
+        self._on_selection_delete_requested: (
+            Callable[[str], None] | None
+        ) = None
+        self._on_clear_selections_requested: Callable[[], None] | None = None
         self._on_model_changed: Callable[[str], None] | None = None
         self._on_cache_create_requested: Callable[[], None] | None = None
         self._on_cache_invalidate_requested: Callable[[], None] | None = None
         self._cache_is_active: bool = False
+        self._selection_snapshot = SelectionSnapshot()
+        self._combined_selection_preview = ""
 
         # Phase 7.5: カウントダウン状態
         self._on_cache_expired: Callable[[], None] | None = None
@@ -229,6 +361,8 @@ class SidePanelView(QWidget):
 
         # --- ウィジェット構築 ---
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
 
         # Phase 6: モデル選択プルダウン
         model_row = QHBoxLayout()
@@ -238,42 +372,77 @@ class SidePanelView(QWidget):
         model_row.addWidget(self._model_combo, 1)
         layout.addLayout(model_row)
 
-        # 選択テキスト（折りたたみ可能セクション）
-        self._selection_section = CollapsibleSection("選択テキスト", expanded=True)
+        self._content_splitter = QSplitter(Qt.Orientation.Vertical)
+        self._content_splitter.setChildrenCollapsible(False)
+        layout.addWidget(self._content_splitter, 1)
+
+        self._selection_section = CollapsibleSection("選択一覧", expanded=True)
         sel_layout = self._selection_section.content_layout()
+        sel_layout.setSpacing(8)
 
-        self._selected_text_edit = QTextEdit()
-        self._selected_text_edit.setReadOnly(True)
-        self._selected_text_edit.setMaximumHeight(120)
-        self._selected_text_edit.setPlaceholderText(
-            "ドキュメント上でテキストを選択してください"
+        selection_header_row = QHBoxLayout()
+        self._selection_summary_label = QLabel("選択 0 件")
+        selection_header_row.addWidget(self._selection_summary_label)
+        selection_header_row.addStretch(1)
+
+        self._clear_selections_btn = QPushButton("全消去")
+        self._clear_selections_btn.clicked.connect(
+            self._fire_clear_selections_requested
         )
-        sel_layout.addWidget(self._selected_text_edit)
+        selection_header_row.addWidget(self._clear_selections_btn)
+        sel_layout.addLayout(selection_header_row)
 
-        # Phase 4: サムネイルプレビュー（クロップ画像がある場合のみ表示）
-        self._thumbnail_label = QLabel()
-        self._thumbnail_label.setMaximumHeight(100)
-        self._thumbnail_label.setVisible(False)
-        sel_layout.addWidget(self._thumbnail_label)
+        self._selection_warning_label = QLabel(
+            "API トークン制限や処理速度低下の恐れがあります"
+        )
+        self._selection_warning_label.setWordWrap(True)
+        self._selection_warning_label.setStyleSheet(
+            "color: #9a3412; background: #ffedd5; border-radius: 6px; padding: 6px 8px;"
+        )
+        self._selection_warning_label.setVisible(False)
+        sel_layout.addWidget(self._selection_warning_label)
 
-        # Phase 4:「画像としても送信」チェックボックス
+        self._selection_list_scroll = QScrollArea()
+        self._selection_list_scroll.setWidgetResizable(True)
+        self._selection_list_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._selection_list_container = QWidget()
+        self._selection_list_layout = QVBoxLayout(self._selection_list_container)
+        self._selection_list_layout.setContentsMargins(0, 0, 0, 0)
+        self._selection_list_layout.setSpacing(8)
+        self._selection_list_scroll.setWidget(self._selection_list_container)
+        sel_layout.addWidget(self._selection_list_scroll, 1)
+
+        combined_label = QLabel("AI送信プレビュー")
+        combined_label.setStyleSheet("font-weight: bold;")
+        sel_layout.addWidget(combined_label)
+
+        self._combined_preview_edit = QTextEdit()
+        self._combined_preview_edit.setReadOnly(True)
+        self._combined_preview_edit.setMinimumHeight(120)
+        self._combined_preview_edit.setPlaceholderText(
+            "複数選択の連結プレビューがここに表示されます"
+        )
+        sel_layout.addWidget(self._combined_preview_edit)
+
         self._force_image_checkbox = QCheckBox("画像としても送信")
         self._force_image_checkbox.setChecked(False)
         self._force_image_checkbox.toggled.connect(self._fire_force_image_toggled)
         sel_layout.addWidget(self._force_image_checkbox)
 
-        layout.addWidget(self._selection_section)
+        self._content_splitter.addWidget(self._selection_section)
 
-        # ローディングバー（通常は非表示）
+        self._ai_section = CollapsibleSection("AI回答", expanded=True)
+        ai_layout = self._ai_section.content_layout()
+        ai_layout.setSpacing(8)
+
         self._progress_bar = QProgressBar()
-        self._progress_bar.setRange(0, 0)  # indeterminate モード
+        self._progress_bar.setRange(0, 0)
         self._progress_bar.setVisible(False)
-        layout.addWidget(self._progress_bar)
+        ai_layout.addWidget(self._progress_bar)
 
-        # タブウィジェット
         self._tab_widget = QTabWidget()
         self._tab_widget.currentChanged.connect(self._handle_tab_changed)
-        layout.addWidget(self._tab_widget)
+        ai_layout.addWidget(self._tab_widget, 1)
 
         # --- 翻訳タブ ---
         translation_tab = QWidget()
@@ -327,7 +496,9 @@ class SidePanelView(QWidget):
 
         self._tab_widget.addTab(custom_tab, "カスタムプロンプト")
 
-        # キャッシュステータス + トグルボタン
+        self._content_splitter.addWidget(self._ai_section)
+        self._content_splitter.setSizes([340, 420])
+
         cache_row = QHBoxLayout()
         self._cache_label = QLabel("キャッシュステータス: ---")
         cache_row.addWidget(self._cache_label, 1)
@@ -337,41 +508,40 @@ class SidePanelView(QWidget):
         cache_row.addWidget(self._cache_toggle_btn)
         layout.addLayout(cache_row)
 
+        self._selection_toggle_shortcut = QShortcut(
+            QKeySequence("Ctrl+Shift+T"), self
+        )
+        self._selection_toggle_shortcut.activated.connect(
+            self._selection_section.toggle
+        )
+
+        self._ai_toggle_shortcut = QShortcut(
+            QKeySequence("Ctrl+Shift+I"), self
+        )
+        self._ai_toggle_shortcut.activated.connect(self._ai_section.toggle)
+
         # ローディング中に無効化する全ボタンのリスト
         self._all_buttons = [
+            self._clear_selections_btn,
             self._translate_btn,
             self._explain_btn,
             self._submit_btn,
             self._cache_toggle_btn,
         ]
 
+        self._refresh_selection_widgets()
+
     # --- ISidePanelView Display commands ---
 
     def set_selected_text(self, text: str) -> None:
-        """選択テキスト欄の内容を差し替える。"""
-        self._selected_text_edit.setPlainText(text)
-        # テキストのみの場合はサムネイルを非表示にする
-        self._thumbnail_label.setVisible(False)
+        """後方互換のため、連結プレビュー欄に単一テキストを表示する。"""
+        self.set_combined_selection_preview(text)
 
     def set_selected_content_preview(
         self, text: str, thumbnail: bytes | None
     ) -> None:
-        """選択テキストとサムネイル画像のプレビューを表示する。
-
-        Phase 4 で追加。テキストに加え、クロップ画像のサムネイルも
-        表示できるようにする。thumbnail が None ならサムネイルは非表示。
-        """
-        self._selected_text_edit.setPlainText(text)
-        if thumbnail:
-            pixmap = QPixmap()
-            pixmap.loadFromData(thumbnail)
-            # サムネイルは最大幅をパネル幅に合わせ、高さ100pxに収める
-            self._thumbnail_label.setPixmap(
-                pixmap.scaledToHeight(100, mode=Qt.SmoothTransformation)
-            )
-            self._thumbnail_label.setVisible(True)
-        else:
-            self._thumbnail_label.setVisible(False)
+        """後方互換のため、連結プレビュー欄に単一テキストを表示する。"""
+        self.set_combined_selection_preview(text)
 
     def update_result_text(self, text: str) -> None:
         """現在アクティブなタブの結果表示エリアに Markdown→HTML を反映する。
@@ -385,6 +555,16 @@ class SidePanelView(QWidget):
             self._translation_result.setHtml(html, self._katex_base_url)
         else:
             self._custom_result.setHtml(html, self._katex_base_url)
+
+    def set_selection_snapshot(self, snapshot: SelectionSnapshot) -> None:
+        """複数選択一覧のスナップショットを表示に反映する。"""
+        self._selection_snapshot = snapshot
+        self._refresh_selection_widgets()
+
+    def set_combined_selection_preview(self, text: str) -> None:
+        """AI 送信用の連結プレビュー文字列を表示する。"""
+        self._combined_selection_preview = text
+        self._combined_preview_edit.setPlainText(text)
 
     def show_loading(self, loading: bool) -> None:
         """ローディングバーの表示切り替えとボタンの有効/無効を制御する。"""
@@ -432,6 +612,18 @@ class SidePanelView(QWidget):
     ) -> None:
         """「画像としても送信」チェックボックスの切り替えコールバックを登録する。"""
         self._on_force_image_toggled = cb
+
+    def set_on_selection_delete_requested(
+        self, cb: Callable[[str], None]
+    ) -> None:
+        """選択一覧の個別削除要求コールバックを登録する。"""
+        self._on_selection_delete_requested = cb
+
+    def set_on_clear_selections_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """選択一覧の全消去要求コールバックを登録する。"""
+        self._on_clear_selections_requested = cb
 
     # --- Phase 6: モデル選択 ---
 
@@ -554,6 +746,56 @@ class SidePanelView(QWidget):
         self._cache_label.setText(
             f"{self._cache_base_text} — 残り {h}:{m:02d}:{s:02d}"
         )
+
+    def _refresh_selection_widgets(self) -> None:
+        """現在の snapshot に基づいて選択一覧 UI を再構築する。"""
+        self._selection_summary_label.setText(
+            f"選択 {len(self._selection_snapshot.slots)} 件"
+        )
+        self._selection_warning_label.setVisible(
+            len(self._selection_snapshot.slots) > 10
+        )
+        self._clear_selections_btn.setEnabled(
+            not self._selection_snapshot.is_empty
+        )
+
+        self._clear_layout(self._selection_list_layout)
+
+        if self._selection_snapshot.is_empty:
+            empty_label = QLabel("選択はまだありません")
+            empty_label.setStyleSheet("color: #64748b; padding: 6px 2px;")
+            self._selection_list_layout.addWidget(empty_label)
+        else:
+            for slot in self._selection_snapshot.slots:
+                self._selection_list_layout.addWidget(
+                    _SelectionCard(
+                        slot,
+                        on_delete_requested=self._fire_selection_delete_requested,
+                    )
+                )
+
+        self._selection_list_layout.addStretch(1)
+
+    def _clear_layout(self, layout: QVBoxLayout) -> None:
+        """レイアウト配下の子ウィジェットをすべて除去する。"""
+        while layout.count() > 0:
+            item = layout.takeAt(0)
+            widget = item.widget()
+            child_layout = item.layout()
+            if widget is not None:
+                widget.deleteLater()
+            elif child_layout is not None:
+                self._clear_layout(child_layout)
+
+    def _fire_selection_delete_requested(self, selection_id: str) -> None:
+        """選択カードの削除要求を Presenter に通知する。"""
+        if self._on_selection_delete_requested:
+            self._on_selection_delete_requested(selection_id)
+
+    def _fire_clear_selections_requested(self) -> None:
+        """全消去要求を Presenter に通知する。"""
+        if self._on_clear_selections_requested:
+            self._on_clear_selections_requested()
 
     # --- Internal event handlers ---
 

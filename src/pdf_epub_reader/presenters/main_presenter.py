@@ -11,9 +11,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import OrderedDict
 from collections.abc import Callable
+from dataclasses import replace
 
-from pdf_epub_reader.dto import PageData, RectCoords
+from pdf_epub_reader.dto import (
+    PageData,
+    RectCoords,
+    SelectionContent,
+    SelectionSlot,
+    SelectionSnapshot,
+)
 from pdf_epub_reader.interfaces.model_interfaces import IAIModel, IDocumentModel
 from pdf_epub_reader.interfaces.view_interfaces import (
     ICacheDialogView,
@@ -77,12 +85,20 @@ class MainPresenter:
         dpr = self._view.get_device_pixel_ratio()
         self._render_dpi: int = int(self._base_dpi * dpr)
         self._zoom_level: float = 1.0
+        self._selection_slots: OrderedDict[str, SelectionSlot] = OrderedDict()
+        self._selection_generation: int = 0
+        self._next_selection_id: int = 1
+        self._selection_warning_threshold = 10
 
         # View は Presenter を知らないため、ここでイベントの受け口を登録する。
         self._view.set_on_file_open_requested(self._on_file_open_requested)
         self._view.set_on_file_dropped(self._on_file_dropped)
         self._view.set_on_recent_file_selected(self._on_recent_file_selected)
         self._view.set_on_area_selected(self._on_area_selected)
+        self._view.set_on_selection_requested(self._on_selection_requested)
+        self._view.set_on_selection_clear_requested(
+            self._on_selection_clear_requested
+        )
         self._view.set_on_zoom_changed(self._on_zoom_changed)
         self._view.set_on_bookmark_selected(self._on_bookmark_selected)
         self._view.set_on_cache_management_requested(
@@ -97,6 +113,12 @@ class MainPresenter:
         )
         self._panel_presenter.set_selected_model(
             self._config.gemini_model_name
+        )
+        self._panel_presenter.set_on_selection_delete_handler(
+            self._on_selection_delete_requested
+        )
+        self._panel_presenter.set_on_clear_selections_handler(
+            self._on_selection_clear_requested
         )
 
         # Phase 7: キャッシュ操作のコールバックを登録
@@ -126,6 +148,7 @@ class MainPresenter:
         パスワード保護 PDF の場合は View にダイアログを表示させ、
         ユーザーが入力したパスワードで再試行する。
         """
+        self._clear_selection_state(increment_generation=True)
         self._view.show_status_message(f"Opening {file_path}...")
 
         # Phase 7: 既存キャッシュがあれば破棄する
@@ -206,31 +229,119 @@ class MainPresenter:
         asyncio.ensure_future(self.open_file(file_path))
 
     def _on_area_selected(self, page_number: int, rect: RectCoords) -> None:
-        """矩形選択イベントを受け取り、抽出処理を非同期で開始する。"""
-        asyncio.ensure_future(self._do_area_selected(page_number, rect))
+        """旧 API 互換の単一選択イベントを新フローへ委譲する。"""
+        self._schedule_selection(page_number, rect, append=False)
+
+    def _on_selection_requested(
+        self, page_number: int, rect: RectCoords, append: bool
+    ) -> None:
+        """矩形選択イベントを受け取り、複数選択フローを開始する。"""
+        self._schedule_selection(page_number, rect, append=append)
+
+    def _on_selection_clear_requested(self) -> None:
+        """Esc などによる全選択クリア要求を処理する。"""
+        self._clear_selection_state(increment_generation=True)
+
+    def _on_selection_delete_requested(self, selection_id: str) -> None:
+        """個別選択の削除要求を処理する。"""
+        if selection_id not in self._selection_slots:
+            return
+
+        del self._selection_slots[selection_id]
+        self._renumber_selection_slots()
+        self._sync_selection_views()
+
+    def _schedule_selection(
+        self, page_number: int, rect: RectCoords, *, append: bool
+    ) -> None:
+        """選択スロットを先に確保し、抽出だけを非同期で進める。"""
+        selection_id, generation = self._reserve_selection_slot(
+            page_number, rect, append=append
+        )
+        asyncio.ensure_future(
+            self._extract_selection_content(
+                selection_id, generation, page_number, rect
+            )
+        )
+
+    def _reserve_selection_slot(
+        self, page_number: int, rect: RectCoords, *, append: bool
+    ) -> tuple[str, int]:
+        """選択スロットを確保し、View と SidePanel に即時反映する。"""
+        previous_count = len(self._selection_slots)
+        if not append:
+            self._selection_generation += 1
+            self._selection_slots.clear()
+
+        selection_id = f"selection-{self._next_selection_id}"
+        self._next_selection_id += 1
+
+        self._selection_slots[selection_id] = SelectionSlot(
+            selection_id=selection_id,
+            display_number=len(self._selection_slots) + 1,
+            page_number=page_number,
+            rect=rect,
+            read_state="pending",
+        )
+        self._renumber_selection_slots()
+        self._sync_selection_views()
+
+        current_count = len(self._selection_slots)
+        if (
+            previous_count <= self._selection_warning_threshold
+            and current_count > self._selection_warning_threshold
+        ):
+            self._view.show_status_message(
+                "選択数が多いため、API トークン制限や処理速度低下の恐れがあります"
+            )
+
+        return selection_id, self._selection_generation
 
     async def _do_area_selected(
         self, page_number: int, rect: RectCoords
     ) -> None:
-        """選択範囲を強調表示し、マルチモーダルコンテンツを抽出してパネルへ渡す。
-
-        まずハイライトを先に出すのは、抽出完了前でもユーザーに
-        「選択が受理された」ことを即時に伝えるため。
-
-        Phase 4 で extract_text → extract_content に切り替え、
-        埋め込み画像や数式フォントの自動検出結果も含めてパネルへ渡す。
-        自動検出でクロップ画像が付与された場合はステータスバーで通知する。
-        """
-        self._view.show_selection_highlight(page_number, rect)
-        content = await self._document_model.extract_content(
-            page_number,
-            rect,
-            self._render_dpi,
-            force_include_image=self._panel_presenter.force_include_image,
-            auto_detect_embedded_images=self._config.auto_detect_embedded_images,
-            auto_detect_math_fonts=self._config.auto_detect_math_fonts,
+        """テスト互換のため、単一選択を直接完了させるヘルパーを残す。"""
+        selection_id, generation = self._reserve_selection_slot(
+            page_number, rect, append=False
         )
-        # 自動検出でクロップ画像が付与された場合、ユーザーに理由を通知する
+        await self._extract_selection_content(
+            selection_id, generation, page_number, rect
+        )
+
+    async def _extract_selection_content(
+        self,
+        selection_id: str,
+        generation: int,
+        page_number: int,
+        rect: RectCoords,
+    ) -> None:
+        """確保済みスロットに対応する抽出結果を差し込む。"""
+        try:
+            content = await self._document_model.extract_content(
+                page_number,
+                rect,
+                self._render_dpi,
+                force_include_image=self._panel_presenter.force_include_image,
+                auto_detect_embedded_images=self._config.auto_detect_embedded_images,
+                auto_detect_math_fonts=self._config.auto_detect_math_fonts,
+            )
+        except Exception as exc:
+            self._mark_selection_error(selection_id, generation, str(exc))
+            return
+
+        if not self._selection_result_is_current(selection_id, generation):
+            return
+
+        self._selection_slots[selection_id] = replace(
+            self._selection_slots[selection_id],
+            read_state="ready",
+            extracted_text=content.extracted_text,
+            has_thumbnail=content.cropped_image is not None,
+            content=content,
+            error_message=None,
+        )
+        self._sync_selection_views()
+
         if content.cropped_image and content.detection_reason:
             reason_label = {
                 "embedded_image": "画像",
@@ -239,7 +350,62 @@ class MainPresenter:
             self._view.show_status_message(
                 f"{reason_label}を検出 — 画像付きで送信します"
             )
-        self._panel_presenter.set_selected_content(content)
+
+    def _mark_selection_error(
+        self, selection_id: str, generation: int, message: str
+    ) -> None:
+        """抽出失敗時にスロットをエラー状態へ更新する。"""
+        if not self._selection_result_is_current(selection_id, generation):
+            return
+
+        self._selection_slots[selection_id] = replace(
+            self._selection_slots[selection_id],
+            read_state="error",
+            extracted_text="抽出に失敗しました",
+            has_thumbnail=False,
+            content=None,
+            error_message=message,
+        )
+        self._sync_selection_views()
+        self._view.show_status_message("選択領域の読み取りに失敗しました")
+
+    def _selection_result_is_current(
+        self, selection_id: str, generation: int
+    ) -> bool:
+        """遅延結果が現行の選択世代に属するかを判定する。"""
+        return (
+            generation == self._selection_generation
+            and selection_id in self._selection_slots
+        )
+
+    def _clear_selection_state(self, *, increment_generation: bool) -> None:
+        """現在の選択状態を消去し、関連 View を同期する。"""
+        if increment_generation:
+            self._selection_generation += 1
+        self._selection_slots.clear()
+        self._sync_selection_views()
+
+    def _renumber_selection_slots(self) -> None:
+        """表示番号を現在の順序に沿って 1 始まりで振り直す。"""
+        self._selection_slots = OrderedDict(
+            (
+                selection_id,
+                replace(slot, display_number=index),
+            )
+            for index, (selection_id, slot) in enumerate(
+                self._selection_slots.items(), start=1
+            )
+        )
+
+    def _build_selection_snapshot(self) -> SelectionSnapshot:
+        """内部の順序付き状態からスナップショット DTO を構築する。"""
+        return SelectionSnapshot(slots=tuple(self._selection_slots.values()))
+
+    def _sync_selection_views(self) -> None:
+        """MainView と SidePanel に現在の選択スナップショットを反映する。"""
+        snapshot = self._build_selection_snapshot()
+        self._view.show_selection_highlights(snapshot)
+        self._panel_presenter.set_selection_snapshot(snapshot)
 
     def _on_zoom_changed(self, level: float) -> None:
         """ズーム変更イベントを受け取り、再描画処理を非同期で開始する。"""

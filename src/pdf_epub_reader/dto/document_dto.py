@@ -9,10 +9,13 @@ dataclass で表現し、このモジュールに集約する。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     pass
+
+
+SelectionReadState = Literal["pending", "ready", "error"]
 
 
 @dataclass(frozen=True)
@@ -132,3 +135,53 @@ class SelectionContent:
     cropped_image: bytes | None = None
     embedded_images: list[bytes] = field(default_factory=list)
     detection_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class SelectionSlot:
+    """複数選択の 1 スロット分を表す DTO。
+
+    1 回の矩形ドラッグごとに 1 スロットを払い出し、
+    Presenter はこの DTO を順序付きで管理する。
+
+    `selection_id` は削除や非同期完了差し込みの照合に使う内部安定 ID、
+    `display_number` は UI 上に見せる 1 始まりの番号である。
+    後者は削除後に詰め直されるが、前者は不変とする。
+
+    `content` は SelectionContent をそのまま保持する後方互換用の入れ物で、
+    テキストや画像バイト列を後続 Phase で再利用できるようにする。
+    一方で View が一覧描画に必要な最小情報だけで扱えるよう、
+    `extracted_text` と `has_thumbnail` も冗長に持たせている。
+    """
+
+    selection_id: str
+    display_number: int
+    page_number: int
+    rect: RectCoords
+    read_state: SelectionReadState
+    extracted_text: str = ""
+    has_thumbnail: bool = False
+    content: SelectionContent | None = None
+    error_message: str | None = None
+
+
+@dataclass(frozen=True)
+class SelectionSnapshot:
+    """現在の複数選択状態を順序付きで表すスナップショット。"""
+
+    slots: tuple[SelectionSlot, ...] = ()
+
+    @property
+    def is_empty(self) -> bool:
+        """選択スロットを 1 件も持たないかを返す。"""
+        return not self.slots
+
+    @property
+    def combined_extracted_text(self) -> str:
+        """抽出済みテキストを選択順で連結した文字列を返す。
+
+        Phase 5 で明示的な区切り付きフォーマットに差し替える前段として、
+        ここでは空文字を除いて単純改行連結する。
+        """
+        parts = [slot.extracted_text for slot in self.slots if slot.extracted_text]
+        return "\n\n".join(parts)

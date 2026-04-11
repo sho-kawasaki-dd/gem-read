@@ -15,9 +15,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Protocol, runtime_checkable
 
-from typing import Literal
-
-from pdf_epub_reader.dto import CacheStatus, PageData, RectCoords, ToCEntry
+from pdf_epub_reader.dto import (
+    CacheStatus,
+    PageData,
+    RectCoords,
+    SelectionSnapshot,
+    ToCEntry,
+)
 
 
 @runtime_checkable
@@ -57,6 +61,15 @@ class IMainView(Protocol):
     def show_selection_highlight(
         self, page_number: int, rect: RectCoords
     ) -> None: ...
+    def show_selection_highlights(
+        self, snapshot: SelectionSnapshot
+    ) -> None:
+        """複数選択のスナップショット全体を View に同期する。
+
+        Phase 2 以降の正規 API。View は snapshot.slots の順序に従って
+        複数ハイライトと番号バッジを再描画する。
+        """
+        ...
     def clear_selection(self) -> None: ...
     def set_window_title(self, title: str) -> None: ...
     def show_status_message(self, message: str) -> None: ...
@@ -107,6 +120,20 @@ class IMainView(Protocol):
     def set_on_area_selected(
         self, cb: Callable[[int, RectCoords], None]
     ) -> None: ...
+    def set_on_selection_requested(
+        self, cb: Callable[[int, RectCoords, bool], None]
+    ) -> None:
+        """矩形選択要求のコールバックを登録する。
+
+        第 3 引数の bool は追加選択モードを表し、False は通常選択
+        (全置換)、True は追加選択 (Ctrl+ドラッグ) を意味する。
+        """
+        ...
+    def set_on_selection_clear_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """Esc などによる全選択クリア要求のコールバックを登録する。"""
+        ...
     def set_on_zoom_changed(
         self, cb: Callable[[float], None]
     ) -> None: ...
@@ -166,6 +193,15 @@ class ISidePanelView(Protocol):
         表示できるようにする。thumbnail が None ならサムネイルは非表示。
         """
         ...
+    def set_selection_snapshot(
+        self, snapshot: SelectionSnapshot
+    ) -> None:
+        """選択一覧の表示元となるスナップショットを反映する。"""
+        ...
+
+    def set_combined_selection_preview(self, text: str) -> None:
+        """AI に送る連結プレビュー文字列を表示する。"""
+        ...
 
     def update_result_text(self, text: str) -> None: ...
     def show_loading(self, loading: bool) -> None: ...
@@ -191,6 +227,17 @@ class ISidePanelView(Protocol):
         Phase 4 で追加。ユーザーがクロップ画像の強制送信を ON/OFF した
         ときに Presenter へ通知する。
         """
+        ...
+    def set_on_selection_delete_requested(
+        self, cb: Callable[[str], None]
+    ) -> None:
+        """選択一覧の個別削除要求コールバックを登録する。"""
+        ...
+
+    def set_on_clear_selections_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """選択一覧の全消去要求コールバックを登録する。"""
         ...
 
     # --- Phase 6: モデル選択 ---

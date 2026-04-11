@@ -15,7 +15,12 @@ from tests.mocks.mock_models import MockAIModel
 from tests.mocks.mock_views import MockSidePanelView
 
 from pdf_epub_reader.dto import AnalysisMode, AnalysisResult, CacheStatus
-from pdf_epub_reader.dto.document_dto import RectCoords, SelectionContent
+from pdf_epub_reader.dto.document_dto import (
+    RectCoords,
+    SelectionContent,
+    SelectionSlot,
+    SelectionSnapshot,
+)
 from pdf_epub_reader.interfaces.model_interfaces import IAIModel
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
 from pdf_epub_reader.utils.exceptions import (
@@ -23,6 +28,40 @@ from pdf_epub_reader.utils.exceptions import (
     AIKeyMissingError,
     AIRateLimitError,
 )
+
+
+def _make_slot(
+    number: int,
+    page_number: int,
+    text: str,
+    *,
+    selection_id: str | None = None,
+    read_state: str = "ready",
+    cropped_image: bytes | None = None,
+) -> SelectionSlot:
+    content = None
+    if read_state == "ready":
+        content = SelectionContent(
+            page_number=page_number,
+            rect=RectCoords(0.0, 0.0, 100.0, 100.0),
+            extracted_text=text,
+            cropped_image=cropped_image,
+        )
+
+    return SelectionSlot(
+        selection_id=selection_id or f"selection-{number}",
+        display_number=number,
+        page_number=page_number,
+        rect=RectCoords(0.0, 0.0, 100.0, 100.0),
+        read_state=read_state,
+        extracted_text=text,
+        has_thumbnail=cropped_image is not None,
+        content=content,
+    )
+
+
+def _make_snapshot(*slots: SelectionSlot) -> SelectionSnapshot:
+    return SelectionSnapshot(slots=slots)
 
 
 class TestProtocolConformance:
@@ -45,14 +84,16 @@ class TestTranslationFlow:
         mock_ai_model: MockAIModel,
     ) -> None:
         """翻訳要求で正しい Request が作られ、結果が View に反映されることを確認する。"""
-        panel_presenter.set_selected_text("Hello world")
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello world"))
+        )
         await panel_presenter._do_translate(include_explanation=False)
 
         # Presenter が mode を正しく選び、選択テキストを渡していること。
         analyze_calls = mock_ai_model.get_calls("analyze")
         assert len(analyze_calls) == 1
         request = analyze_calls[0][0]
-        assert request.text == "Hello world"
+        assert request.text == "選択 1 / ページ 1\n\nHello world"
         assert request.mode == AnalysisMode.TRANSLATION
         assert request.include_explanation is False
 
@@ -69,7 +110,9 @@ class TestTranslationFlow:
         mock_ai_model: MockAIModel,
     ) -> None:
         """解説付き翻訳では explanation が表示文字列に含まれることを確認する。"""
-        panel_presenter.set_selected_text("Test text")
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Test text"))
+        )
         await panel_presenter._do_translate(include_explanation=True)
 
         analyze_calls = mock_ai_model.get_calls("analyze")
@@ -101,13 +144,15 @@ class TestCustomPromptFlow:
         mock_ai_model: MockAIModel,
     ) -> None:
         """カスタムプロンプトが Request に正しく入り、解析が実行されることを確認する。"""
-        panel_presenter.set_selected_text("Some text")
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Some text"))
+        )
         await panel_presenter._do_custom_prompt("Summarize this")
 
         analyze_calls = mock_ai_model.get_calls("analyze")
         assert len(analyze_calls) == 1
         request = analyze_calls[0][0]
-        assert request.text == "Some text"
+        assert request.text == "選択 1 / ページ 1\n\nSome text"
         assert request.mode == AnalysisMode.CUSTOM_PROMPT
         assert request.custom_prompt == "Summarize this"
 
@@ -125,7 +170,9 @@ class TestLoadingState:
         mock_side_panel_view: MockSidePanelView,
     ) -> None:
         """翻訳処理の前後でローディング状態が切り替わることを確認する。"""
-        panel_presenter.set_selected_text("Test")
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Test"))
+        )
         await panel_presenter._do_translate(include_explanation=False)
 
         loading_calls = mock_side_panel_view.get_calls("show_loading")
@@ -140,7 +187,9 @@ class TestLoadingState:
         mock_side_panel_view: MockSidePanelView,
     ) -> None:
         """カスタムプロンプト処理でも同様にローディングが切り替わることを確認する。"""
-        panel_presenter.set_selected_text("Test")
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Test"))
+        )
         await panel_presenter._do_custom_prompt("Do something")
 
         loading_calls = mock_side_panel_view.get_calls("show_loading")
@@ -149,26 +198,56 @@ class TestLoadingState:
         assert loading_calls[1] == (False,)
 
 
-class TestSetSelectedText:
-    """選択テキストの保持と View 反映を検証する。"""
+class TestSelectionSnapshot:
+    """複数選択スナップショットの保持と View 反映を検証する。"""
 
-    def test_set_selected_text_updates_view(
+    def test_set_selection_snapshot_updates_view(
         self,
         panel_presenter: PanelPresenter,
         mock_side_panel_view: MockSidePanelView,
     ) -> None:
-        """MainPresenter から渡された選択テキストが View に表示されることを確認する。"""
-        panel_presenter.set_selected_text("Selected!")
+        """snapshot が一覧表示と連結プレビューの両方に反映されることを確認する。"""
+        snapshot = _make_snapshot(_make_slot(1, 1, "Selected!"))
+        panel_presenter.set_selection_snapshot(snapshot)
 
-        text_calls = mock_side_panel_view.get_calls("set_selected_text")
-        assert len(text_calls) == 1
-        assert text_calls[0] == ("Selected!",)
+        snapshot_calls = mock_side_panel_view.get_calls("set_selection_snapshot")
+        assert len(snapshot_calls) == 1
+        assert snapshot_calls[0][0].slots[0].extracted_text == "Selected!"
+
+        combined_calls = mock_side_panel_view.get_calls(
+            "set_combined_selection_preview"
+        )
+        assert len(combined_calls) == 1
+        assert combined_calls[0][0] == "選択 1 / ページ 2\n\nSelected!"
+
+    def test_set_selection_snapshot_renumbers_after_deletion(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        """表示番号に欠番がある snapshot を受けても 1,2,... に詰め直すこと。"""
+        snapshot = _make_snapshot(
+            _make_slot(1, 0, "First", selection_id="a"),
+            _make_slot(3, 2, "Third", selection_id="c"),
+        )
+        panel_presenter.set_selection_snapshot(snapshot)
+
+        normalized = mock_side_panel_view.get_calls("set_selection_snapshot")[0][0]
+        assert [slot.display_number for slot in normalized.slots] == [1, 2]
+
+        combined = mock_side_panel_view.get_calls(
+            "set_combined_selection_preview"
+        )[0][0]
+        assert combined == (
+            "選択 1 / ページ 1\n\nFirst\n\n"
+            "選択 2 / ページ 3\n\nThird"
+        )
 
 
 class TestSetSelectedContent:
     """Phase 4: マルチモーダルコンテンツの保持と View 反映を検証する。"""
 
-    def test_set_selected_content_updates_preview(
+    def test_set_selected_content_updates_snapshot_preview(
         self,
         panel_presenter: PanelPresenter,
         mock_side_panel_view: MockSidePanelView,
@@ -184,25 +263,12 @@ class TestSetSelectedContent:
         )
         panel_presenter.set_selected_content(content)
 
-        preview_calls = mock_side_panel_view.get_calls(
-            "set_selected_content_preview"
-        )
-        assert len(preview_calls) == 1
-        assert preview_calls[0] == ("Hello math", b"img-data")
-
-    def test_set_selected_content_updates_internal_text(
-        self,
-        panel_presenter: PanelPresenter,
-    ) -> None:
-        """set_selected_content で内部の _selected_text も更新されることを確認する。"""
-        rect = RectCoords(x0=0.0, y0=0.0, x1=50.0, y1=50.0)
-        content = SelectionContent(
-            page_number=0,
-            rect=rect,
-            extracted_text="Updated text",
-        )
-        panel_presenter.set_selected_content(content)
-        assert panel_presenter._selected_text == "Updated text"
+        snapshot_calls = mock_side_panel_view.get_calls("set_selection_snapshot")
+        assert len(snapshot_calls) == 1
+        slot = snapshot_calls[0][0].slots[0]
+        assert slot.extracted_text == "Hello math"
+        assert slot.content is not None
+        assert slot.content.cropped_image == b"img-data"
 
 
 class TestForceImageToggle:
@@ -238,14 +304,11 @@ class TestMultimodalAnalysis:
         mock_ai_model: MockAIModel,
     ) -> None:
         """クロップ画像がある場合、AnalysisRequest.images に含まれることを確認する。"""
-        rect = RectCoords(x0=0.0, y0=0.0, x1=100.0, y1=100.0)
-        content = SelectionContent(
-            page_number=0,
-            rect=rect,
-            extracted_text="Math formula",
-            cropped_image=b"cropped-png",
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(
+                _make_slot(1, 0, "Math formula", cropped_image=b"cropped-png")
+            )
         )
-        panel_presenter.set_selected_content(content)
         await panel_presenter._do_translate(include_explanation=False)
 
         analyze_calls = mock_ai_model.get_calls("analyze")
@@ -260,13 +323,9 @@ class TestMultimodalAnalysis:
         mock_ai_model: MockAIModel,
     ) -> None:
         """クロップ画像が無い場合、AnalysisRequest.images が空であることを確認する。"""
-        rect = RectCoords(x0=0.0, y0=0.0, x1=100.0, y1=100.0)
-        content = SelectionContent(
-            page_number=0,
-            rect=rect,
-            extracted_text="Plain text",
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Plain text"))
         )
-        panel_presenter.set_selected_content(content)
         await panel_presenter._do_translate(include_explanation=False)
 
         analyze_calls = mock_ai_model.get_calls("analyze")
@@ -280,20 +339,62 @@ class TestMultimodalAnalysis:
         mock_ai_model: MockAIModel,
     ) -> None:
         """カスタムプロンプトでもクロップ画像が AnalysisRequest に渡ることを確認する。"""
-        rect = RectCoords(x0=0.0, y0=0.0, x1=100.0, y1=100.0)
-        content = SelectionContent(
-            page_number=0,
-            rect=rect,
-            extracted_text="Some content",
-            cropped_image=b"image-bytes",
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(
+                _make_slot(1, 0, "Some content", cropped_image=b"image-bytes")
+            )
         )
-        panel_presenter.set_selected_content(content)
         await panel_presenter._do_custom_prompt("Explain this")
 
         analyze_calls = mock_ai_model.get_calls("analyze")
         request = analyze_calls[0][0]
         assert request.images == [b"image-bytes"]
         assert request.mode == AnalysisMode.CUSTOM_PROMPT
+
+    @pytest.mark.asyncio
+    async def test_multiple_selection_text_and_images_preserve_order(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """複数選択の本文と画像配列が選択順で組み立てられることを確認する。"""
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(
+                _make_slot(1, 1, "First chunk", cropped_image=b"img-1"),
+                _make_slot(2, 3, "Second chunk"),
+                _make_slot(3, 5, "Third chunk", cropped_image=b"img-3"),
+            )
+        )
+
+        await panel_presenter._do_translate(include_explanation=False)
+
+        request = mock_ai_model.get_calls("analyze")[0][0]
+        assert request.text == (
+            "選択 1 / ページ 2\n\nFirst chunk\n\n"
+            "選択 2 / ページ 4\n\nSecond chunk\n\n"
+            "選択 3 / ページ 6\n\nThird chunk"
+        )
+        assert request.images == [b"img-1", b"img-3"]
+
+    @pytest.mark.asyncio
+    async def test_pending_slots_are_excluded_from_request_text(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """pending スロットは連結本文と画像配列に含めない。"""
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(
+                _make_slot(1, 0, "ready text", cropped_image=b"img-1"),
+                _make_slot(2, 1, "still pending", read_state="pending"),
+            )
+        )
+
+        await panel_presenter._do_translate(include_explanation=False)
+
+        request = mock_ai_model.get_calls("analyze")[0][0]
+        assert request.text == "選択 1 / ページ 1\n\nready text"
+        assert request.images == [b"img-1"]
 
 
 class TestErrorHandling:
@@ -311,7 +412,9 @@ class TestErrorHandling:
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
         presenter.set_selected_model("models/gemini-2.0-flash")
-        presenter.set_selected_text("Hello")
+        presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello"))
+        )
         await presenter._do_translate(include_explanation=False)
 
         result_calls = mock_side_panel_view.get_calls("update_result_text")
@@ -330,7 +433,9 @@ class TestErrorHandling:
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
         presenter.set_selected_model("models/gemini-2.0-flash")
-        presenter.set_selected_text("Hello")
+        presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello"))
+        )
         await presenter._do_translate(include_explanation=False)
 
         result_calls = mock_side_panel_view.get_calls("update_result_text")
@@ -351,7 +456,9 @@ class TestErrorHandling:
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
         presenter.set_selected_model("models/gemini-2.0-flash")
-        presenter.set_selected_text("Hello")
+        presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello"))
+        )
         await presenter._do_translate(include_explanation=False)
 
         result_calls = mock_side_panel_view.get_calls("update_result_text")
@@ -370,7 +477,9 @@ class TestErrorHandling:
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
         presenter.set_selected_model("models/gemini-2.0-flash")
-        presenter.set_selected_text("Hello")
+        presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello"))
+        )
         await presenter._do_custom_prompt("Summarize")
 
         result_calls = mock_side_panel_view.get_calls("update_result_text")
@@ -389,7 +498,9 @@ class TestErrorHandling:
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
         presenter.set_selected_model("models/gemini-2.0-flash")
-        presenter.set_selected_text("Hello")
+        presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello"))
+        )
         await presenter._do_translate(include_explanation=False)
 
         loading_calls = mock_side_panel_view.get_calls("show_loading")
@@ -439,7 +550,9 @@ class TestModelSelection:
     ) -> None:
         """選択されたモデルが AnalysisRequest.model_name に入ること。"""
         mock_side_panel_view.simulate_model_changed("gemini-2.0-pro")
-        panel_presenter.set_selected_text("Test text")
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Test text"))
+        )
         await panel_presenter._do_translate(include_explanation=False)
 
         analyze_calls = mock_ai_model.get_calls("analyze")
@@ -454,7 +567,9 @@ class TestModelSelection:
     ) -> None:
         """モデル未選択時はガードが作動し、AI 呼び出しが行われないこと。"""
         presenter = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
-        presenter.set_selected_text("Test text")
+        presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Test text"))
+        )
         await presenter._do_translate(include_explanation=False)
 
         analyze_calls = mock_ai_model.get_calls("analyze")
@@ -494,6 +609,38 @@ class TestCacheHandlers:
         )
         mock_side_panel_view.simulate_cache_invalidate_requested()
         assert called == ["invalidate"]
+
+
+class TestSelectionHandlers:
+    """Phase 6: SidePanel の削除・全消去イベント中継を検証する。"""
+
+    def test_selection_delete_handler_called(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        """個別削除ボタンで登録ハンドラが呼ばれること。"""
+        called: list[str] = []
+        panel_presenter.set_on_selection_delete_handler(called.append)
+
+        mock_side_panel_view.simulate_selection_delete_requested("selection-2")
+
+        assert called == ["selection-2"]
+
+    def test_clear_selections_handler_called(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        """全消去ボタンで登録ハンドラが呼ばれること。"""
+        called: list[str] = []
+        panel_presenter.set_on_clear_selections_handler(
+            lambda: called.append("cleared")
+        )
+
+        mock_side_panel_view.simulate_clear_selections_requested()
+
+        assert called == ["cleared"]
 
     def test_update_cache_status_active(
         self,
@@ -657,7 +804,9 @@ class TestModelUnsetGuard:
     ) -> None:
         """モデル未設定時の翻訳要求でエラーメッセージが表示されること。"""
         presenter = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
-        presenter.set_selected_text("Hello")
+        presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello"))
+        )
         await presenter._do_translate(include_explanation=False)
 
         # AI は呼ばれない
@@ -675,7 +824,9 @@ class TestModelUnsetGuard:
     ) -> None:
         """モデル未設定時のカスタムプロンプトでエラーメッセージが表示されること。"""
         presenter = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
-        presenter.set_selected_text("Hello")
+        presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello"))
+        )
         await presenter._do_custom_prompt("Summarize")
 
         assert len(mock_ai_model.get_calls("analyze")) == 0
@@ -710,7 +861,9 @@ class TestModelUnsetGuard:
     ) -> None:
         """モデルが設定されている場合は通常通り翻訳が実行されること。"""
         panel_presenter.set_selected_model("gemini-pro")
-        panel_presenter.set_selected_text("Hello")
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello"))
+        )
         await panel_presenter._do_translate(include_explanation=False)
 
         assert len(mock_ai_model.get_calls("analyze")) == 1

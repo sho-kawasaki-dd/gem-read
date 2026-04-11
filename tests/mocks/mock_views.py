@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from pdf_epub_reader.dto import PageData, RectCoords, ToCEntry
+from pdf_epub_reader.dto import (
+    PageData,
+    RectCoords,
+    SelectionSnapshot,
+    ToCEntry,
+)
 from pdf_epub_reader.dto.ai_dto import CacheStatus
 
 
@@ -33,6 +38,10 @@ class MockMainView:
         self._on_file_dropped: Callable[[str], None] | None = None
         self._on_recent_file_selected: Callable[[str], None] | None = None
         self._on_area_selected: Callable[[int, RectCoords], None] | None = None
+        self._on_selection_requested: (
+            Callable[[int, RectCoords, bool], None] | None
+        ) = None
+        self._on_selection_clear_requested: Callable[[], None] | None = None
         self._on_zoom_changed: Callable[[float], None] | None = None
         self._on_bookmark_selected: Callable[[int], None] | None = None
         self._on_cache_management_requested: Callable[[], None] | None = None
@@ -61,6 +70,11 @@ class MockMainView:
         self, page_number: int, rect: RectCoords
     ) -> None:
         self.calls.append(("show_selection_highlight", (page_number, rect)))
+
+    def show_selection_highlights(
+        self, snapshot: SelectionSnapshot
+    ) -> None:
+        self.calls.append(("show_selection_highlights", (snapshot,)))
 
     def clear_selection(self) -> None:
         self.calls.append(("clear_selection", ()))
@@ -113,6 +127,16 @@ class MockMainView:
     ) -> None:
         self._on_area_selected = cb
 
+    def set_on_selection_requested(
+        self, cb: Callable[[int, RectCoords, bool], None]
+    ) -> None:
+        self._on_selection_requested = cb
+
+    def set_on_selection_clear_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        self._on_selection_clear_requested = cb
+
     def set_on_zoom_changed(self, cb: Callable[[float], None]) -> None:
         self._on_zoom_changed = cb
 
@@ -148,6 +172,16 @@ class MockMainView:
     ) -> None:
         if self._on_area_selected:
             self._on_area_selected(page_number, rect)
+
+    def simulate_selection_requested(
+        self, page_number: int, rect: RectCoords, append: bool
+    ) -> None:
+        if self._on_selection_requested:
+            self._on_selection_requested(page_number, rect, append)
+
+    def simulate_selection_clear_requested(self) -> None:
+        if self._on_selection_clear_requested:
+            self._on_selection_clear_requested()
 
     def simulate_zoom_changed(self, level: float) -> None:
         if self._on_zoom_changed:
@@ -187,6 +221,10 @@ class MockSidePanelView:
         self._on_custom_prompt_submitted: Callable[[str], None] | None = None
         self._on_tab_changed: Callable[[str], None] | None = None
         self._on_force_image_toggled: Callable[[bool], None] | None = None
+        self._on_selection_delete_requested: (
+            Callable[[str], None] | None
+        ) = None
+        self._on_clear_selections_requested: Callable[[], None] | None = None
         self._on_model_changed: Callable[[str], None] | None = None
         self._on_cache_create_requested: Callable[[], None] | None = None
         self._on_cache_invalidate_requested: Callable[[], None] | None = None
@@ -203,6 +241,12 @@ class MockSidePanelView:
         self, text: str, thumbnail: bytes | None
     ) -> None:
         self.calls.append(("set_selected_content_preview", (text, thumbnail)))
+
+    def set_selection_snapshot(self, snapshot: SelectionSnapshot) -> None:
+        self.calls.append(("set_selection_snapshot", (snapshot,)))
+
+    def set_combined_selection_preview(self, text: str) -> None:
+        self.calls.append(("set_combined_selection_preview", (text,)))
 
     def update_result_text(self, text: str) -> None:
         self.calls.append(("update_result_text", (text,)))
@@ -233,6 +277,16 @@ class MockSidePanelView:
         self, cb: Callable[[bool], None]
     ) -> None:
         self._on_force_image_toggled = cb
+
+    def set_on_selection_delete_requested(
+        self, cb: Callable[[str], None]
+    ) -> None:
+        self._on_selection_delete_requested = cb
+
+    def set_on_clear_selections_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        self._on_clear_selections_requested = cb
 
     def set_available_models(self, model_names: list[str]) -> None:
         self.calls.append(("set_available_models", (model_names,)))
@@ -295,6 +349,14 @@ class MockSidePanelView:
     def simulate_force_image_toggled(self, checked: bool) -> None:
         if self._on_force_image_toggled:
             self._on_force_image_toggled(checked)
+
+    def simulate_selection_delete_requested(self, selection_id: str) -> None:
+        if self._on_selection_delete_requested:
+            self._on_selection_delete_requested(selection_id)
+
+    def simulate_clear_selections_requested(self) -> None:
+        if self._on_clear_selections_requested:
+            self._on_clear_selections_requested()
 
     def simulate_model_changed(self, model_name: str) -> None:
         if self._on_model_changed:

@@ -17,6 +17,8 @@ from pdf_epub_reader.dto.document_dto import (
     PageData,
     RectCoords,
     SelectionContent,
+    SelectionSlot,
+    SelectionSnapshot,
     TextSelection,
     ToCEntry,
 )
@@ -31,6 +33,8 @@ __all__ = [
     "PageData",
     "RectCoords",
     "SelectionContent",
+    "SelectionSlot",
+    "SelectionSnapshot",
     "TextSelection",
     "ToCEntry",
 ]
