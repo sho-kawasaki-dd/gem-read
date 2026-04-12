@@ -80,6 +80,7 @@ def panel_presenter(
     このフィクスチャを使うことで毎回同じ構成を簡単に再利用できる。
     """
     presenter = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
+    presenter.set_available_models(["models/gemini-2.0-flash"])
     presenter.set_selected_model("models/gemini-2.0-flash")
     return presenter
 

@@ -51,13 +51,13 @@ from PySide6.QtWidgets import (
 )
 
 from pdf_epub_reader.dto import (
+    MainWindowTexts,
     PageData,
     RectCoords,
     SelectionSlot,
     SelectionSnapshot,
     ToCEntry,
 )
-from pdf_epub_reader.services.translation_service import TranslationService
 from pdf_epub_reader.utils.config import (
     BOOKMARK_PANEL_WIDTH,
     DEFAULT_UI_LANGUAGE,
@@ -67,12 +67,10 @@ from pdf_epub_reader.utils.config import (
     MAX_RECENT_FILES,
     PAGE_GAP,
     SPLITTER_RATIO,
-    UiLanguage,
     VIEWPORT_BUFFER_PAGES,
     ZOOM_MAX,
     ZOOM_MIN,
     ZOOM_STEP,
-    normalize_ui_language,
 )
 from pdf_epub_reader.views.bookmark_panel import BookmarkPanelView
 
@@ -91,12 +89,8 @@ class MainWindow(QMainWindow):
         ui_language: str = DEFAULT_UI_LANGUAGE,
     ) -> None:
         super().__init__()
-        self._ui_language: UiLanguage = normalize_ui_language(
-            ui_language,
-            fallback="en",
-        )
-        self._translation_service = TranslationService()
-        self.setWindowTitle(self._translate_ui_text("main.window.title"))
+        self._ui_texts: MainWindowTexts | None = None
+        self.setWindowTitle("")
         self.resize(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
 
         # --- コールバック保持 ---
@@ -118,7 +112,7 @@ class MainWindow(QMainWindow):
 
         # Phase 5 で app.py から注入されるまでの互換用デフォルト。
         self._bookmark_panel = bookmark_panel or BookmarkPanelView(
-            ui_language=self._ui_language
+            ui_language=ui_language
         )
 
         # --- QSettings で最近のファイルを永続化 ---
@@ -172,7 +166,6 @@ class MainWindow(QMainWindow):
 
         # --- ステータスバー ---
         self._build_status_bar()
-        self.apply_ui_language(self._ui_language)
 
         # --- ドラッグ&ドロップ ---
         self.setAcceptDrops(True)
@@ -372,15 +365,12 @@ class MainWindow(QMainWindow):
         """重大エラー時にモーダルダイアログを表示する。"""
         QMessageBox.critical(self, title, message)
 
-    def show_password_dialog(self, file_path: str) -> str | None:
+    def show_password_dialog(self, title: str, message: str) -> str | None:
         """パスワード保護文書の入力ダイアログを表示する。"""
         password, accepted = QInputDialog.getText(
             self,
-            self._translate_ui_text("main.dialog.password.title"),
-            self._translate_ui_text(
-                "main.dialog.password.message",
-                file_path=file_path,
-            ),
+            title,
+            message,
             echo=QLineEdit.EchoMode.Password,
         )
         if not accepted:
@@ -394,39 +384,25 @@ class MainWindow(QMainWindow):
         if self._doc_view._zoom_level < 1.0:
             self._doc_view._apply_zoom_resize(self._doc_view._zoom_level)
 
-    def apply_ui_language(self, language: str) -> None:
-        """メインウィンドウの静的文言を現在の表示言語で再設定する。"""
-        self._ui_language = normalize_ui_language(language, fallback="en")
+    def apply_ui_texts(self, texts: MainWindowTexts) -> None:
+        """Presenter が解決済みの UI 文言束を適用する。"""
+        self._ui_texts = texts
         if self._window_title_is_default:
-            self.setWindowTitle(self._translate_ui_text("main.window.title"))
-        self._file_menu.setTitle(self._translate_ui_text("main.menu.file.title"))
-        self._open_action.setText(self._translate_ui_text("main.menu.file.open"))
-        self._recent_files_menu.setTitle(
-            self._translate_ui_text("main.menu.file.recent")
-        )
-        self._quit_action.setText(self._translate_ui_text("main.menu.file.exit"))
-        self._view_menu.setTitle(self._translate_ui_text("main.menu.view.title"))
-        self._bookmark_toggle_action.setText(
-            self._translate_ui_text("main.menu.view.bookmarks")
-        )
-        self._edit_menu.setTitle(self._translate_ui_text("main.menu.edit.title"))
-        self._preferences_action.setText(
-            self._translate_ui_text("main.menu.edit.preferences")
-        )
-        self._cache_menu.setTitle(self._translate_ui_text("main.menu.cache.title"))
-        self._cache_mgmt_action.setText(
-            self._translate_ui_text("main.menu.cache.manage")
-        )
-        self._language_menu.setTitle(
-            self._translate_ui_text("menu.language.title")
-        )
-        self._language_settings_action.setText(
-            self._translate_ui_text("menu.language.settings")
-        )
-        self._bookmark_panel.apply_ui_language(self._ui_language)
-        self._overlay.set_page_label_text(
-            self._translate_ui_text("main.overlay.page")
-        )
+            self.setWindowTitle(texts.window_title)
+        self._file_menu.setTitle(texts.file_menu_title)
+        self._open_action.setText(texts.open_action_text)
+        self._recent_files_menu.setTitle(texts.recent_menu_title)
+        self._quit_action.setText(texts.quit_action_text)
+        self._view_menu.setTitle(texts.view_menu_title)
+        self._bookmark_toggle_action.setText(texts.bookmark_toggle_text)
+        self._edit_menu.setTitle(texts.edit_menu_title)
+        self._preferences_action.setText(texts.preferences_action_text)
+        self._cache_menu.setTitle(texts.cache_menu_title)
+        self._cache_mgmt_action.setText(texts.cache_management_action_text)
+        self._language_menu.setTitle(texts.language_menu_title)
+        self._language_settings_action.setText(texts.language_settings_action_text)
+        self._bookmark_panel.apply_ui_texts(texts.bookmark_panel)
+        self._overlay.set_page_label_text(texts.overlay_page_label)
         if self._status_is_default:
             self._set_default_status_text()
         self._rebuild_recent_menu()
@@ -508,9 +484,9 @@ class MainWindow(QMainWindow):
         """ファイル選択ダイアログを開き、選択されたパスをコールバックに渡す。"""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            self._translate_ui_text("main.dialog.open.title"),
+            self._ui_texts.open_dialog_title if self._ui_texts else "",
             "",
-            self._translate_ui_text("main.dialog.open.filter"),
+            self._ui_texts.open_dialog_filter if self._ui_texts else "",
         )
         if file_path and self._on_file_dropped:
             # open と drop を統合し、同一のコールバックでパスを渡す。
@@ -633,7 +609,7 @@ class MainWindow(QMainWindow):
         recent = cast(list[str], self._settings.value("recent_files", []) or [])
         if not recent:
             no_items = QAction(
-                self._translate_ui_text("main.menu.file.none"),
+                self._ui_texts.recent_none_text if self._ui_texts else "",
                 self,
             )
             no_items.setEnabled(False)
@@ -654,17 +630,11 @@ class MainWindow(QMainWindow):
             self._add_to_recent(path)
             self._on_file_dropped(path)
 
-    def _translate_ui_text(self, key: str, **kwargs: object) -> str:
-        """Phase 2 で追加した言語メニュー文言を解決する。"""
-        return self._translation_service.translate(
-            key,
-            self._ui_language,
-            **kwargs,
-        )
-
     def _set_default_status_text(self) -> None:
         self._status_is_default = True
-        self._status_label.setText(self._translate_ui_text("main.status.ready"))
+        self._status_label.setText(
+            self._ui_texts.default_status_text if self._ui_texts else ""
+        )
 
 
 # =============================================================================

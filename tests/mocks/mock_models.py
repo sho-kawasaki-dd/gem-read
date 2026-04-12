@@ -153,11 +153,11 @@ class MockDocumentModel:
         self.calls.append(("close_document", ()))
         self._document_info = None
 
-    def get_document_info(self) -> DocumentInfo | None:
+    async def get_document_info(self) -> DocumentInfo | None:
         """最後に open した文書情報を返す。"""
         return self._document_info
 
-    def update_config(self, config) -> None:
+    async def update_config(self, config) -> None:
         """設定更新呼び出しを記録する。"""
         self.calls.append(("update_config", (config,)))
 
@@ -207,6 +207,7 @@ class MockAIModel:
             ttl_seconds=3600,
             token_count=1000,
             cache_name="mock-cache",
+            display_name=display_name,
             model_name=model_name or "mock-model",
         )
 
@@ -218,6 +219,10 @@ class MockAIModel:
     async def invalidate_cache(self) -> None:
         """キャッシュ無効化呼び出しを記録する。"""
         self.calls.append(("invalidate_cache", ()))
+
+    async def delete_cache(self, cache_name: str) -> None:
+        """名前指定のキャッシュ削除呼び出しを記録する。"""
+        self.calls.append(("delete_cache", (cache_name,)))
 
     async def count_tokens(
         self, text: str, *, model_name: str | None = None
@@ -236,6 +241,7 @@ class MockAIModel:
             is_active=True,
             ttl_seconds=ttl_minutes * 60,
             cache_name="mock-cache",
+            display_name="pdf-reader: mock.pdf",
         )
 
     async def list_caches(self) -> list[CacheStatus]:
@@ -250,7 +256,7 @@ class MockAIModel:
             ModelInfo(model_id="models/gemini-test", display_name="Gemini Test"),
         ]
 
-    def update_config(self, config) -> None:
+    async def update_config(self, config) -> None:
         """設定更新呼び出しを記録する。"""
         self.calls.append(("update_config", (config,)))
 

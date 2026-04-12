@@ -24,7 +24,7 @@ from pdf_epub_reader.dto import (
 from pdf_epub_reader.interfaces.model_interfaces import IAIModel
 from pdf_epub_reader.interfaces.view_interfaces import ISidePanelView
 from pdf_epub_reader.services.translation_service import TranslationService
-from pdf_epub_reader.utils.config import normalize_ui_language
+from pdf_epub_reader.utils.config import normalize_model_name, normalize_ui_language
 from pdf_epub_reader.utils.exceptions import (
     AIAPIError,
     AIKeyMissingError,
@@ -54,7 +54,8 @@ class PanelPresenter:
         self._selection_snapshot = SelectionSnapshot()
         self._force_include_image: bool = False
         # Phase 6: リクエスト単位のモデル選択
-        self._current_model: str | None = None
+        self._available_models: list[str] = []
+        self._current_model: str = ""
         self._on_selection_delete_handler: (
             Callable[[str], None] | None
         ) = None
@@ -83,7 +84,11 @@ class PanelPresenter:
             self._fire_cache_invalidate
         )
         self._view.set_on_cache_expired(self._on_cache_expired)
-        self._view.apply_ui_language(self._ui_language)
+        self._view.apply_ui_texts(
+            self._translation_service.build_side_panel_texts(
+                self._ui_language
+            )
+        )
 
     # --- Public API (called by MainPresenter) ---
 
@@ -152,26 +157,48 @@ class PanelPresenter:
 
     def set_available_models(self, model_names: list[str]) -> None:
         """モデル選択プルダウンの選択肢を設定する。"""
-        self._view.set_available_models(model_names)
+        self._available_models = []
+        for model_name in model_names:
+            normalized = normalize_model_name(model_name)
+            if normalized and normalized not in self._available_models:
+                self._available_models.append(normalized)
+
+        if self._current_model not in self._available_models:
+            self._current_model = ""
+
+        self._view.set_available_models(self._available_models)
+        self._view.set_selected_model(self._current_model)
+        self._view.set_model_combo_enabled(bool(self._current_model))
 
     def set_selected_model(self, model_name: str) -> None:
         """モデル選択プルダウンの現在値を設定する。"""
-        self._current_model = model_name
-        self._view.set_selected_model(model_name)
+        normalized = normalize_model_name(model_name)
+        if normalized and normalized in self._available_models:
+            self._current_model = normalized
+        else:
+            self._current_model = ""
+        self._view.set_selected_model(self._current_model)
+        self._view.set_model_combo_enabled(bool(self._current_model))
 
     def apply_ui_language(self, language: str) -> None:
         """表示言語を更新し、現在の表示内容を即時更新する。"""
         self._ui_language = normalize_ui_language(language, fallback="en")
-        self._view.apply_ui_language(self._ui_language)
+        self._view.apply_ui_texts(
+            self._translation_service.build_side_panel_texts(
+                self._ui_language
+            )
+        )
+        self._view.set_selected_model(self._current_model)
+        self._view.set_model_combo_enabled(bool(self._current_model))
         self._view.set_selection_snapshot(self._selection_snapshot)
         self._view.set_combined_selection_preview(self._build_analysis_text())
         self.update_cache_status(self._cache_status)
 
-    def get_current_model(self) -> str | None:
+    def get_current_model(self) -> str:
         """サイドパネルで現在選択中のモデル名を返す。
 
         MainPresenter がキャッシュ作成時に使用するモデルを取得するために呼ぶ。
-        モデル未選択時は None を返す。
+        モデル未選択時は空文字を返す。
         """
         return self._current_model
 
@@ -201,6 +228,10 @@ class PanelPresenter:
         """MainPresenter が登録するキャッシュ削除ハンドラ。"""
         self._on_cache_invalidate_handler = cb
 
+    def set_cache_button_enabled(self, enabled: bool) -> None:
+        """キャッシュ操作ボタンの有効/無効を View に反映する。"""
+        self._view.set_cache_button_enabled(enabled)
+
     def update_cache_status(self, status: CacheStatus) -> None:
         """キャッシュ状態を内部に保持し、View を更新する。
 
@@ -210,12 +241,17 @@ class PanelPresenter:
         self._cache_status = status
         self._view.set_cache_active(status.is_active)
         if status.is_active:
+            status_text = self._translate("cache.status.active")
             brief = self._translate(
                 "presenter.panel.cache.on",
+                status=status_text,
                 token_count=status.token_count or "?",
             )
         else:
-            brief = self._translate("presenter.panel.cache.off")
+            brief = self._translate(
+                "presenter.panel.cache.off",
+                status=self._translate("cache.status.inactive"),
+            )
         self._view.update_cache_status_brief(brief)
 
         # Phase 7.5: カウントダウン連携
@@ -251,23 +287,29 @@ class PanelPresenter:
         OK → invalidate ハンドラ発火 + モデル更新
         Cancel → プルダウンを元のモデルに戻す
         """
+        normalized = normalize_model_name(model_name)
+        if not normalized or normalized not in self._available_models:
+            return
+
+        previous_model = self._current_model
         if (
             self._cache_status.is_active
             and self._cache_status.model_name
-            and self._cache_status.model_name != model_name
+            and self._cache_status.model_name != normalized
         ):
             ok = self._view.show_confirm_dialog(
                 self._translate("presenter.panel.model_change.title"),
                 self._translate("presenter.panel.model_change.message"),
             )
             if not ok:
-                self._view.set_selected_model(
-                    self._cache_status.model_name
-                )
+                self._current_model = previous_model
+                self._view.set_selected_model(previous_model)
+                self._view.set_model_combo_enabled(bool(previous_model))
                 return
             if self._on_cache_invalidate_handler:
                 self._on_cache_invalidate_handler()
-        self._current_model = model_name
+        self._current_model = normalized
+        self._view.set_model_combo_enabled(True)
 
     def _on_translate_requested(self, include_explanation: bool) -> None:
         """翻訳ボタン押下を受け取り、非同期処理を開始する。"""

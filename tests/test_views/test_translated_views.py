@@ -7,6 +7,8 @@ os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 
 from PySide6.QtWidgets import QApplication, QCheckBox, QPushButton, QWidget
 
+from pdf_epub_reader.dto import CacheStatus
+from pdf_epub_reader.services.translation_service import TranslationService
 from pdf_epub_reader.views.bookmark_panel import BookmarkPanelView
 from pdf_epub_reader.views.cache_dialog import CacheDialog
 from pdf_epub_reader.views.language_dialog import LanguageDialog
@@ -16,6 +18,7 @@ from pdf_epub_reader.views.side_panel_view import SidePanelView
 
 
 _APP = QApplication.instance() or QApplication([])
+_TRANSLATIONS = TranslationService()
 
 
 def _button_texts(widget: QWidget) -> set[str]:
@@ -29,6 +32,7 @@ def _checkbox_texts(widget: QWidget) -> set[str]:
 class TestSettingsDialogTranslations:
     def test_english_static_strings_are_translated(self) -> None:
         dialog = SettingsDialog(ui_language="en")
+        dialog.apply_ui_texts(_TRANSLATIONS.build_settings_dialog_texts("en"))
 
         assert dialog.windowTitle() == "Preferences"
         assert dialog._tabs.tabText(0) == "Rendering"
@@ -47,6 +51,7 @@ class TestSettingsDialogTranslations:
 class TestCacheDialogTranslations:
     def test_english_static_strings_are_translated(self) -> None:
         dialog = CacheDialog(ui_language="en")
+        dialog.apply_ui_texts(_TRANSLATIONS.build_cache_dialog_texts("en"))
 
         assert dialog.windowTitle() == "Cache Management"
         assert dialog._tabs.tabText(0) == "Current Cache"
@@ -55,21 +60,51 @@ class TestCacheDialogTranslations:
         assert "Delete Selected" in _button_texts(dialog)
         assert "Close" in _button_texts(dialog)
         headers = [dialog._table.horizontalHeaderItem(i).text() for i in range(5)]
-        assert headers == ["Name", "Model", "Display Name", "Tokens", "Expire"]
+        assert headers == ["Name", "Model", "Display Name", "Tokens", "Expire Time"]
 
         dialog.set_cache_ttl_seconds(125)
         dialog.set_cache_is_active(True)
         assert dialog._ttl_label.text() == "2 min 5 sec"
         assert dialog._active_label.text() == "Active"
 
+        dialog.set_cache_token_count(None)
+        dialog.set_cache_ttl_seconds(None)
+        dialog.set_cache_expire_time(None)
+        assert dialog._token_label.text() == "Not set"
+        assert dialog._ttl_label.text() == "Not set"
+        assert dialog._expire_label.text() == "Not set"
+
         dialog.set_cache_is_active(False)
         assert dialog._active_label.text() == "Inactive"
+        dialog.close()
+
+    def test_cache_list_uses_api_display_name(self) -> None:
+        dialog = CacheDialog(ui_language="en")
+        dialog.apply_ui_texts(_TRANSLATIONS.build_cache_dialog_texts("en"))
+        dialog.set_cache_list(
+            [
+                CacheStatus(
+                    cache_name="caches/app-1",
+                    display_name="pdf-reader: sample.pdf",
+                    model_name="models/gemini-test",
+                    token_count=123,
+                    expire_time="2026-04-11T12:00:00Z",
+                )
+            ]
+        )
+
+        assert dialog._table.item(0, 0).text() == "caches/app-1"
+        assert dialog._table.item(0, 2).text() == "pdf-reader: sample.pdf"
         dialog.close()
 
 
 class TestLanguageDialogTranslations:
     def test_english_strings_are_translated(self) -> None:
         dialog = LanguageDialog(ui_language="en")
+        dialog.apply_ui_texts(_TRANSLATIONS.build_language_dialog_texts("en"))
+        dialog.set_available_languages(
+            [("ja", "日本語"), ("en", "English")]
+        )
 
         assert dialog.windowTitle() == "Language"
         assert dialog._description_label.text() == (
@@ -90,10 +125,11 @@ class TestLanguageDialogTranslations:
 class TestBookmarkPanelTranslations:
     def test_header_updates_with_language_change(self) -> None:
         panel = BookmarkPanelView(ui_language="en")
+        panel.apply_ui_texts(_TRANSLATIONS.build_bookmark_panel_texts("en"))
 
         assert panel._tree.headerItem().text(0) == "Bookmarks"
 
-        panel.apply_ui_language("ja")
+        panel.apply_ui_texts(_TRANSLATIONS.build_bookmark_panel_texts("ja"))
 
         assert panel._tree.headerItem().text(0) == "しおり"
         panel.close()
@@ -108,6 +144,7 @@ class TestMainWindowTranslations:
             bookmark_panel=bookmark_panel,
             ui_language="en",
         )
+        window.apply_ui_texts(_TRANSLATIONS.build_main_window_texts("en"))
 
         assert window.windowTitle() == "PDF/EPUB Reader"
         assert window._file_menu.title() == "&File"
@@ -115,9 +152,10 @@ class TestMainWindowTranslations:
         assert bookmark_panel._tree.headerItem().text(0) == "Bookmarks"
         assert window._overlay._page_label.text() == "Page:"
 
-        window.apply_ui_language("ja")
+        window.apply_ui_texts(_TRANSLATIONS.build_main_window_texts("ja"))
 
-        assert window._file_menu.title() == "ファイル(&F)"
+        assert window._file_menu.title() == "ファイル"
+        assert window._open_action.text() == "開く..."
         assert window._status_label.text() == "準備完了"
         assert bookmark_panel._tree.headerItem().text(0) == "しおり"
         assert window._overlay._page_label.text() == "ページ:"
@@ -129,6 +167,7 @@ class TestMainWindowTranslations:
 class TestSidePanelTranslations:
     def test_language_application_updates_static_strings(self) -> None:
         panel = SidePanelView(ui_language="en")
+        panel.apply_ui_texts(_TRANSLATIONS.build_side_panel_texts("en"))
 
         assert panel._selection_section._toggle_btn.text().endswith("Selections")
         assert panel._selection_summary_label.text() == "Selections 0"
@@ -139,7 +178,7 @@ class TestSidePanelTranslations:
         assert panel._tab_widget.tabText(1) == "Custom Prompt"
         assert panel._cache_label.text() == "Cache Status: ---"
 
-        panel.apply_ui_language("ja")
+        panel.apply_ui_texts(_TRANSLATIONS.build_side_panel_texts("ja"))
 
         assert panel._selection_section._toggle_btn.text().endswith("選択一覧")
         assert panel._selection_summary_label.text() == "選択 0 件"
@@ -149,4 +188,24 @@ class TestSidePanelTranslations:
         assert panel._tab_widget.tabText(0) == "翻訳"
         assert panel._tab_widget.tabText(1) == "カスタムプロンプト"
         assert panel._cache_label.text() == "キャッシュステータス: ---"
+        panel.close()
+
+    def test_model_combo_stays_placeholder_until_selection(self) -> None:
+        panel = SidePanelView(ui_language="en")
+        texts = _TRANSLATIONS.build_side_panel_texts("en")
+        panel.apply_ui_texts(texts)
+
+        panel.set_available_models(["model-a", "model-b"])
+        panel.set_selected_model("")
+        panel.set_model_combo_enabled(False)
+
+        assert panel._model_combo.currentIndex() == -1
+        assert panel._model_combo.placeholderText() == texts.model_unset_placeholder
+        assert panel._model_combo.isEnabled() is False
+
+        panel.set_selected_model("model-b")
+        panel.set_model_combo_enabled(True)
+
+        assert panel._model_combo.currentText() == "model-b"
+        assert panel._model_combo.isEnabled() is True
         panel.close()

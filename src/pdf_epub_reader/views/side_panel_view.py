@@ -39,9 +39,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from pdf_epub_reader.dto import SelectionSlot, SelectionSnapshot
-from pdf_epub_reader.services.translation_service import TranslationService
-from pdf_epub_reader.utils.config import DEFAULT_UI_LANGUAGE, normalize_ui_language
+from pdf_epub_reader.dto import SelectionSlot, SelectionSnapshot, SidePanelTexts
+from pdf_epub_reader.utils.config import DEFAULT_UI_LANGUAGE
 
 
 # タブインデックスと AnalysisMode.value の対応。
@@ -220,12 +219,12 @@ class _SelectionCard(QFrame):
     def __init__(
         self,
         slot: SelectionSlot,
-        translate: Callable[[str], str],
+        text_for: Callable[..., str],
         on_delete_requested: Callable[[str], None] | None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._translate = translate
+        self._text_for = text_for
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setStyleSheet(
             "QFrame {"
@@ -254,9 +253,7 @@ class _SelectionCard(QFrame):
         header_row.addWidget(badge)
 
         header_text = QLabel(
-            self._translate("side.selection.card.page").format(
-                page=slot.page_number + 1
-            )
+            self._text_for("selection_card_page_template", page=slot.page_number + 1)
         )
         header_text.setStyleSheet("font-weight: bold;")
         header_row.addWidget(header_text)
@@ -267,7 +264,7 @@ class _SelectionCard(QFrame):
         header_row.addStretch(1)
 
         delete_button = QPushButton(
-            self._translate("side.selection.card.delete")
+            self._text_for("selection_card_delete_button")
         )
         delete_button.setFixedHeight(24)
         delete_button.clicked.connect(
@@ -298,10 +295,10 @@ class _SelectionCard(QFrame):
 
     def _state_text(self, slot: SelectionSlot) -> str:
         if slot.read_state == "pending":
-            return self._translate("side.selection.card.pending")
+            return self._text_for("selection_card_pending_text")
         if slot.read_state == "error":
-            return self._translate("side.selection.card.error")
-        return self._translate("side.selection.card.ready")
+            return self._text_for("selection_card_error_text")
+        return self._text_for("selection_card_ready_text")
 
     def _state_style(self, slot: SelectionSlot) -> str:
         if slot.read_state == "pending":
@@ -322,14 +319,14 @@ class _SelectionCard(QFrame):
 
     def _preview_text(self, slot: SelectionSlot) -> str:
         if slot.read_state == "pending":
-            return self._translate("side.selection.card.extracting")
+            return self._text_for("selection_card_extracting_text")
         if slot.read_state == "error":
-            return slot.error_message or self._translate(
-                "side.selection.card.extract_failed"
+            return slot.error_message or self._text_for(
+                "selection_card_extract_failed_text"
             )
 
-        text = slot.extracted_text.strip() or self._translate(
-            "side.selection.card.no_text"
+        text = slot.extracted_text.strip() or self._text_for(
+            "selection_card_no_text"
         )
         text = text.replace("\n", " ")
         if len(text) > 140:
@@ -350,8 +347,7 @@ class SidePanelView(QWidget):
         ui_language: str = DEFAULT_UI_LANGUAGE,
     ) -> None:
         super().__init__(parent)
-        self._ui_language = normalize_ui_language(ui_language, fallback="en")
-        self._translation_service = TranslationService()
+        self._texts: SidePanelTexts | None = None
 
         # --- KaTeX ローカルバンドルの baseUrl ---
         # Chromium が file:/// リソースを読み込めるよう、
@@ -393,6 +389,8 @@ class SidePanelView(QWidget):
         self._model_label = QLabel("")
         model_row.addWidget(self._model_label)
         self._model_combo = QComboBox()
+        self._model_combo.setEnabled(False)
+        self._model_combo.setCurrentIndex(-1)
         self._model_combo.currentTextChanged.connect(self._fire_model_changed)
         model_row.addWidget(self._model_combo, 1)
         layout.addLayout(model_row)
@@ -540,7 +538,6 @@ class SidePanelView(QWidget):
 
         self._translation_result_has_content = False
         self._custom_result_has_content = False
-        self.apply_ui_language(self._ui_language)
         self._refresh_selection_widgets()
 
     # --- ISidePanelView Display commands ---
@@ -603,36 +600,31 @@ class SidePanelView(QWidget):
                 self._tab_widget.setCurrentIndex(idx)
                 return
 
-    def apply_ui_language(self, language: str) -> None:
-        """サイドパネルの静的文言を現在の表示言語で再設定する。"""
-        self._ui_language = normalize_ui_language(language, fallback="en")
-        self._model_label.setText(self._translate("side.model.label"))
-        self._selection_section.set_title(self._translate("side.section.selections"))
-        self._clear_selections_btn.setText(self._translate("side.selection.clear"))
-        self._selection_warning_label.setText(self._translate("side.selection.warning"))
-        self._combined_label.setText(self._translate("side.selection.preview_label"))
+    def apply_ui_texts(self, texts: SidePanelTexts) -> None:
+        """Presenter が解決済みの UI 文言束を適用する。"""
+        self._texts = texts
+        self._model_label.setText(self._text("model_label"))
+        self._selection_section.set_title(self._text("selection_section_title"))
+        self._clear_selections_btn.setText(self._text("selection_clear_button"))
+        self._selection_warning_label.setText(self._text("selection_warning_text"))
+        self._combined_label.setText(self._text("selection_preview_label"))
         self._combined_preview_edit.setPlaceholderText(
-            self._translate("side.selection.preview_placeholder")
+            self._text("selection_preview_placeholder")
         )
-        self._force_image_checkbox.setText(self._translate("side.selection.force_image"))
-        self._ai_section.set_title(self._translate("side.section.ai"))
-        self._translate_btn.setText(self._translate("side.translation.button"))
-        self._explain_btn.setText(self._translate("side.translation.explain_button"))
-        self._tab_widget.setTabText(0, self._translate("side.translation.tab"))
-        self._prompt_edit.setPlaceholderText(self._translate("side.custom.prompt_placeholder"))
-        self._submit_btn.setText(self._translate("side.custom.submit"))
-        self._tab_widget.setTabText(1, self._translate("side.custom.tab"))
-        self._cache_base_text = self._translate("side.cache.status_placeholder")
+        self._force_image_checkbox.setText(self._text("selection_force_image_text"))
+        self._ai_section.set_title(self._text("ai_section_title"))
+        self._translate_btn.setText(self._text("translation_button_text"))
+        self._explain_btn.setText(self._text("translation_explain_button_text"))
+        self._tab_widget.setTabText(0, self._text("translation_tab_text"))
+        self._prompt_edit.setPlaceholderText(self._text("custom_prompt_placeholder"))
+        self._submit_btn.setText(self._text("custom_submit_button_text"))
+        self._tab_widget.setTabText(1, self._text("custom_tab_text"))
+        self._cache_base_text = self._text("cache_status_placeholder")
         self._cache_label.setText(self._cache_base_text)
         self._cache_toggle_btn.setText(
-            self._translate(
-                "side.cache.delete" if self._cache_is_active else "side.cache.create"
-            )
+            self._cache_toggle_text()
         )
-        if self._model_combo.count() == 0:
-            self._model_combo.setPlaceholderText(
-                self._translate("side.model.unset_placeholder")
-            )
+        self._sync_model_combo_placeholder()
         if not self._translation_result_has_content:
             self._set_translation_placeholder()
         if not self._custom_result_has_content:
@@ -680,31 +672,33 @@ class SidePanelView(QWidget):
     def set_available_models(self, model_names: list[str]) -> None:
         """モデル選択プルダウンの選択肢を設定する。
 
-        空リストの場合は「モデル未設定」プレースホルダーを表示して disabled にする。
+        候補一覧だけを差し替え、enabled 状態は Presenter 側で制御する。
         """
         current = self._model_combo.currentText()
         self._model_combo.blockSignals(True)
         self._model_combo.clear()
         if model_names:
             self._model_combo.addItems(model_names)
-            # 元の選択を復元できる場合は復元
             idx = self._model_combo.findText(current)
             if idx >= 0:
                 self._model_combo.setCurrentIndex(idx)
-            self._model_combo.setEnabled(True)
-            self._model_combo.setPlaceholderText("")
+            else:
+                self._model_combo.setCurrentIndex(-1)
         else:
-            self._model_combo.setPlaceholderText(
-                self._translate("side.model.unset_placeholder")
-            )
-            self._model_combo.setEnabled(False)
+            self._model_combo.setCurrentIndex(-1)
+        self._sync_model_combo_placeholder()
         self._model_combo.blockSignals(False)
 
     def set_selected_model(self, model_name: str) -> None:
         """モデル選択プルダウンの現在値を設定する。"""
-        idx = self._model_combo.findText(model_name)
-        if idx >= 0:
-            self._model_combo.setCurrentIndex(idx)
+        self._model_combo.blockSignals(True)
+        if not model_name:
+            self._model_combo.setCurrentIndex(-1)
+        else:
+            idx = self._model_combo.findText(model_name)
+            self._model_combo.setCurrentIndex(idx if idx >= 0 else -1)
+        self._sync_model_combo_placeholder()
+        self._model_combo.blockSignals(False)
 
     def set_on_model_changed(
         self, cb: Callable[[str], None]
@@ -714,11 +708,8 @@ class SidePanelView(QWidget):
 
     def set_model_combo_enabled(self, enabled: bool) -> None:
         """モデル選択プルダウンの有効/無効を切り替える。"""
-        self._model_combo.setEnabled(enabled)
-        if not enabled and self._model_combo.count() == 0:
-            self._model_combo.setPlaceholderText(
-                self._translate("side.model.unset_placeholder")
-            )
+        self._model_combo.setEnabled(enabled and self._model_combo.count() > 0)
+        self._sync_model_combo_placeholder()
 
     # --- Phase 7: キャッシュ操作 ---
 
@@ -737,11 +728,7 @@ class SidePanelView(QWidget):
     def set_cache_active(self, active: bool) -> None:
         """キャッシュ状態に応じてトグルボタンのテキストを切り替える。"""
         self._cache_is_active = active
-        self._cache_toggle_btn.setText(
-            self._translate(
-                "side.cache.delete" if active else "side.cache.create"
-            )
-        )
+        self._cache_toggle_btn.setText(self._cache_toggle_text())
 
     def set_cache_button_enabled(self, enabled: bool) -> None:
         """キャッシュトグルボタンの有効/無効を制御する。"""
@@ -791,7 +778,7 @@ class SidePanelView(QWidget):
         if remaining <= 0:
             self._countdown_timer.stop()
             self._cache_label.setText(
-                self._cache_base_text + " — " + self._translate("side.cache.expired")
+                self._cache_base_text + " — " + self._text("cache_expired_text")
             )
             self._expire_time_utc = None
             if self._on_cache_expired:
@@ -802,14 +789,14 @@ class SidePanelView(QWidget):
         h, rem = divmod(total_sec, 3600)
         m, s = divmod(rem, 60)
         self._cache_label.setText(
-            f"{self._cache_base_text} — {self._translate('side.cache.remaining', time=f'{h}:{m:02d}:{s:02d}') }"
+            f"{self._cache_base_text} — {self._text('cache_remaining_template', time=f'{h}:{m:02d}:{s:02d}') }"
         )
 
     def _refresh_selection_widgets(self) -> None:
         """現在の snapshot に基づいて選択一覧 UI を再構築する。"""
         self._selection_summary_label.setText(
-            self._translate(
-                "side.selection.summary",
+            self._text(
+                "selection_summary_template",
                 count=len(self._selection_snapshot.slots),
             )
         )
@@ -823,7 +810,7 @@ class SidePanelView(QWidget):
         self._clear_layout(self._selection_list_layout)
 
         if self._selection_snapshot.is_empty:
-            empty_label = QLabel(self._translate("side.selection.empty"))
+            empty_label = QLabel(self._text("selection_empty_text"))
             empty_label.setStyleSheet("color: #64748b; padding: 6px 2px;")
             self._selection_list_layout.addWidget(empty_label)
         else:
@@ -831,7 +818,7 @@ class SidePanelView(QWidget):
                 self._selection_list_layout.addWidget(
                     _SelectionCard(
                         slot,
-                        translate=self._translate,
+                        text_for=self._text,
                         on_delete_requested=self._fire_selection_delete_requested,
                     )
                 )
@@ -897,23 +884,42 @@ class SidePanelView(QWidget):
         if self._on_tab_changed and index in _TAB_NAMES:
             self._on_tab_changed(_TAB_NAMES[index])
 
-    def _translate(self, key: str, **kwargs: object) -> str:
-        return self._translation_service.translate(
-            key,
-            self._ui_language,
-            **kwargs,
+    def _text(self, field_name: str, **kwargs: object) -> str:
+        if self._texts is None:
+            return ""
+        template = getattr(self._texts, field_name)
+        if not kwargs:
+            return template
+        try:
+            return template.format(**kwargs)
+        except (IndexError, KeyError, ValueError):
+            return template
+
+    def _cache_toggle_text(self) -> str:
+        return self._text(
+            "cache_delete_button_text"
+            if self._cache_is_active
+            else "cache_create_button_text"
         )
+
+    def _sync_model_combo_placeholder(self) -> None:
+        if self._model_combo.currentIndex() < 0:
+            self._model_combo.setPlaceholderText(
+                self._text("model_unset_placeholder")
+            )
+        else:
+            self._model_combo.setPlaceholderText("")
 
     def _set_translation_placeholder(self) -> None:
         self._translation_result.setHtml(
             "<html><body style='color:#999;font-size:14px;'>"
-            f"{self._translate('side.translation.placeholder')}</body></html>",
+            f"{self._text('translation_placeholder_text')}</body></html>",
             self._katex_base_url,
         )
 
     def _set_custom_placeholder(self) -> None:
         self._custom_result.setHtml(
             "<html><body style='color:#999;font-size:14px;'>"
-            f"{self._translate('side.custom.placeholder')}</body></html>",
+            f"{self._text('custom_placeholder_text')}</body></html>",
             self._katex_base_url,
         )

@@ -494,12 +494,13 @@ class TestListAvailableModels:
 class TestUpdateConfig:
     """update_config() の動作を検証する。"""
 
-    def test_config_is_replaced(self) -> None:
+    @pytest.mark.asyncio
+    async def test_config_is_replaced(self) -> None:
         """update_config で内部設定が置き換わること。"""
         model = AIModel(api_key=None)
         old = model._config
         new_config = AppConfig(output_language="English")
-        model.update_config(new_config)
+        await model.update_config(new_config)
         assert model._config is new_config
         assert model._config is not old
 
@@ -512,7 +513,7 @@ class TestUpdateConfig:
         )
 
         # config を English に切り替え
-        model.update_config(AppConfig(output_language="English"))
+        await model.update_config(AppConfig(output_language="English"))
 
         request = AnalysisRequest(
             text="Hello", mode=AnalysisMode.TRANSLATION
@@ -672,6 +673,7 @@ class TestCreateCache:
 
         assert status.is_active is True
         assert status.cache_name == "caches/test-cache-123"
+        assert status.display_name == "pdf-reader: test.pdf"
         assert status.model_name == "models/gemini-test"
         assert status.token_count == 5000
         assert model._cache_name == "caches/test-cache-123"
@@ -735,6 +737,7 @@ class TestGetCacheStatus:
         status = await model.get_cache_status()
 
         assert status.is_active is True
+        assert status.display_name == "pdf-reader: test.pdf"
         assert status.token_count == 5000
 
     @pytest.mark.asyncio
@@ -807,6 +810,38 @@ class TestInvalidateCache:
 
         await model.invalidate_cache()  # 例外は送出されない
         assert model._cache_name is None
+
+    @pytest.mark.asyncio
+    async def test_delete_cache_by_name_keeps_other_internal_state(self) -> None:
+        """別名キャッシュ削除では現在キャッシュの内部状態を壊さないこと。"""
+        model = _build_model()
+        model._cache_name = "caches/current"
+        model._cache_model = "models/gemini-test"
+        model._client.aio.caches.delete = AsyncMock()
+
+        await model.delete_cache("caches/other")
+
+        model._client.aio.caches.delete.assert_awaited_once_with(
+            name="caches/other"
+        )
+        assert model._cache_name == "caches/current"
+        assert model._cache_model == "models/gemini-test"
+
+    @pytest.mark.asyncio
+    async def test_delete_cache_by_name_clears_matching_internal_state(self) -> None:
+        """現在キャッシュと同名を削除した場合は内部状態もクリアされること。"""
+        model = _build_model()
+        model._cache_name = "caches/current"
+        model._cache_model = "models/gemini-test"
+        model._client.aio.caches.delete = AsyncMock()
+
+        await model.delete_cache("caches/current")
+
+        model._client.aio.caches.delete.assert_awaited_once_with(
+            name="caches/current"
+        )
+        assert model._cache_name is None
+        assert model._cache_model is None
 
 
 class TestAnalyzeWithCache:
@@ -931,6 +966,7 @@ class TestUpdateCacheTtl:
 
         assert status.is_active is True
         assert status.ttl_seconds == 7200
+        assert status.display_name == "pdf-reader: test.pdf"
         call_kw = model._client.aio.caches.update.call_args
         assert call_kw.kwargs["config"].ttl == "7200s"
 
@@ -971,6 +1007,7 @@ class TestListCaches:
 
         assert len(result) == 1
         assert result[0].cache_name == "caches/app-1"
+        assert result[0].display_name == "pdf-reader: test.pdf"
 
     @pytest.mark.asyncio
     async def test_list_caches_empty(self) -> None:

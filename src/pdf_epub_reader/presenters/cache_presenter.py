@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pdf_epub_reader.dto import CacheStatus
 from pdf_epub_reader.interfaces.view_interfaces import ICacheDialogView
+from pdf_epub_reader.services.translation_service import TranslationService
 from pdf_epub_reader.utils.config import AppConfig
 
 
@@ -26,12 +27,22 @@ class CachePresenter:
         self._cache_status = cache_status
         self._cache_list = cache_list
         self._config = config
+        self._translation_service = TranslationService()
 
     def show(self) -> tuple[str | None, int, str | None]:
         """ダイアログを表示し (action, new_ttl_minutes, selected_cache_name) を返す。"""
+        not_set_text = self._translation_service.translate(
+            "common.not_set",
+            self._config.ui_language,
+        )
+        self._view.apply_ui_texts(
+            self._translation_service.build_cache_dialog_texts(
+                self._config.ui_language
+            )
+        )
         # タブ1: 現在のキャッシュ情報を View に設定
-        self._view.set_cache_name(self._cache_status.cache_name or "---")
-        self._view.set_cache_model(self._cache_status.model_name or "---")
+        self._view.set_cache_name(self._cache_status.cache_name or not_set_text)
+        self._view.set_cache_model(self._cache_status.model_name or not_set_text)
         self._view.set_cache_token_count(self._cache_status.token_count)
         self._view.set_cache_ttl_seconds(self._cache_status.ttl_seconds)
         self._view.set_cache_expire_time(self._cache_status.expire_time)

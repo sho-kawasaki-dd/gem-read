@@ -66,3 +66,14 @@ class TestUiLanguageConfig:
 
         saved = json.loads(config_path.read_text(encoding="utf-8"))
         assert saved["ui_language"] == "ja"
+
+
+class TestAiModelConfig:
+    def test_ai_model_fields_are_normalized(self) -> None:
+        config = AppConfig(
+            gemini_model_name="  ",
+            selected_models=["models/a", "", "  ", "models/a", "models/b  "],
+        )
+
+        assert config.gemini_model_name == ""
+        assert config.selected_models == ["models/a", "models/b"]

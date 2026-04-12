@@ -16,10 +16,15 @@ from collections.abc import Callable
 from typing import Literal, Protocol, runtime_checkable
 
 from pdf_epub_reader.dto import (
+    CacheDialogTexts,
     CacheStatus,
+    LanguageDialogTexts,
+    MainWindowTexts,
     PageData,
     RectCoords,
+    SettingsDialogTexts,
     SelectionSnapshot,
+    SidePanelTexts,
     ToCEntry,
 )
 
@@ -90,15 +95,11 @@ class IMainView(Protocol):
         """
         ...
 
-    def show_password_dialog(self, file_path: str) -> str | None:
+    def show_password_dialog(self, title: str, message: str) -> str | None:
         """パスワード保護された文書に対してパスワード入力ダイアログを表示する。
 
         Passive View の例外的な同期メソッド。モーダルダイアログのため、
         ユーザーが入力を完了するまで制御を返さない。
-
-        Args:
-            file_path: パスワード保護が検出されたファイルのパス。
-                       ダイアログ上でどのファイルか表示するために使う。
 
         Returns:
             ユーザーが入力したパスワード文字列。
@@ -177,8 +178,8 @@ class IMainView(Protocol):
         """
         ...
 
-    def apply_ui_language(self, language: str) -> None:
-        """現在の表示言語を適用し、静的文言を再構築する。"""
+    def apply_ui_texts(self, texts: MainWindowTexts) -> None:
+        """Presenter が解決済みの UI 文言束を適用する。"""
         ...
 
 
@@ -217,7 +218,7 @@ class ISidePanelView(Protocol):
     def show_loading(self, loading: bool) -> None: ...
     def update_cache_status_brief(self, text: str) -> None: ...
     def set_active_tab(self, mode: str) -> None: ...
-    def apply_ui_language(self, language: str) -> None: ...
+    def apply_ui_texts(self, texts: SidePanelTexts) -> None: ...
 
     # --- Callback registration (View → Presenter) ---
 
@@ -376,6 +377,10 @@ class ICacheDialogView(Protocol):
         """カウントダウンを停止する。"""
         ...
 
+    def apply_ui_texts(self, texts: CacheDialogTexts) -> None:
+        """Presenter が解決済みの UI 文言束を適用する。"""
+        ...
+
     # --- Lifecycle ---
 
     def show(self) -> str | None:
@@ -489,6 +494,10 @@ class ISettingsDialogView(Protocol):
         """Fetch Models 失敗時のエラーメッセージを表示する。"""
         ...
 
+    def apply_ui_texts(self, texts: SettingsDialogTexts) -> None:
+        """Presenter が解決済みの UI 文言束を適用する。"""
+        ...
+
     # --- Lifecycle ---
 
     def exec_dialog(self) -> bool:
@@ -508,5 +517,7 @@ class ILanguageDialogView(Protocol):
         self,
         languages: list[tuple[Literal["ja", "en"], str]],
     ) -> None: ...
+
+    def apply_ui_texts(self, texts: LanguageDialogTexts) -> None: ...
 
     def exec_dialog(self) -> bool: ...

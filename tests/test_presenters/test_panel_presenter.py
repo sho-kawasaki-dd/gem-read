@@ -254,7 +254,8 @@ class TestSelectionSnapshot:
         mock_side_panel_view.calls.clear()
         panel_presenter.apply_ui_language("en")
 
-        assert mock_side_panel_view.get_calls("apply_ui_language")[-1] == ("en",)
+        texts = mock_side_panel_view.get_calls("apply_ui_texts")[-1][0]
+        assert texts.translation_tab_text == "Translation"
         assert mock_side_panel_view.get_calls("set_combined_selection_preview")[-1][0] == (
             "Selection 1 / Page 2\n\nSelected!"
         )
@@ -375,6 +376,8 @@ class TestTranslatedDialogs:
         mock_side_panel_view: MockSidePanelView,
     ) -> None:
         panel_presenter.apply_ui_language("en")
+        panel_presenter.set_available_models(["model-a", "model-b"])
+        panel_presenter.set_selected_model("model-a")
         panel_presenter.update_cache_status(
             CacheStatus(is_active=True, model_name="model-a")
         )
@@ -447,6 +450,7 @@ class TestErrorHandling:
         presenter = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
+        presenter.set_available_models(["models/gemini-2.0-flash"])
         presenter.set_selected_model("models/gemini-2.0-flash")
         presenter.set_selection_snapshot(
             _make_snapshot(_make_slot(1, 0, "Hello"))
@@ -468,6 +472,7 @@ class TestErrorHandling:
         presenter = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
+        presenter.set_available_models(["models/gemini-2.0-flash"])
         presenter.set_selected_model("models/gemini-2.0-flash")
         presenter.set_selection_snapshot(
             _make_snapshot(_make_slot(1, 0, "Hello"))
@@ -491,6 +496,7 @@ class TestErrorHandling:
         presenter = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
+        presenter.set_available_models(["models/gemini-2.0-flash"])
         presenter.set_selected_model("models/gemini-2.0-flash")
         presenter.set_selection_snapshot(
             _make_snapshot(_make_slot(1, 0, "Hello"))
@@ -512,6 +518,7 @@ class TestErrorHandling:
         presenter = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
+        presenter.set_available_models(["models/gemini-2.0-flash"])
         presenter.set_selected_model("models/gemini-2.0-flash")
         presenter.set_selection_snapshot(
             _make_snapshot(_make_slot(1, 0, "Hello"))
@@ -533,6 +540,7 @@ class TestErrorHandling:
         presenter = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
+        presenter.set_available_models(["models/gemini-2.0-flash"])
         presenter.set_selected_model("models/gemini-2.0-flash")
         presenter.set_selection_snapshot(
             _make_snapshot(_make_slot(1, 0, "Hello"))
@@ -552,10 +560,13 @@ class TestModelSelection:
         mock_side_panel_view: MockSidePanelView,
     ) -> None:
         """set_available_models が View に伝播すること。"""
+        mock_side_panel_view.calls.clear()
         panel_presenter.set_available_models(["model-a", "model-b"])
         calls = mock_side_panel_view.get_calls("set_available_models")
         assert len(calls) == 1
         assert calls[0] == (["model-a", "model-b"],)
+        assert mock_side_panel_view.get_calls("set_selected_model")[-1] == ("",)
+        assert mock_side_panel_view.get_calls("set_model_combo_enabled")[-1] == (False,)
 
     def test_set_selected_model_propagates_to_view(
         self,
@@ -563,10 +574,12 @@ class TestModelSelection:
         mock_side_panel_view: MockSidePanelView,
     ) -> None:
         """set_selected_model が View に伝播すること。"""
+        panel_presenter.set_available_models(["model-x"])
+        mock_side_panel_view.calls.clear()
         panel_presenter.set_selected_model("model-x")
         calls = mock_side_panel_view.get_calls("set_selected_model")
-        # fixture が初期モデルを設定するため 2 回呼ばれる
         assert calls[-1] == ("model-x",)
+        assert mock_side_panel_view.get_calls("set_model_combo_enabled")[-1] == (True,)
 
     def test_model_changed_updates_internal_state(
         self,
@@ -574,6 +587,7 @@ class TestModelSelection:
         mock_side_panel_view: MockSidePanelView,
     ) -> None:
         """View のモデル変更が内部状態に反映されること。"""
+        panel_presenter.set_available_models(["models/gemini-2.0-flash", "new-model"])
         mock_side_panel_view.simulate_model_changed("new-model")
         assert panel_presenter._current_model == "new-model"
 
@@ -585,6 +599,10 @@ class TestModelSelection:
         mock_side_panel_view: MockSidePanelView,
     ) -> None:
         """選択されたモデルが AnalysisRequest.model_name に入ること。"""
+        panel_presenter.set_available_models([
+            "models/gemini-2.0-flash",
+            "gemini-2.0-pro",
+        ])
         mock_side_panel_view.simulate_model_changed("gemini-2.0-pro")
         panel_presenter.set_selection_snapshot(
             _make_snapshot(_make_slot(1, 0, "Test text"))
@@ -683,7 +701,7 @@ class TestSelectionHandlers:
         panel_presenter: PanelPresenter,
         mock_side_panel_view: MockSidePanelView,
     ) -> None:
-        """update_cache_status(active) で View が ON 表示に更新されること。"""
+        """update_cache_status(active) で View が有効表示に更新されること。"""
         status = CacheStatus(
             is_active=True, token_count=5000, cache_name="c1"
         )
@@ -695,7 +713,7 @@ class TestSelectionHandlers:
         brief_calls = mock_side_panel_view.get_calls(
             "update_cache_status_brief"
         )
-        assert "ON" in brief_calls[-1][0]
+        assert "有効" in brief_calls[-1][0]
         assert "5000" in brief_calls[-1][0]
 
     def test_update_cache_status_inactive(
@@ -703,7 +721,7 @@ class TestSelectionHandlers:
         panel_presenter: PanelPresenter,
         mock_side_panel_view: MockSidePanelView,
     ) -> None:
-        """update_cache_status(inactive) で View が OFF 表示に更新されること。"""
+        """update_cache_status(inactive) で View が無効表示に更新されること。"""
         panel_presenter.update_cache_status(CacheStatus())
 
         active_calls = mock_side_panel_view.get_calls("set_cache_active")
@@ -712,7 +730,7 @@ class TestSelectionHandlers:
         brief_calls = mock_side_panel_view.get_calls(
             "update_cache_status_brief"
         )
-        assert "OFF" in brief_calls[-1][0]
+        assert "無効" in brief_calls[-1][0]
 
 
 class TestModelChangeWithCache:
@@ -727,6 +745,8 @@ class TestModelChangeWithCache:
         presenter = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
+        presenter.set_available_models(["model-a", "model-b"])
+        presenter.set_selected_model("model-a")
         presenter.update_cache_status(
             CacheStatus(
                 is_active=True, cache_name="c1", model_name="model-a"
@@ -751,6 +771,8 @@ class TestModelChangeWithCache:
         presenter = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
+        presenter.set_available_models(["model-a", "model-b"])
+        presenter.set_selected_model("model-a")
         presenter.update_cache_status(
             CacheStatus(
                 is_active=True, cache_name="c1", model_name="model-a"
@@ -763,7 +785,8 @@ class TestModelChangeWithCache:
         revert_calls = mock_side_panel_view.get_calls("set_selected_model")
         assert revert_calls[-1] == ("model-a",)
         # 内部状態は変更されていない
-        assert presenter._current_model is None
+        assert presenter._current_model == "model-a"
+        assert mock_side_panel_view.get_calls("set_model_combo_enabled")[-1] == (True,)
 
     def test_model_change_same_model_no_dialog(
         self,
@@ -774,6 +797,8 @@ class TestModelChangeWithCache:
         presenter = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
+        presenter.set_available_models(["model-a", "model-b"])
+        presenter.set_selected_model("model-a")
         presenter.update_cache_status(
             CacheStatus(
                 is_active=True, cache_name="c1", model_name="model-a"
@@ -792,6 +817,7 @@ class TestModelChangeWithCache:
         mock_side_panel_view: MockSidePanelView,
     ) -> None:
         """キャッシュ inactive 時はダイアログなしでモデル切替されること。"""
+        panel_presenter.set_available_models(["models/gemini-2.0-flash", "any-model"])
         mock_side_panel_view.simulate_model_changed("any-model")
 
         dialog_calls = mock_side_panel_view.get_calls("show_confirm_dialog")
@@ -802,20 +828,21 @@ class TestModelChangeWithCache:
 class TestGetCurrentModel:
     """Phase 7 Bugfix: get_current_model() の動作を検証する。"""
 
-    def test_initial_model_is_none(
+    def test_initial_model_is_empty_string(
         self,
         mock_side_panel_view: MockSidePanelView,
         mock_ai_model: MockAIModel,
     ) -> None:
-        """初期状態では get_current_model が None を返すこと。"""
+        """初期状態では get_current_model が空文字を返すこと。"""
         presenter = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
-        assert presenter.get_current_model() is None
+        assert presenter.get_current_model() == ""
 
     def test_set_selected_model_updates_getter(
         self,
         panel_presenter: PanelPresenter,
     ) -> None:
         """set_selected_model 後に get_current_model が正しい値を返すこと。"""
+        panel_presenter.set_available_models(["gemini-2.0-pro"])
         panel_presenter.set_selected_model("gemini-2.0-pro")
         assert panel_presenter.get_current_model() == "gemini-2.0-pro"
 
@@ -825,8 +852,22 @@ class TestGetCurrentModel:
         mock_side_panel_view: MockSidePanelView,
     ) -> None:
         """View からのモデル変更が get_current_model に反映されること。"""
+        panel_presenter.set_available_models(["models/gemini-2.0-flash", "new-model"])
         mock_side_panel_view.simulate_model_changed("new-model")
         assert panel_presenter.get_current_model() == "new-model"
+
+    def test_available_models_without_selection_disables_combo(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        presenter = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
+
+        presenter.set_available_models(["model-a", "model-b"])
+
+        assert presenter.get_current_model() == ""
+        assert mock_side_panel_view.get_calls("set_selected_model")[-1] == ("",)
+        assert mock_side_panel_view.get_calls("set_model_combo_enabled")[-1] == (False,)
 
 
 class TestModelUnsetGuard:
@@ -896,6 +937,7 @@ class TestModelUnsetGuard:
         mock_ai_model: MockAIModel,
     ) -> None:
         """モデルが設定されている場合は通常通り翻訳が実行されること。"""
+        panel_presenter.set_available_models(["gemini-pro"])
         panel_presenter.set_selected_model("gemini-pro")
         panel_presenter.set_selection_snapshot(
             _make_snapshot(_make_slot(1, 0, "Hello"))

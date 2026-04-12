@@ -18,6 +18,11 @@ class LanguagePresenter:
         self._translation_service = TranslationService()
 
     def show(self) -> AppConfig | None:
+        self._view.apply_ui_texts(
+            self._translation_service.build_language_dialog_texts(
+                self._config.ui_language
+            )
+        )
         self._populate_view()
         if not self._view.exec_dialog():
             return None

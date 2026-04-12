@@ -13,9 +13,8 @@ from collections.abc import Callable
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
-from pdf_epub_reader.dto import ToCEntry
-from pdf_epub_reader.services.translation_service import TranslationService
-from pdf_epub_reader.utils.config import DEFAULT_UI_LANGUAGE, normalize_ui_language
+from pdf_epub_reader.dto import BookmarkPanelTexts, ToCEntry
+from pdf_epub_reader.utils.config import DEFAULT_UI_LANGUAGE
 
 
 class BookmarkPanelView(QWidget):
@@ -28,20 +27,19 @@ class BookmarkPanelView(QWidget):
     ) -> None:
         super().__init__(parent)
         self._on_entry_selected: Callable[[int], None] | None = None
-        self._ui_language = normalize_ui_language(ui_language, fallback="en")
-        self._translation_service = TranslationService()
+        self._texts: BookmarkPanelTexts | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
         self._tree = QTreeWidget()
-        self._tree.setHeaderLabel(self._translate("bookmark.header"))
+        self._tree.setHeaderLabel("")
         self._tree.itemClicked.connect(self._handle_item_clicked)
         layout.addWidget(self._tree)
 
-    def apply_ui_language(self, language: str) -> None:
-        self._ui_language = normalize_ui_language(language, fallback="en")
-        self._tree.setHeaderLabel(self._translate("bookmark.header"))
+    def apply_ui_texts(self, texts: BookmarkPanelTexts) -> None:
+        self._texts = texts
+        self._tree.setHeaderLabel(texts.header_label)
 
     def set_toc(self, entries: list[ToCEntry]) -> None:
         """ToCEntry のリストからツリーを再構築する。"""
@@ -82,9 +80,3 @@ class BookmarkPanelView(QWidget):
         if isinstance(page_number, int):
             self._on_entry_selected(page_number)
 
-    def _translate(self, key: str, **kwargs: object) -> str:
-        return self._translation_service.translate(
-            key,
-            self._ui_language,
-            **kwargs,
-        )

@@ -39,8 +39,16 @@ class TestShowPopulatesView:
             expire_time="2026-04-11T12:00:00Z",
         )
         cache_list = [
-            CacheStatus(cache_name="cache-1", model_name="m1"),
-            CacheStatus(cache_name="cache-2", model_name="m2"),
+            CacheStatus(
+                cache_name="cache-1",
+                display_name="pdf-reader: first.pdf",
+                model_name="m1",
+            ),
+            CacheStatus(
+                cache_name="cache-2",
+                display_name="pdf-reader: second.pdf",
+                model_name="m2",
+            ),
         ]
         config = AppConfig(cache_ttl_minutes=90)
 
@@ -64,21 +72,22 @@ class TestShowPopulatesView:
         list_calls = mock_view.get_calls("set_cache_list")
         assert len(list_calls) == 1
         assert len(list_calls[0][0]) == 2
+        assert list_calls[0][0][0].display_name == "pdf-reader: first.pdf"
 
         # show が呼ばれたこと
         assert len(mock_view.get_calls("show")) == 1
 
     def test_inactive_cache_uses_defaults(self) -> None:
-        """inactive なキャッシュでは "---" がフォールバックされること。"""
+        """inactive なキャッシュでは翻訳済みの未設定文言が使われること。"""
         mock_view = MockCacheDialogView()
         status = CacheStatus()
-        config = AppConfig()
+        config = AppConfig(ui_language="en")
 
         presenter = CachePresenter(mock_view, status, [], config)
         presenter.show()
 
-        assert mock_view.get_calls("set_cache_name") == [("---",)]
-        assert mock_view.get_calls("set_cache_model") == [("---",)]
+        assert mock_view.get_calls("set_cache_name") == [("Not set",)]
+        assert mock_view.get_calls("set_cache_model") == [("Not set",)]
         assert mock_view.get_calls("set_cache_is_active") == [(False,)]
 
 

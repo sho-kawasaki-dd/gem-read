@@ -60,6 +60,11 @@ class SettingsPresenter:
         Returns:
             OK の場合は更新後の AppConfig。Cancel の場合は None。
         """
+        self._view.apply_ui_texts(
+            self._translation_service.build_settings_dialog_texts(
+                self._config.ui_language
+            )
+        )
         self._populate_view(self._config)
 
         if not self._view.exec_dialog():

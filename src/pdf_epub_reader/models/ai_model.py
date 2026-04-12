@@ -181,7 +181,7 @@ class AIModel:
                 str(exc), status_code=getattr(exc, "code", None)
             ) from exc
 
-    def update_config(self, config: AppConfig) -> None:
+    async def update_config(self, config: AppConfig) -> None:
         """アプリケーション設定を更新する。
 
         設定ダイアログでモデル名・プロンプト等が変更された際に
@@ -269,6 +269,7 @@ class AIModel:
                     cache.usage_metadata, "total_token_count", None
                 ) if cache.usage_metadata else None,
                 cache_name=cache.name,
+                display_name=cache.display_name,
                 model_name=cache.model,
                 expire_time=(
                     cache.expire_time.isoformat()
@@ -330,6 +331,7 @@ class AIModel:
                     cache.usage_metadata, "total_token_count", None
                 ) if cache.usage_metadata else None,
                 cache_name=cache.name,
+                display_name=cache.display_name,
                 model_name=cache.model,
                 expire_time=(
                     cache.expire_time.isoformat()
@@ -351,16 +353,29 @@ class AIModel:
         if self._cache_name is None:
             return
 
+        await self.delete_cache(self._cache_name)
+
+    async def delete_cache(self, cache_name: str) -> None:
+        """名前指定でキャッシュを削除する。
+
+        現在アクティブなキャッシュと同じ名前を削除した場合は、
+        内部に保持しているキャッシュ状態も合わせてクリアする。
+        一覧テーブルから任意のキャッシュを削除する用途を想定する。
+        """
+        if not cache_name:
+            return
+
         if self._client is not None:
             try:
                 await self._client.aio.caches.delete(
-                    name=self._cache_name
+                    name=cache_name
                 )
             except Exception as exc:
                 logger.warning("キャッシュ削除失敗（既に削除済みの可能性）: %s", exc)
 
-        self._cache_name = None
-        self._cache_model = None
+        if self._cache_name == cache_name:
+            self._cache_name = None
+            self._cache_model = None
 
     async def update_cache_ttl(self, ttl_minutes: int) -> CacheStatus:
         """現在のキャッシュの TTL を更新する。
@@ -393,6 +408,7 @@ class AIModel:
                     cache.usage_metadata, "total_token_count", None
                 ) if cache.usage_metadata else None,
                 cache_name=cache.name,
+                display_name=cache.display_name,
                 model_name=cache.model,
                 expire_time=(
                     cache.expire_time.isoformat()
@@ -432,6 +448,7 @@ class AIModel:
                         cache.usage_metadata, "total_token_count", None
                     ) if cache.usage_metadata else None,
                     cache_name=cache.name,
+                    display_name=cache.display_name,
                     model_name=cache.model,
                     expire_time=(
                         cache.expire_time.isoformat()

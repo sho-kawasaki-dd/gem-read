@@ -679,7 +679,8 @@ class TestPasswordFlow:
         # パスワードダイアログが表示されたこと。
         dialog_calls = mock_main_view.get_calls("show_password_dialog")
         assert len(dialog_calls) == 1
-        assert dialog_calls[0] == ("/fake/protected.pdf",)
+        assert dialog_calls[0][0] == "パスワード入力"
+        assert "/fake/protected.pdf" in dialog_calls[0][1]
 
         # 再試行で正しいパスワードが渡されたこと。
         open_calls = mock_document_model.get_calls("open_document")
@@ -833,6 +834,9 @@ class TestSettingsFlow:
         ):
             presenter._on_settings_requested()
 
+        import asyncio
+        await asyncio.sleep(0)
+
         update_calls = mock_document_model.get_calls("update_config")
         assert len(update_calls) == 1
 
@@ -860,6 +864,9 @@ class TestSettingsFlow:
             settings_view_factory=lambda _language: mock_settings_view,
         )
         presenter._on_settings_requested()
+
+        import asyncio
+        await asyncio.sleep(0)
 
         update_calls = mock_document_model.get_calls("update_config")
         assert len(update_calls) == 0
@@ -909,9 +916,10 @@ class TestSettingsFlow:
         ):
             presenter._on_settings_requested()
 
-        # _reload_layout は ensure_future で発火するので、イベントループを進める
+        # 設定反映と _reload_layout は非同期で発火するので、イベントループを進める
         import asyncio
 
+        await asyncio.sleep(0)
         await asyncio.sleep(0)
 
         # DPI 変更により display_pages が再呼び出しされること
@@ -977,7 +985,8 @@ class TestSettingsFlow:
         # 例外が発生しないこと
         presenter._on_settings_requested()
 
-    def test_language_settings_ok_updates_ui_language_immediately(
+    @pytest.mark.asyncio
+    async def test_language_settings_ok_updates_ui_language_immediately(
         self,
         mock_main_view: MockMainView,
         mock_document_model: MockDocumentModel,
@@ -1011,11 +1020,16 @@ class TestSettingsFlow:
         with patch("pdf_epub_reader.presenters.language_presenter.save_config"):
             presenter._on_language_settings_requested()
 
+        import asyncio
+        await asyncio.sleep(0)
+
         update_calls = mock_document_model.get_calls("update_config")
         assert len(update_calls) == 1
         assert update_calls[0][0].ui_language == "en"
-        assert mock_main_view.get_calls("apply_ui_language")[-1] == ("en",)
-        assert mock_side_panel_view.get_calls("apply_ui_language")[-1] == ("en",)
+        main_texts = mock_main_view.get_calls("apply_ui_texts")[-1][0]
+        side_texts = mock_side_panel_view.get_calls("apply_ui_texts")[-1][0]
+        assert main_texts.file_menu_title == "&File"
+        assert side_texts.translation_tab_text == "Translation"
         assert mock_main_view.get_calls("show_status_message")[-1] == (
             "Display language updated.",
         )
@@ -1064,6 +1078,10 @@ class TestCacheCreateFlow:
         # パネルに active ステータスが設定されたこと
         active_calls = mock_side_panel_view.get_calls("set_cache_active")
         assert active_calls[-1] == (True,)
+        assert mock_side_panel_view.get_calls("set_cache_button_enabled") == [
+            (False,),
+            (True,),
+        ]
         # ステータスバーに完了メッセージが出ること
         status_msgs = mock_main_view.get_calls("show_status_message")
         assert any("作成完了" in msg[0] for msg in status_msgs)
@@ -1255,6 +1273,41 @@ class TestCacheManagementDialog:
         assert action_calls == []
 
     @pytest.mark.asyncio
+    async def test_dialog_delete_selected_uses_public_model_api(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """delete_selected は private 状態を書き換えず delete_cache(name) を呼ぶこと。"""
+        mock_dialog = MockCacheDialogView()
+        mock_dialog._show_return = "delete_selected"
+        mock_dialog._selected_cache_name = "cache-xyz"
+
+        async def _active_status() -> CacheStatus:
+            return CacheStatus(is_active=True, cache_name="cache-xyz")
+
+        mock_ai_model.get_cache_status = _active_status  # type: ignore[assignment]
+
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            ai_model=mock_ai_model,
+            cache_dialog_view_factory=lambda _language: mock_dialog,
+        )
+
+        await presenter._do_cache_management()
+
+        assert mock_ai_model.get_calls("delete_cache") == [("cache-xyz",)]
+        assert mock_ai_model.get_calls("invalidate_cache") == []
+        assert mock_side_panel_view.get_calls("set_cache_active")[-1] == (False,)
+
+    @pytest.mark.asyncio
     async def test_dialog_without_factory_is_noop(
         self,
         mock_main_view: MockMainView,
@@ -1340,6 +1393,8 @@ class TestValidateModelsOnStartup:
             await asyncio.sleep(0)
 
         assert config.gemini_model_name == ""
+        assert mock_side_panel_view.get_calls("set_selected_model")[-1] == ("",)
+        assert mock_side_panel_view.get_calls("set_model_combo_enabled")[-1] == (False,)
         status_msgs = mock_main_view.get_calls("show_status_message")
         assert any("モデルが未設定" in msg[0] or "無効" in msg[0] for msg in status_msgs)
 
@@ -1369,6 +1424,8 @@ class TestValidateModelsOnStartup:
             import asyncio
             await asyncio.sleep(0)
 
+        assert mock_side_panel_view.get_calls("set_selected_model")[-1] == ("",)
+        assert mock_side_panel_view.get_calls("set_model_combo_enabled")[-1] == (False,)
         status_msgs = mock_main_view.get_calls("show_status_message")
         assert any("モデルが未設定" in msg[0] or "無効" in msg[0] for msg in status_msgs)
 

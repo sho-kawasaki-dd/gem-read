@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from pdf_epub_reader.services.translation_service import TranslationService
+from pdf_epub_reader.dto import SettingsDialogTexts
 from pdf_epub_reader.utils.config import (
     CACHE_TTL_MAX,
     CACHE_TTL_MIN,
@@ -46,7 +46,6 @@ from pdf_epub_reader.utils.config import (
     JPEG_QUALITY_MIN,
     PAGE_CACHE_MAX,
     PAGE_CACHE_MIN,
-    normalize_ui_language,
 )
 
 
@@ -63,14 +62,8 @@ class SettingsDialog(QDialog):
         ui_language: str = DEFAULT_UI_LANGUAGE,
     ) -> None:
         super().__init__(parent)
-        self._ui_language = normalize_ui_language(ui_language, fallback="en")
-        self._translation_service = TranslationService()
-        self.setWindowTitle(
-            self._translation_service.translate(
-                "settings.dialog.title",
-                self._ui_language,
-            )
-        )
+        self._texts: SettingsDialogTexts | None = None
+        self.setWindowTitle("")
         self.setMinimumWidth(400)
 
         self._on_reset_defaults: Callable[[], None] | None = None
@@ -89,62 +82,54 @@ class SettingsDialog(QDialog):
 
         self._format_combo = QComboBox()
         self._format_combo.addItems(["png", "jpeg"])
+        self._image_format_label = QLabel("")
         rendering_layout.addRow(
-            self._translate("settings.render.image_format"),
+            self._image_format_label,
             self._format_combo,
         )
 
         self._jpeg_quality_spin = QSpinBox()
         self._jpeg_quality_spin.setRange(JPEG_QUALITY_MIN, JPEG_QUALITY_MAX)
+        self._jpeg_quality_label = QLabel("")
         rendering_layout.addRow(
-            self._translate("settings.render.jpeg_quality"),
+            self._jpeg_quality_label,
             self._jpeg_quality_spin,
         )
 
         self._dpi_spin = QSpinBox()
         self._dpi_spin.setRange(DPI_MIN, DPI_MAX)
         self._dpi_spin.setSingleStep(12)
+        self._default_dpi_label = QLabel("")
         rendering_layout.addRow(
-            self._translate("settings.render.default_dpi"),
+            self._default_dpi_label,
             self._dpi_spin,
         )
 
         self._cache_spin = QSpinBox()
         self._cache_spin.setRange(PAGE_CACHE_MIN, PAGE_CACHE_MAX)
+        self._page_cache_size_label = QLabel("")
         rendering_layout.addRow(
-            self._translate("settings.render.page_cache_size"),
+            self._page_cache_size_label,
             self._cache_spin,
         )
 
-        self._hq_downscale_check = QCheckBox(
-            self._translate("settings.render.high_quality_downscale")
-        )
+        self._hq_downscale_check = QCheckBox("")
         rendering_layout.addRow(self._hq_downscale_check)
 
-        self._tabs.addTab(
-            rendering_tab,
-            self._translate("settings.tab.rendering"),
-        )
+        self._tabs.addTab(rendering_tab, "")
 
         # --- Detection タブ ---
         detection_tab = QWidget()
         detection_layout = QVBoxLayout(detection_tab)
 
-        self._auto_images_check = QCheckBox(
-            self._translate("settings.detection.auto_images")
-        )
+        self._auto_images_check = QCheckBox("")
         detection_layout.addWidget(self._auto_images_check)
 
-        self._auto_math_check = QCheckBox(
-            self._translate("settings.detection.auto_math")
-        )
+        self._auto_math_check = QCheckBox("")
         detection_layout.addWidget(self._auto_math_check)
 
         detection_layout.addStretch()
-        self._tabs.addTab(
-            detection_tab,
-            self._translate("settings.tab.detection"),
-        )
+        self._tabs.addTab(detection_tab, "")
 
         # --- AI Models タブ ---
         ai_tab = QWidget()
@@ -153,23 +138,22 @@ class SettingsDialog(QDialog):
         # デフォルトモデル
         self._default_model_combo = QComboBox()
         self._default_model_combo.setEditable(True)
+        self._default_model_label = QLabel("")
         ai_layout.addRow(
-            self._translate("settings.ai.default_model"),
+            self._default_model_label,
             self._default_model_combo,
         )
 
         # 利用可能モデル一覧 (チェックボックス付きリスト + Fetch ボタン)
-        models_label = QLabel(self._translate("settings.ai.available_models"))
-        ai_layout.addRow(models_label)
+        self._available_models_label = QLabel("")
+        ai_layout.addRow(self._available_models_label)
 
         self._models_list = QListWidget()
         self._models_list.setMinimumHeight(120)
         ai_layout.addRow(self._models_list)
 
         fetch_row = QHBoxLayout()
-        self._fetch_button = QPushButton(
-            self._translate("settings.ai.fetch_models")
-        )
+        self._fetch_button = QPushButton("")
         self._fetch_button.clicked.connect(self._handle_fetch_models)
         fetch_row.addWidget(self._fetch_button)
         self._fetch_status_label = QLabel("")
@@ -179,8 +163,9 @@ class SettingsDialog(QDialog):
 
         # 出力言語
         self._output_language_edit = QLineEdit()
+        self._output_language_label = QLabel("")
         ai_layout.addRow(
-            self._translate("settings.ai.output_language"),
+            self._output_language_label,
             self._output_language_edit,
         )
 
@@ -188,48 +173,39 @@ class SettingsDialog(QDialog):
         self._system_prompt_edit = QTextEdit()
         self._system_prompt_edit.setMinimumHeight(80)
         self._system_prompt_edit.setAcceptRichText(False)
+        self._translation_prompt_label = QLabel("")
         ai_layout.addRow(
-            self._translate("settings.ai.translation_prompt"),
+            self._translation_prompt_label,
             self._system_prompt_edit,
         )
 
         # Context Cache TTL
         self._cache_ttl_spin = QSpinBox()
         self._cache_ttl_spin.setRange(CACHE_TTL_MIN, CACHE_TTL_MAX)
-        self._cache_ttl_spin.setSuffix(
-            self._translate("common.minutes_suffix")
-        )
+        self._cache_ttl_label = QLabel("")
         ai_layout.addRow(
-            self._translate("settings.ai.cache_ttl"),
+            self._cache_ttl_label,
             self._cache_ttl_spin,
         )
 
-        self._tabs.addTab(ai_tab, self._translate("settings.tab.ai"))
+        self._tabs.addTab(ai_tab, "")
 
         # --- ボタン行 ---
         button_layout = QHBoxLayout()
 
-        self._reset_button = QPushButton(
-            self._translate("settings.button.reset_defaults")
-        )
+        self._reset_button = QPushButton("")
         self._reset_button.clicked.connect(self._handle_reset)
         button_layout.addWidget(self._reset_button)
 
         button_layout.addStretch()
 
-        button_box = QDialogButtonBox(
+        self._button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
             | QDialogButtonBox.StandardButton.Cancel
         )
-        button_box.accepted.connect(self.accept)
-        button_box.rejected.connect(self.reject)
-        button_box.button(QDialogButtonBox.StandardButton.Ok).setText(
-            self._translate("common.ok")
-        )
-        button_box.button(QDialogButtonBox.StandardButton.Cancel).setText(
-            self._translate("common.cancel")
-        )
-        button_layout.addWidget(button_box)
+        self._button_box.accepted.connect(self.accept)
+        self._button_box.rejected.connect(self.reject)
+        button_layout.addWidget(self._button_box)
 
         layout.addLayout(button_layout)
 
@@ -396,7 +372,9 @@ class SettingsDialog(QDialog):
     def set_fetch_models_loading(self, loading: bool) -> None:
         self._fetch_button.setEnabled(not loading)
         self._fetch_status_label.setText(
-            self._translate("settings.ai.fetch_loading") if loading else ""
+            self._texts.fetch_models_loading_text
+            if loading and self._texts is not None
+            else ""
         )
 
     def show_fetch_models_error(self, message: str) -> None:
@@ -419,6 +397,34 @@ class SettingsDialog(QDialog):
     def exec_dialog(self) -> bool:
         """モーダルダイアログを表示し、OK なら True / Cancel なら False を返す。"""
         return self.exec() == QDialog.DialogCode.Accepted
+
+    def apply_ui_texts(self, texts: SettingsDialogTexts) -> None:
+        self._texts = texts
+        self.setWindowTitle(texts.window_title)
+        self._image_format_label.setText(texts.image_format_label)
+        self._jpeg_quality_label.setText(texts.jpeg_quality_label)
+        self._default_dpi_label.setText(texts.default_dpi_label)
+        self._page_cache_size_label.setText(texts.page_cache_size_label)
+        self._hq_downscale_check.setText(texts.high_quality_downscale_text)
+        self._tabs.setTabText(0, texts.rendering_tab_text)
+        self._auto_images_check.setText(texts.auto_detect_images_text)
+        self._auto_math_check.setText(texts.auto_detect_math_text)
+        self._tabs.setTabText(1, texts.detection_tab_text)
+        self._default_model_label.setText(texts.default_model_label)
+        self._available_models_label.setText(texts.available_models_label)
+        self._fetch_button.setText(texts.fetch_models_button_text)
+        self._output_language_label.setText(texts.output_language_label)
+        self._translation_prompt_label.setText(texts.translation_prompt_label)
+        self._cache_ttl_label.setText(texts.cache_ttl_label)
+        self._cache_ttl_spin.setSuffix(texts.minutes_suffix)
+        self._tabs.setTabText(2, texts.ai_tab_text)
+        self._reset_button.setText(texts.reset_defaults_button_text)
+        self._button_box.button(QDialogButtonBox.StandardButton.Ok).setText(
+            texts.ok_button_text
+        )
+        self._button_box.button(QDialogButtonBox.StandardButton.Cancel).setText(
+            texts.cancel_button_text
+        )
 
     # =========================================================================
     # Internal handlers
@@ -459,9 +465,3 @@ class SettingsDialog(QDialog):
         is_jpeg = self._format_combo.currentText() == "jpeg"
         self._jpeg_quality_spin.setEnabled(is_jpeg)
 
-    def _translate(self, key: str, **kwargs: object) -> str:
-        return self._translation_service.translate(
-            key,
-            self._ui_language,
-            **kwargs,
-        )

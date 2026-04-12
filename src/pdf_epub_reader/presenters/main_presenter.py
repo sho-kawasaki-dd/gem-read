@@ -115,7 +115,7 @@ class MainPresenter:
         self._view.set_on_language_settings_requested(
             self._on_language_settings_requested
         )
-        self._view.apply_ui_language(self._config.ui_language)
+        self._apply_view_texts(self._config.ui_language)
 
         # Phase 6: 初期化時にモデルリストをサイドパネルに設定する
         self._panel_presenter.set_available_models(
@@ -179,7 +179,16 @@ class MainPresenter:
             doc_info = await self._document_model.open_document(file_path)
         except DocumentPasswordRequired as e:
             # パスワード保護を検出 → View にダイアログを表示させる。
-            password = self._view.show_password_dialog(e.file_path)
+            password = self._view.show_password_dialog(
+                self._translation_service.build_main_window_texts(
+                    self._config.ui_language
+                ).password_dialog_title,
+                self._translation_service.build_main_window_texts(
+                    self._config.ui_language
+                ).password_dialog_message_template.format(
+                    file_path=e.file_path
+                ),
+            )
             if password is None:
                 # ユーザーがキャンセルした場合はオープンを中止する。
                 self._view.show_status_message(
@@ -498,18 +507,10 @@ class MainPresenter:
                 )
             elif action == "delete_selected" and selected_name:
                 # 選択行のキャッシュを削除（外部キャッシュ含む）
-                original_name = self._ai_model._cache_name if hasattr(self._ai_model, '_cache_name') else None  # noqa: E501
-                try:
-                    # 一時的に _cache_name を差し替えて invalidate を呼ぶ
-                    if hasattr(self._ai_model, '_cache_name'):
-                        self._ai_model._cache_name = selected_name  # type: ignore[attr-defined]
-                    await self._ai_model.invalidate_cache()
-                    self._view.show_status_message(
-                        self._translate("main.status.cache.selected_deleted")
-                    )
-                finally:
-                    if hasattr(self._ai_model, '_cache_name'):
-                        self._ai_model._cache_name = original_name  # type: ignore[attr-defined]
+                await self._ai_model.delete_cache(selected_name)
+                self._view.show_status_message(
+                    self._translate("main.status.cache.selected_deleted")
+                )
                 # 現在のキャッシュが削除されたものと同じならステータス更新
                 if cache_status.cache_name == selected_name:
                     from pdf_epub_reader.dto import CacheStatus as CS
@@ -582,14 +583,14 @@ class MainPresenter:
         """ドキュメント全文をキャッシュする。"""
         if self._ai_model is None:
             return
-        doc_info = self._document_model.get_document_info()
+        doc_info = await self._document_model.get_document_info()
         if doc_info is None:
             self._view.show_status_message(
                 self._translate("main.status.cache.no_document")
             )
             return
 
-        self._panel_presenter._view.set_cache_button_enabled(False)
+        self._panel_presenter.set_cache_button_enabled(False)
         self._view.show_status_message(
             self._translate("main.status.cache.creating")
         )
@@ -622,7 +623,7 @@ class MainPresenter:
             )
             logger.warning("Cache creation failed", exc_info=True)
         finally:
-            self._panel_presenter._view.set_cache_button_enabled(True)
+            self._panel_presenter.set_cache_button_enabled(True)
 
     def _on_cache_invalidate(self) -> None:
         """キャッシュ削除ボタンからの非同期操作を開始する。"""
@@ -649,7 +650,7 @@ class MainPresenter:
         """キャッシュを無効化する。"""
         if self._ai_model is None:
             return
-        self._panel_presenter._view.set_cache_button_enabled(False)
+        self._panel_presenter.set_cache_button_enabled(False)
         try:
             await self._ai_model.invalidate_cache()
             from pdf_epub_reader.dto import CacheStatus
@@ -660,7 +661,7 @@ class MainPresenter:
         except Exception:
             logger.warning("Cache invalidation failed", exc_info=True)
         finally:
-            self._panel_presenter._view.set_cache_button_enabled(True)
+            self._panel_presenter.set_cache_button_enabled(True)
 
     def _on_pages_needed(self, page_numbers: list[int]) -> None:
         """View からページ画像の要求を受け取り、非同期レンダリングを開始する。"""
@@ -696,7 +697,7 @@ class MainPresenter:
         )
         new_config = presenter.show()
         if new_config is not None:
-            self._apply_config_changes(new_config)
+            self._run_async_config_update(new_config)
 
     def _on_language_settings_requested(self) -> None:
         """表示言語設定ダイアログを開いて UI 表示言語を反映する。"""
@@ -706,15 +707,15 @@ class MainPresenter:
         presenter = LanguagePresenter(language_view, self._config)
         new_config = presenter.show()
         if new_config is not None:
-            self._apply_config_changes(new_config)
-            self._view.show_status_message(
-                self._translation_service.translate(
+            self._run_async_config_update(
+                new_config,
+                status_message=self._translation_service.translate(
                     "presenter.language.updated",
                     new_config.ui_language,
-                )
+                ),
             )
 
-    def _apply_config_changes(self, new_config: AppConfig) -> None:
+    async def _apply_config_changes(self, new_config: AppConfig) -> None:
         """新しい設定を各コンポーネントに反映する。
 
         DPI が変更された場合のみプレースホルダーの再配置と再レンダリングを行う。
@@ -724,11 +725,11 @@ class MainPresenter:
         old_hq = self._config.high_quality_downscale
         old_ui_language = self._config.ui_language
         self._config = new_config
-        self._document_model.update_config(new_config)
+        await self._document_model.update_config(new_config)
 
         # Phase 6: AI モデルにも設定を反映し、サイドパネルのモデルリストを更新
         if self._ai_model is not None:
-            self._ai_model.update_config(new_config)
+            await self._ai_model.update_config(new_config)
         self._panel_presenter.set_available_models(
             new_config.selected_models
         )
@@ -737,7 +738,7 @@ class MainPresenter:
         )
 
         if old_ui_language != new_config.ui_language:
-            self._view.apply_ui_language(new_config.ui_language)
+            self._apply_view_texts(new_config.ui_language)
             self._panel_presenter.apply_ui_language(new_config.ui_language)
 
         # 高品質縮小の ON/OFF が変わった場合は View に即反映する。
@@ -752,10 +753,35 @@ class MainPresenter:
             self._render_dpi = int(self._base_dpi * dpr)
             asyncio.ensure_future(self._reload_layout())
 
+    def _run_async_config_update(
+        self,
+        new_config: AppConfig,
+        *,
+        status_message: str | None = None,
+    ) -> None:
+        async def _runner() -> None:
+            await self._apply_config_changes(new_config)
+            if status_message is not None:
+                self._view.show_status_message(status_message)
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(_runner())
+            return
+
+        loop.create_task(_runner())
+
     def _show_open_error(self, details: str) -> None:
         self._view.show_error_dialog(
             self._translate("main.error.open.title"),
             self._translate("main.error.open.message", details=details),
+        )
+
+    def _apply_view_texts(self, language: str) -> None:
+        """MainWindow に対して解決済み UI 文言束を適用する。"""
+        self._view.apply_ui_texts(
+            self._translation_service.build_main_window_texts(language)
         )
 
     def _translate(self, key: str, **kwargs: object) -> str:
@@ -770,7 +796,7 @@ class MainPresenter:
 
         現在表示中のページ番号を記憶し、再レイアウト後にスクロール位置を復元する。
         """
-        doc_info = self._document_model.get_document_info()
+        doc_info = await self._document_model.get_document_info()
         if doc_info is None:
             return
 

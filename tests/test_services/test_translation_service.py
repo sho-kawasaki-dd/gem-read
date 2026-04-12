@@ -39,3 +39,14 @@ class TestTranslationService:
         service = TranslationService()
 
         assert service.translate("missing.key", "ja") == "missing.key"
+
+    def test_build_main_window_texts_keeps_accelerators_only_in_english(self) -> None:
+        service = TranslationService()
+
+        english = service.build_main_window_texts("en")
+        japanese = service.build_main_window_texts("ja")
+
+        assert english.file_menu_title == "&File"
+        assert english.open_action_text == "&Open..."
+        assert japanese.file_menu_title == "ファイル"
+        assert japanese.open_action_text == "開く..."

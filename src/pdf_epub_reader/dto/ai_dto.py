@@ -85,5 +85,6 @@ class CacheStatus:
     ttl_seconds: int | None = None
     token_count: int | None = None
     cache_name: str | None = None
+    display_name: str | None = None
     model_name: str | None = None
     expire_time: str | None = None

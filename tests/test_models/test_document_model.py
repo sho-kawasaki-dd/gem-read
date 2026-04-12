@@ -267,9 +267,9 @@ class TestCloseDocument:
     ) -> None:
         """クローズ後は get_document_info が None を返す。"""
         await doc_model.open_document(sample_pdf_path)
-        assert doc_model.get_document_info() is not None
+        assert await doc_model.get_document_info() is not None
         doc_model.close_document()
-        assert doc_model.get_document_info() is None
+        assert await doc_model.get_document_info() is None
 
     async def test_close_clears_cache(
         self, doc_model: DocumentModel, sample_pdf_path: str

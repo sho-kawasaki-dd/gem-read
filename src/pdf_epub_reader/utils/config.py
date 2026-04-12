@@ -113,6 +113,13 @@ def normalize_ui_language(
     return fallback
 
 
+def normalize_model_name(value: str | None) -> str:
+    """AI モデル名の未設定値を空文字に正規化する。"""
+    if value is None:
+        return ""
+    return value.strip()
+
+
 def get_default_ui_language(locale_name: str | None = None) -> UiLanguage:
     """既定の UI 言語を OS ロケールから決定する。"""
     return normalize_ui_language(
@@ -178,6 +185,13 @@ class AppConfig:
 
     def __post_init__(self) -> None:
         self.ui_language = normalize_ui_language(self.ui_language)
+        self.gemini_model_name = normalize_model_name(self.gemini_model_name)
+        normalized_models: list[str] = []
+        for name in self.selected_models:
+            normalized = normalize_model_name(name)
+            if normalized and normalized not in normalized_models:
+                normalized_models.append(normalized)
+        self.selected_models = normalized_models
 
 
 def _get_config_path() -> Path:

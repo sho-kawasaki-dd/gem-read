@@ -9,9 +9,14 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from pdf_epub_reader.dto import (
+    CacheDialogTexts,
+    LanguageDialogTexts,
+    MainWindowTexts,
     PageData,
     RectCoords,
+    SettingsDialogTexts,
     SelectionSnapshot,
+    SidePanelTexts,
     ToCEntry,
 )
 from pdf_epub_reader.dto.ai_dto import CacheStatus
@@ -98,8 +103,8 @@ class MockMainView:
     def set_high_quality_downscale(self, enabled: bool) -> None:
         self.calls.append(("set_high_quality_downscale", (enabled,)))
 
-    def apply_ui_language(self, language: str) -> None:
-        self.calls.append(("apply_ui_language", (language,)))
+    def apply_ui_texts(self, texts: MainWindowTexts) -> None:
+        self.calls.append(("apply_ui_texts", (texts,)))
 
     def get_device_pixel_ratio(self) -> float:
         """テスト環境では標準 DPI モニター相当の 1.0 を返す。"""
@@ -109,9 +114,9 @@ class MockMainView:
         """現在表示中のページ番号を返す Mock。"""
         return self._current_page
 
-    def show_password_dialog(self, file_path: str) -> str | None:
+    def show_password_dialog(self, title: str, message: str) -> str | None:
         """パスワード入力ダイアログの Mock。_password_dialog_return を返す。"""
-        self.calls.append(("show_password_dialog", (file_path,)))
+        self.calls.append(("show_password_dialog", (title, message)))
         return self._password_dialog_return
 
     # --- Callback registration ---
@@ -273,8 +278,8 @@ class MockSidePanelView:
     def set_active_tab(self, mode: str) -> None:
         self.calls.append(("set_active_tab", (mode,)))
 
-    def apply_ui_language(self, language: str) -> None:
-        self.calls.append(("apply_ui_language", (language,)))
+    def apply_ui_texts(self, texts: SidePanelTexts) -> None:
+        self.calls.append(("apply_ui_texts", (texts,)))
 
     # --- Callback registration ---
 
@@ -537,6 +542,9 @@ class MockSettingsDialogView:
     def show_fetch_models_error(self, message: str) -> None:
         self.calls.append(("show_fetch_models_error", (message,)))
 
+    def apply_ui_texts(self, texts: SettingsDialogTexts) -> None:
+        self.calls.append(("apply_ui_texts", (texts,)))
+
     # --- Lifecycle ---
 
     def exec_dialog(self) -> bool:
@@ -585,6 +593,9 @@ class MockLanguageDialogView:
     def exec_dialog(self) -> bool:
         self.calls.append(("exec_dialog", ()))
         return self._exec_return
+
+    def apply_ui_texts(self, texts: LanguageDialogTexts) -> None:
+        self.calls.append(("apply_ui_texts", (texts,)))
 
     def get_calls(self, method_name: str) -> list[tuple]:
         return [args for name, args in self.calls if name == method_name]
@@ -651,6 +662,9 @@ class MockCacheDialogView:
 
     def stop_countdown(self) -> None:
         self.calls.append(("stop_countdown", ()))
+
+    def apply_ui_texts(self, texts: CacheDialogTexts) -> None:
+        self.calls.append(("apply_ui_texts", (texts,)))
 
     # --- Helpers ---
 

@@ -287,11 +287,11 @@ class DocumentModel:
         self._document_info = None
         self._page_cache.clear()
 
-    def get_document_info(self) -> DocumentInfo | None:
+    async def get_document_info(self) -> DocumentInfo | None:
         """現在開いている文書のメタデータを返す。未オープンなら None。"""
         return self._document_info
 
-    def update_config(self, config: AppConfig) -> None:
+    async def update_config(self, config: AppConfig) -> None:
         """アプリケーション設定を更新しページキャッシュをクリアする。
 
         Phase 5 で追加。設定ダイアログで変更された設定を反映する。

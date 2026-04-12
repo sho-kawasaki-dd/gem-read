@@ -22,19 +22,33 @@ from pdf_epub_reader.dto.document_dto import (
     TextSelection,
     ToCEntry,
 )
+from pdf_epub_reader.dto.ui_text_dto import (
+    BookmarkPanelTexts,
+    CacheDialogTexts,
+    LanguageDialogTexts,
+    MainWindowTexts,
+    SettingsDialogTexts,
+    SidePanelTexts,
+)
 
 __all__ = [
     "AnalysisMode",
     "AnalysisRequest",
     "AnalysisResult",
+    "BookmarkPanelTexts",
     "CacheStatus",
+    "CacheDialogTexts",
     "DocumentInfo",
+    "LanguageDialogTexts",
+    "MainWindowTexts",
     "ModelInfo",
     "PageData",
     "RectCoords",
+    "SettingsDialogTexts",
     "SelectionContent",
     "SelectionSlot",
     "SelectionSnapshot",
+    "SidePanelTexts",
     "TextSelection",
     "ToCEntry",
 ]
