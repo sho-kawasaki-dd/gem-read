@@ -187,3 +187,7 @@ English:
 English:
 
 This project is distributed under AGPL-3.0-or-later. See the `LICENSE` file for details.
+
+## Documentation
+
+- [docs/README.md](docs/README.md)
