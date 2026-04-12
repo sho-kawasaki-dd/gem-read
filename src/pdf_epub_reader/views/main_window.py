@@ -57,18 +57,22 @@ from pdf_epub_reader.dto import (
     SelectionSnapshot,
     ToCEntry,
 )
+from pdf_epub_reader.services.translation_service import TranslationService
 from pdf_epub_reader.utils.config import (
     BOOKMARK_PANEL_WIDTH,
+    DEFAULT_UI_LANGUAGE,
     DEFAULT_DPI,
     DEFAULT_WINDOW_HEIGHT,
     DEFAULT_WINDOW_WIDTH,
     MAX_RECENT_FILES,
     PAGE_GAP,
     SPLITTER_RATIO,
+    UiLanguage,
     VIEWPORT_BUFFER_PAGES,
     ZOOM_MAX,
     ZOOM_MIN,
     ZOOM_STEP,
+    normalize_ui_language,
 )
 from pdf_epub_reader.views.bookmark_panel import BookmarkPanelView
 
@@ -84,9 +88,15 @@ class MainWindow(QMainWindow):
         self,
         side_panel: QWidget,
         bookmark_panel: BookmarkPanelView | None = None,
+        ui_language: str = DEFAULT_UI_LANGUAGE,
     ) -> None:
         super().__init__()
-        self.setWindowTitle("PDF/EPUB Reader")
+        self._ui_language: UiLanguage = normalize_ui_language(
+            ui_language,
+            fallback="en",
+        )
+        self._translation_service = TranslationService()
+        self.setWindowTitle(self._translate_ui_text("main.window.title"))
         self.resize(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
 
         # --- コールバック保持 ---
@@ -101,10 +111,15 @@ class MainWindow(QMainWindow):
         self._on_bookmark_selected: Callable[[int], None] | None = None
         self._on_cache_management_requested: Callable[[], None] | None = None
         self._on_settings_requested: Callable[[], None] | None = None
+        self._on_language_settings_requested: Callable[[], None] | None = None
         self._bookmark_has_entries = False
+        self._status_is_default = True
+        self._window_title_is_default = True
 
         # Phase 5 で app.py から注入されるまでの互換用デフォルト。
-        self._bookmark_panel = bookmark_panel or BookmarkPanelView()
+        self._bookmark_panel = bookmark_panel or BookmarkPanelView(
+            ui_language=self._ui_language
+        )
 
         # --- QSettings で最近のファイルを永続化 ---
         self._settings = QSettings("pdf-epub-reader", "pdf-epub-reader")
@@ -157,6 +172,7 @@ class MainWindow(QMainWindow):
 
         # --- ステータスバー ---
         self._build_status_bar()
+        self.apply_ui_language(self._ui_language)
 
         # --- ドラッグ&ドロップ ---
         self.setAcceptDrops(True)
@@ -182,54 +198,63 @@ class MainWindow(QMainWindow):
     def _build_menu_bar(self) -> None:
         """ファイル・表示・編集・キャッシュメニューを構築する。"""
         menubar = self.menuBar()
-        file_menu = menubar.addMenu("ファイル(&F)")
+        self._file_menu = menubar.addMenu("")
 
         # 開く
-        open_action = QAction("開く(&O)...", self)
-        open_action.setShortcut("Ctrl+O")
-        open_action.triggered.connect(self._handle_open_action)
-        file_menu.addAction(open_action)
+        self._open_action = QAction(self)
+        self._open_action.setShortcut("Ctrl+O")
+        self._open_action.triggered.connect(self._handle_open_action)
+        self._file_menu.addAction(self._open_action)
 
         # 最近開いたファイル
-        self._recent_files_menu = QMenu("最近開いたファイル", self)
-        file_menu.addMenu(self._recent_files_menu)
+        self._recent_files_menu = QMenu(self)
+        self._file_menu.addMenu(self._recent_files_menu)
         self._rebuild_recent_menu()
 
-        file_menu.addSeparator()
+        self._file_menu.addSeparator()
 
         # 終了
-        quit_action = QAction("終了(&Q)", self)
-        quit_action.triggered.connect(self.close)
-        file_menu.addAction(quit_action)
+        self._quit_action = QAction(self)
+        self._quit_action.triggered.connect(self.close)
+        self._file_menu.addAction(self._quit_action)
 
         # --- 表示メニュー ---
-        view_menu = menubar.addMenu("表示(&V)")
+        self._view_menu = menubar.addMenu("")
 
-        self._bookmark_toggle_action = QAction("しおり(&B)", self)
+        self._bookmark_toggle_action = QAction(self)
         self._bookmark_toggle_action.setShortcut(QKeySequence("Ctrl+B"))
         self._bookmark_toggle_action.setCheckable(True)
         self._bookmark_toggle_action.toggled.connect(
             self._handle_toggle_bookmark
         )
-        view_menu.addAction(self._bookmark_toggle_action)
+        self._view_menu.addAction(self._bookmark_toggle_action)
 
         # --- 編集メニュー ---
-        edit_menu = menubar.addMenu("Edit(&E)")
+        self._edit_menu = menubar.addMenu("")
 
-        preferences_action = QAction("Preferences", self)
-        preferences_action.setShortcut(QKeySequence("Ctrl+,"))
-        preferences_action.triggered.connect(self._handle_settings_requested)
-        edit_menu.addAction(preferences_action)
+        self._preferences_action = QAction(self)
+        self._preferences_action.setShortcut(QKeySequence("Ctrl+,"))
+        self._preferences_action.triggered.connect(self._handle_settings_requested)
+        self._edit_menu.addAction(self._preferences_action)
 
         # --- キャッシュメニュー ---
-        cache_menu = menubar.addMenu("キャッシュ(&C)")
+        self._cache_menu = menubar.addMenu("")
 
-        cache_mgmt_action = QAction("キャッシュ管理(&M)...", self)
-        cache_mgmt_action.setShortcut(QKeySequence("Ctrl+Shift+G"))
-        cache_mgmt_action.triggered.connect(
+        self._cache_mgmt_action = QAction(self)
+        self._cache_mgmt_action.setShortcut(QKeySequence("Ctrl+Shift+G"))
+        self._cache_mgmt_action.triggered.connect(
             self._handle_cache_management_requested
         )
-        cache_menu.addAction(cache_mgmt_action)
+        self._cache_menu.addAction(self._cache_mgmt_action)
+
+        # --- 言語メニュー ---
+        self._language_menu = menubar.addMenu("")
+
+        self._language_settings_action = QAction(self)
+        self._language_settings_action.triggered.connect(
+            self._handle_language_settings_requested
+        )
+        self._language_menu.addAction(self._language_settings_action)
 
     # =========================================================================
     # ステータスバー構築
@@ -239,8 +264,9 @@ class MainWindow(QMainWindow):
         """ステータスメッセージのみ配置する。ページ/ズームはドキュメントペイン内。"""
         status_bar: QStatusBar = self.statusBar()
 
-        self._status_label = QLabel("Ready")
+        self._status_label = QLabel("")
         status_bar.addWidget(self._status_label, stretch=1)
+        self._set_default_status_text()
 
     # =========================================================================
     # IMainView — Display commands
@@ -321,10 +347,12 @@ class MainWindow(QMainWindow):
 
     def set_window_title(self, title: str) -> None:
         """ウィンドウタイトルを更新する。"""
+        self._window_title_is_default = False
         self.setWindowTitle(title)
 
     def show_status_message(self, message: str) -> None:
         """ステータスバーのメッセージを更新する。"""
+        self._status_is_default = False
         self._status_label.setText(message)
 
     def update_recent_files(self, files: list[str]) -> None:
@@ -348,8 +376,11 @@ class MainWindow(QMainWindow):
         """パスワード保護文書の入力ダイアログを表示する。"""
         password, accepted = QInputDialog.getText(
             self,
-            "パスワード入力",
-            f"パスワード保護された文書です:\n{file_path}\n\nパスワードを入力してください。",
+            self._translate_ui_text("main.dialog.password.title"),
+            self._translate_ui_text(
+                "main.dialog.password.message",
+                file_path=file_path,
+            ),
             echo=QLineEdit.EchoMode.Password,
         )
         if not accepted:
@@ -362,6 +393,43 @@ class MainWindow(QMainWindow):
         # 現在縮小中なら直ちに画像を差し替えて反映する。
         if self._doc_view._zoom_level < 1.0:
             self._doc_view._apply_zoom_resize(self._doc_view._zoom_level)
+
+    def apply_ui_language(self, language: str) -> None:
+        """メインウィンドウの静的文言を現在の表示言語で再設定する。"""
+        self._ui_language = normalize_ui_language(language, fallback="en")
+        if self._window_title_is_default:
+            self.setWindowTitle(self._translate_ui_text("main.window.title"))
+        self._file_menu.setTitle(self._translate_ui_text("main.menu.file.title"))
+        self._open_action.setText(self._translate_ui_text("main.menu.file.open"))
+        self._recent_files_menu.setTitle(
+            self._translate_ui_text("main.menu.file.recent")
+        )
+        self._quit_action.setText(self._translate_ui_text("main.menu.file.exit"))
+        self._view_menu.setTitle(self._translate_ui_text("main.menu.view.title"))
+        self._bookmark_toggle_action.setText(
+            self._translate_ui_text("main.menu.view.bookmarks")
+        )
+        self._edit_menu.setTitle(self._translate_ui_text("main.menu.edit.title"))
+        self._preferences_action.setText(
+            self._translate_ui_text("main.menu.edit.preferences")
+        )
+        self._cache_menu.setTitle(self._translate_ui_text("main.menu.cache.title"))
+        self._cache_mgmt_action.setText(
+            self._translate_ui_text("main.menu.cache.manage")
+        )
+        self._language_menu.setTitle(
+            self._translate_ui_text("menu.language.title")
+        )
+        self._language_settings_action.setText(
+            self._translate_ui_text("menu.language.settings")
+        )
+        self._bookmark_panel.apply_ui_language(self._ui_language)
+        self._overlay.set_page_label_text(
+            self._translate_ui_text("main.overlay.page")
+        )
+        if self._status_is_default:
+            self._set_default_status_text()
+        self._rebuild_recent_menu()
 
     # =========================================================================
     # IMainView — Callback registration
@@ -420,6 +488,11 @@ class MainWindow(QMainWindow):
     ) -> None:
         self._on_settings_requested = cb
 
+    def set_on_language_settings_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        self._on_language_settings_requested = cb
+
     def get_current_page(self) -> int:
         """現在ビューポート上部に最も近いページの 0-indexed 番号を返す。
 
@@ -435,9 +508,9 @@ class MainWindow(QMainWindow):
         """ファイル選択ダイアログを開き、選択されたパスをコールバックに渡す。"""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "ドキュメントを開く",
+            self._translate_ui_text("main.dialog.open.title"),
             "",
-            "Documents (*.pdf *.epub)",
+            self._translate_ui_text("main.dialog.open.filter"),
         )
         if file_path and self._on_file_dropped:
             # open と drop を統合し、同一のコールバックでパスを渡す。
@@ -448,6 +521,11 @@ class MainWindow(QMainWindow):
         """Edit > Preferences / Ctrl+, ハンドラ。コールバック経由で Presenter に通知する。"""
         if self._on_settings_requested:
             self._on_settings_requested()
+
+    def _handle_language_settings_requested(self) -> None:
+        """言語メニュー押下時にコールバック経由で Presenter に通知する。"""
+        if self._on_language_settings_requested:
+            self._on_language_settings_requested()
 
     def _handle_cache_management_requested(self) -> None:
         """キャッシュ(&C) > キャッシュ管理 / Ctrl+Alt+G ハンドラ。"""
@@ -554,7 +632,10 @@ class MainWindow(QMainWindow):
         self._recent_files_menu.clear()
         recent = cast(list[str], self._settings.value("recent_files", []) or [])
         if not recent:
-            no_items = QAction("(なし)", self)
+            no_items = QAction(
+                self._translate_ui_text("main.menu.file.none"),
+                self,
+            )
             no_items.setEnabled(False)
             self._recent_files_menu.addAction(no_items)
             return
@@ -572,6 +653,18 @@ class MainWindow(QMainWindow):
         if self._on_file_dropped:
             self._add_to_recent(path)
             self._on_file_dropped(path)
+
+    def _translate_ui_text(self, key: str, **kwargs: object) -> str:
+        """Phase 2 で追加した言語メニュー文言を解決する。"""
+        return self._translation_service.translate(
+            key,
+            self._ui_language,
+            **kwargs,
+        )
+
+    def _set_default_status_text(self) -> None:
+        self._status_is_default = True
+        self._status_label.setText(self._translate_ui_text("main.status.ready"))
 
 
 # =============================================================================
@@ -601,9 +694,9 @@ class _DocOverlayWidget(QWidget):
         layout.setSpacing(6)
 
         # ページナビゲーション
-        page_label = QLabel("ページ:")
-        page_label.setStyleSheet("background: transparent; color: #82b1ff;")
-        layout.addWidget(page_label)
+        self._page_label = QLabel("ページ:")
+        self._page_label.setStyleSheet("background: transparent; color: #82b1ff;")
+        layout.addWidget(self._page_label)
 
         self.page_spinbox = QSpinBox()
         self.page_spinbox.setMinimum(1)
@@ -659,6 +752,9 @@ class _DocOverlayWidget(QWidget):
         super().showEvent(event)
         self._reposition()
         self.raise_()
+
+    def set_page_label_text(self, text: str) -> None:
+        self._page_label.setText(text)
 
 
 # =============================================================================

@@ -18,6 +18,7 @@ from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
 from pdf_epub_reader.utils.config import ENV_GEMINI_API_KEY, load_config
 from pdf_epub_reader.views.bookmark_panel import BookmarkPanelView
 from pdf_epub_reader.views.cache_dialog import CacheDialog
+from pdf_epub_reader.views.language_dialog import LanguageDialog
 from pdf_epub_reader.views.main_window import MainWindow
 from pdf_epub_reader.views.settings_dialog import SettingsDialog
 from pdf_epub_reader.views.side_panel_view import SidePanelView
@@ -56,23 +57,38 @@ async def _app_main() -> None:
     _ai_model_ref = ai_model  # シャットダウンフック用に参照を保持
 
     # --- Views ---
-    bookmark_panel_view = BookmarkPanelView()
-    side_panel_view = SidePanelView()
+    bookmark_panel_view = BookmarkPanelView(ui_language=config.ui_language)
+    side_panel_view = SidePanelView(ui_language=config.ui_language)
     main_window = MainWindow(
         side_panel=side_panel_view,
         bookmark_panel=bookmark_panel_view,
+        ui_language=config.ui_language,
     )
 
     # --- Presenters ---
-    panel_presenter = PanelPresenter(view=side_panel_view, ai_model=ai_model)
+    panel_presenter = PanelPresenter(
+        view=side_panel_view,
+        ai_model=ai_model,
+        ui_language=config.ui_language,
+    )
     _main_presenter = MainPresenter(  # noqa: F841
         view=main_window,
         document_model=document_model,
         panel_presenter=panel_presenter,
         config=config,
-        settings_view_factory=lambda: SettingsDialog(main_window),
+        settings_view_factory=lambda ui_language: SettingsDialog(
+            main_window,
+            ui_language=ui_language,
+        ),
+        language_view_factory=lambda ui_language: LanguageDialog(
+            main_window,
+            ui_language=ui_language,
+        ),
         ai_model=ai_model,
-        cache_dialog_view_factory=lambda: CacheDialog(main_window),
+        cache_dialog_view_factory=lambda ui_language: CacheDialog(
+            main_window,
+            ui_language=ui_language,
+        ),
     )
 
     main_window.show()

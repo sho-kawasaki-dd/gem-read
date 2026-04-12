@@ -243,6 +243,22 @@ class TestSelectionSnapshot:
             "選択 2 / ページ 3\n\nThird"
         )
 
+    def test_apply_ui_language_updates_preview_language(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        snapshot = _make_snapshot(_make_slot(1, 1, "Selected!"))
+        panel_presenter.set_selection_snapshot(snapshot)
+
+        mock_side_panel_view.calls.clear()
+        panel_presenter.apply_ui_language("en")
+
+        assert mock_side_panel_view.get_calls("apply_ui_language")[-1] == ("en",)
+        assert mock_side_panel_view.get_calls("set_combined_selection_preview")[-1][0] == (
+            "Selection 1 / Page 2\n\nSelected!"
+        )
+
 
 class TestSetSelectedContent:
     """Phase 4: マルチモーダルコンテンツの保持と View 反映を検証する。"""
@@ -350,6 +366,26 @@ class TestMultimodalAnalysis:
         request = analyze_calls[0][0]
         assert request.images == [b"image-bytes"]
         assert request.mode == AnalysisMode.CUSTOM_PROMPT
+
+
+class TestTranslatedDialogs:
+    def test_model_change_confirm_is_translated_after_language_switch(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        panel_presenter.apply_ui_language("en")
+        panel_presenter.update_cache_status(
+            CacheStatus(is_active=True, model_name="model-a")
+        )
+
+        mock_side_panel_view.simulate_model_changed("model-b")
+
+        confirm_calls = mock_side_panel_view.get_calls("show_confirm_dialog")
+        assert confirm_calls[-1] == (
+            "Confirm Model Change",
+            "The cache is tied to the current model. Changing the model will delete the cache.\nContinue?",
+        )
 
     @pytest.mark.asyncio
     async def test_multiple_selection_text_and_images_preserve_order(

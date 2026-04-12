@@ -47,6 +47,7 @@ class MockMainView:
         self._on_cache_management_requested: Callable[[], None] | None = None
         self._on_pages_needed: Callable[[list[int]], None] | None = None
         self._on_settings_requested: Callable[[], None] | None = None
+        self._on_language_settings_requested: Callable[[], None] | None = None
 
         # get_current_page が返す固定値。テストで変更可能。
         self._current_page: int = 0
@@ -96,6 +97,9 @@ class MockMainView:
 
     def set_high_quality_downscale(self, enabled: bool) -> None:
         self.calls.append(("set_high_quality_downscale", (enabled,)))
+
+    def apply_ui_language(self, language: str) -> None:
+        self.calls.append(("apply_ui_language", (language,)))
 
     def get_device_pixel_ratio(self) -> float:
         """テスト環境では標準 DPI モニター相当の 1.0 を返す。"""
@@ -156,6 +160,11 @@ class MockMainView:
     def set_on_settings_requested(self, cb: Callable[[], None]) -> None:
         self._on_settings_requested = cb
 
+    def set_on_language_settings_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        self._on_language_settings_requested = cb
+
     # --- Simulation helpers (for triggering callbacks in tests) ---
     # テストコードからユーザー操作を模擬するための補助メソッド群。
 
@@ -198,6 +207,10 @@ class MockMainView:
     def simulate_settings_requested(self) -> None:
         if self._on_settings_requested:
             self._on_settings_requested()
+
+    def simulate_language_settings_requested(self) -> None:
+        if self._on_language_settings_requested:
+            self._on_language_settings_requested()
 
     # --- Helpers ---
 
@@ -259,6 +272,9 @@ class MockSidePanelView:
 
     def set_active_tab(self, mode: str) -> None:
         self.calls.append(("set_active_tab", (mode,)))
+
+    def apply_ui_language(self, language: str) -> None:
+        self.calls.append(("apply_ui_language", (language,)))
 
     # --- Callback registration ---
 
@@ -541,6 +557,36 @@ class MockSettingsDialogView:
 
     def get_calls(self, method_name: str) -> list[tuple]:
         """指定メソッドの呼び出し引数一覧を返す。"""
+        return [args for name, args in self.calls if name == method_name]
+
+
+class MockLanguageDialogView:
+    """ILanguageDialogView を満たすテスト用ダミー実装。"""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple]] = []
+        self._selected_language: str = "ja"
+        self._available_languages: list[tuple[str, str]] = []
+        self._exec_return = True
+
+    def get_selected_language(self) -> str:
+        return self._selected_language
+
+    def set_selected_language(self, value: str) -> None:
+        self.calls.append(("set_selected_language", (value,)))
+        self._selected_language = value
+
+    def set_available_languages(
+        self, languages: list[tuple[str, str]]
+    ) -> None:
+        self.calls.append(("set_available_languages", (languages,)))
+        self._available_languages = languages
+
+    def exec_dialog(self) -> bool:
+        self.calls.append(("exec_dialog", ()))
+        return self._exec_return
+
+    def get_calls(self, method_name: str) -> list[tuple]:
         return [args for name, args in self.calls if name == method_name]
 
 

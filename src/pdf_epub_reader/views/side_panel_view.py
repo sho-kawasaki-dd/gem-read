@@ -40,6 +40,8 @@ from PySide6.QtWidgets import (
 )
 
 from pdf_epub_reader.dto import SelectionSlot, SelectionSnapshot
+from pdf_epub_reader.services.translation_service import TranslationService
+from pdf_epub_reader.utils.config import DEFAULT_UI_LANGUAGE, normalize_ui_language
 
 
 # タブインデックスと AnalysisMode.value の対応。
@@ -207,6 +209,10 @@ class CollapsibleSection(QWidget):
         self._toggle_btn.setText(self._header_text())
         self.updateGeometry()
 
+    def set_title(self, title: str) -> None:
+        self._title = title
+        self._toggle_btn.setText(self._header_text())
+
 
 class _SelectionCard(QFrame):
     """1 件分の選択スロットを表示するカード。"""
@@ -214,10 +220,12 @@ class _SelectionCard(QFrame):
     def __init__(
         self,
         slot: SelectionSlot,
+        translate: Callable[[str], str],
         on_delete_requested: Callable[[str], None] | None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self._translate = translate
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setStyleSheet(
             "QFrame {"
@@ -245,7 +253,11 @@ class _SelectionCard(QFrame):
         )
         header_row.addWidget(badge)
 
-        header_text = QLabel(f"ページ {slot.page_number + 1}")
+        header_text = QLabel(
+            self._translate("side.selection.card.page").format(
+                page=slot.page_number + 1
+            )
+        )
         header_text.setStyleSheet("font-weight: bold;")
         header_row.addWidget(header_text)
 
@@ -254,7 +266,9 @@ class _SelectionCard(QFrame):
         header_row.addWidget(state_label)
         header_row.addStretch(1)
 
-        delete_button = QPushButton("削除")
+        delete_button = QPushButton(
+            self._translate("side.selection.card.delete")
+        )
         delete_button.setFixedHeight(24)
         delete_button.clicked.connect(
             lambda: on_delete_requested and on_delete_requested(slot.selection_id)
@@ -284,10 +298,10 @@ class _SelectionCard(QFrame):
 
     def _state_text(self, slot: SelectionSlot) -> str:
         if slot.read_state == "pending":
-            return "読み取り中"
+            return self._translate("side.selection.card.pending")
         if slot.read_state == "error":
-            return "失敗"
-        return "準備完了"
+            return self._translate("side.selection.card.error")
+        return self._translate("side.selection.card.ready")
 
     def _state_style(self, slot: SelectionSlot) -> str:
         if slot.read_state == "pending":
@@ -308,11 +322,15 @@ class _SelectionCard(QFrame):
 
     def _preview_text(self, slot: SelectionSlot) -> str:
         if slot.read_state == "pending":
-            return "選択内容を抽出しています..."
+            return self._translate("side.selection.card.extracting")
         if slot.read_state == "error":
-            return slot.error_message or "抽出に失敗しました。削除して再試行できます。"
+            return slot.error_message or self._translate(
+                "side.selection.card.extract_failed"
+            )
 
-        text = slot.extracted_text.strip() or "抽出テキストはありません"
+        text = slot.extracted_text.strip() or self._translate(
+            "side.selection.card.no_text"
+        )
         text = text.replace("\n", " ")
         if len(text) > 140:
             return text[:137] + "..."
@@ -326,8 +344,14 @@ class SidePanelView(QWidget):
     それぞれ CollapsibleSection として折りたためるようにする。
     """
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        ui_language: str = DEFAULT_UI_LANGUAGE,
+    ) -> None:
         super().__init__(parent)
+        self._ui_language = normalize_ui_language(ui_language, fallback="en")
+        self._translation_service = TranslationService()
 
         # --- KaTeX ローカルバンドルの baseUrl ---
         # Chromium が file:/// リソースを読み込めるよう、
@@ -366,7 +390,8 @@ class SidePanelView(QWidget):
 
         # Phase 6: モデル選択プルダウン
         model_row = QHBoxLayout()
-        model_row.addWidget(QLabel("モデル:"))
+        self._model_label = QLabel("")
+        model_row.addWidget(self._model_label)
         self._model_combo = QComboBox()
         self._model_combo.currentTextChanged.connect(self._fire_model_changed)
         model_row.addWidget(self._model_combo, 1)
@@ -376,25 +401,23 @@ class SidePanelView(QWidget):
         self._content_splitter.setChildrenCollapsible(False)
         layout.addWidget(self._content_splitter, 1)
 
-        self._selection_section = CollapsibleSection("選択一覧", expanded=True)
+        self._selection_section = CollapsibleSection("", expanded=True)
         sel_layout = self._selection_section.content_layout()
         sel_layout.setSpacing(8)
 
         selection_header_row = QHBoxLayout()
-        self._selection_summary_label = QLabel("選択 0 件")
+        self._selection_summary_label = QLabel("")
         selection_header_row.addWidget(self._selection_summary_label)
         selection_header_row.addStretch(1)
 
-        self._clear_selections_btn = QPushButton("全消去")
+        self._clear_selections_btn = QPushButton("")
         self._clear_selections_btn.clicked.connect(
             self._fire_clear_selections_requested
         )
         selection_header_row.addWidget(self._clear_selections_btn)
         sel_layout.addLayout(selection_header_row)
 
-        self._selection_warning_label = QLabel(
-            "API トークン制限や処理速度低下の恐れがあります"
-        )
+        self._selection_warning_label = QLabel("")
         self._selection_warning_label.setWordWrap(True)
         self._selection_warning_label.setStyleSheet(
             "color: #9a3412; background: #ffedd5; border-radius: 6px; padding: 6px 8px;"
@@ -412,26 +435,23 @@ class SidePanelView(QWidget):
         self._selection_list_scroll.setWidget(self._selection_list_container)
         sel_layout.addWidget(self._selection_list_scroll, 1)
 
-        combined_label = QLabel("AI送信プレビュー")
-        combined_label.setStyleSheet("font-weight: bold;")
-        sel_layout.addWidget(combined_label)
+        self._combined_label = QLabel("")
+        self._combined_label.setStyleSheet("font-weight: bold;")
+        sel_layout.addWidget(self._combined_label)
 
         self._combined_preview_edit = QTextEdit()
         self._combined_preview_edit.setReadOnly(True)
         self._combined_preview_edit.setMinimumHeight(120)
-        self._combined_preview_edit.setPlaceholderText(
-            "複数選択の連結プレビューがここに表示されます"
-        )
         sel_layout.addWidget(self._combined_preview_edit)
 
-        self._force_image_checkbox = QCheckBox("画像としても送信")
+        self._force_image_checkbox = QCheckBox("")
         self._force_image_checkbox.setChecked(False)
         self._force_image_checkbox.toggled.connect(self._fire_force_image_toggled)
         sel_layout.addWidget(self._force_image_checkbox)
 
         self._content_splitter.addWidget(self._selection_section)
 
-        self._ai_section = CollapsibleSection("AI回答", expanded=True)
+        self._ai_section = CollapsibleSection("", expanded=True)
         ai_layout = self._ai_section.content_layout()
         ai_layout.setSpacing(8)
 
@@ -450,25 +470,20 @@ class SidePanelView(QWidget):
 
         # 翻訳ボタン群（横並び）
         btn_layout = QHBoxLayout()
-        self._translate_btn = QPushButton("翻訳")
+        self._translate_btn = QPushButton("")
         self._translate_btn.clicked.connect(lambda: self._fire_translate(False))
         btn_layout.addWidget(self._translate_btn)
 
-        self._explain_btn = QPushButton("解説付き翻訳")
+        self._explain_btn = QPushButton("")
         self._explain_btn.clicked.connect(lambda: self._fire_translate(True))
         btn_layout.addWidget(self._explain_btn)
         translation_layout.addLayout(btn_layout)
 
         # Phase 4: 翻訳結果表示エリアを QWebEngineView に差し替え
         self._translation_result = QWebEngineView()
-        self._translation_result.setHtml(
-            "<html><body style='color:#999;font-size:14px;'>"
-            "翻訳結果がここに表示されます</body></html>",
-            self._katex_base_url,
-        )
         translation_layout.addWidget(self._translation_result)
 
-        self._tab_widget.addTab(translation_tab, "翻訳")
+        self._tab_widget.addTab(translation_tab, "")
 
         # --- カスタムプロンプトタブ ---
         custom_tab = QWidget()
@@ -477,32 +492,26 @@ class SidePanelView(QWidget):
         # プロンプト入力欄
         self._prompt_edit = QTextEdit()
         self._prompt_edit.setMaximumHeight(100)
-        self._prompt_edit.setPlaceholderText("カスタムプロンプトを入力...")
         custom_layout.addWidget(self._prompt_edit)
 
         # 送信ボタン
-        self._submit_btn = QPushButton("送信")
+        self._submit_btn = QPushButton("")
         self._submit_btn.clicked.connect(self._fire_custom_prompt)
         custom_layout.addWidget(self._submit_btn)
 
         # Phase 4: カスタム結果表示エリアも QWebEngineView に差し替え
         self._custom_result = QWebEngineView()
-        self._custom_result.setHtml(
-            "<html><body style='color:#999;font-size:14px;'>"
-            "結果がここに表示されます</body></html>",
-            self._katex_base_url,
-        )
         custom_layout.addWidget(self._custom_result)
 
-        self._tab_widget.addTab(custom_tab, "カスタムプロンプト")
+        self._tab_widget.addTab(custom_tab, "")
 
         self._content_splitter.addWidget(self._ai_section)
         self._content_splitter.setSizes([340, 420])
 
         cache_row = QHBoxLayout()
-        self._cache_label = QLabel("キャッシュステータス: ---")
+        self._cache_label = QLabel("")
         cache_row.addWidget(self._cache_label, 1)
-        self._cache_toggle_btn = QPushButton("作成")
+        self._cache_toggle_btn = QPushButton("")
         self._cache_toggle_btn.setFixedWidth(60)
         self._cache_toggle_btn.clicked.connect(self._fire_cache_toggle)
         cache_row.addWidget(self._cache_toggle_btn)
@@ -529,6 +538,9 @@ class SidePanelView(QWidget):
             self._cache_toggle_btn,
         ]
 
+        self._translation_result_has_content = False
+        self._custom_result_has_content = False
+        self.apply_ui_language(self._ui_language)
         self._refresh_selection_widgets()
 
     # --- ISidePanelView Display commands ---
@@ -552,8 +564,10 @@ class SidePanelView(QWidget):
         html = _render_markdown_html(text)
         current_tab = self._tab_widget.currentIndex()
         if current_tab == 0:
+            self._translation_result_has_content = True
             self._translation_result.setHtml(html, self._katex_base_url)
         else:
+            self._custom_result_has_content = True
             self._custom_result.setHtml(html, self._katex_base_url)
 
     def set_selection_snapshot(self, snapshot: SelectionSnapshot) -> None:
@@ -588,6 +602,42 @@ class SidePanelView(QWidget):
             if name == mode:
                 self._tab_widget.setCurrentIndex(idx)
                 return
+
+    def apply_ui_language(self, language: str) -> None:
+        """サイドパネルの静的文言を現在の表示言語で再設定する。"""
+        self._ui_language = normalize_ui_language(language, fallback="en")
+        self._model_label.setText(self._translate("side.model.label"))
+        self._selection_section.set_title(self._translate("side.section.selections"))
+        self._clear_selections_btn.setText(self._translate("side.selection.clear"))
+        self._selection_warning_label.setText(self._translate("side.selection.warning"))
+        self._combined_label.setText(self._translate("side.selection.preview_label"))
+        self._combined_preview_edit.setPlaceholderText(
+            self._translate("side.selection.preview_placeholder")
+        )
+        self._force_image_checkbox.setText(self._translate("side.selection.force_image"))
+        self._ai_section.set_title(self._translate("side.section.ai"))
+        self._translate_btn.setText(self._translate("side.translation.button"))
+        self._explain_btn.setText(self._translate("side.translation.explain_button"))
+        self._tab_widget.setTabText(0, self._translate("side.translation.tab"))
+        self._prompt_edit.setPlaceholderText(self._translate("side.custom.prompt_placeholder"))
+        self._submit_btn.setText(self._translate("side.custom.submit"))
+        self._tab_widget.setTabText(1, self._translate("side.custom.tab"))
+        self._cache_base_text = self._translate("side.cache.status_placeholder")
+        self._cache_label.setText(self._cache_base_text)
+        self._cache_toggle_btn.setText(
+            self._translate(
+                "side.cache.delete" if self._cache_is_active else "side.cache.create"
+            )
+        )
+        if self._model_combo.count() == 0:
+            self._model_combo.setPlaceholderText(
+                self._translate("side.model.unset_placeholder")
+            )
+        if not self._translation_result_has_content:
+            self._set_translation_placeholder()
+        if not self._custom_result_has_content:
+            self._set_custom_placeholder()
+        self._refresh_selection_widgets()
 
     # --- ISidePanelView Callback registration ---
 
@@ -644,7 +694,9 @@ class SidePanelView(QWidget):
             self._model_combo.setEnabled(True)
             self._model_combo.setPlaceholderText("")
         else:
-            self._model_combo.setPlaceholderText("モデル未設定")
+            self._model_combo.setPlaceholderText(
+                self._translate("side.model.unset_placeholder")
+            )
             self._model_combo.setEnabled(False)
         self._model_combo.blockSignals(False)
 
@@ -664,7 +716,9 @@ class SidePanelView(QWidget):
         """モデル選択プルダウンの有効/無効を切り替える。"""
         self._model_combo.setEnabled(enabled)
         if not enabled and self._model_combo.count() == 0:
-            self._model_combo.setPlaceholderText("モデル未設定")
+            self._model_combo.setPlaceholderText(
+                self._translate("side.model.unset_placeholder")
+            )
 
     # --- Phase 7: キャッシュ操作 ---
 
@@ -683,7 +737,11 @@ class SidePanelView(QWidget):
     def set_cache_active(self, active: bool) -> None:
         """キャッシュ状態に応じてトグルボタンのテキストを切り替える。"""
         self._cache_is_active = active
-        self._cache_toggle_btn.setText("削除" if active else "作成")
+        self._cache_toggle_btn.setText(
+            self._translate(
+                "side.cache.delete" if active else "side.cache.create"
+            )
+        )
 
     def set_cache_button_enabled(self, enabled: bool) -> None:
         """キャッシュトグルボタンの有効/無効を制御する。"""
@@ -733,7 +791,7 @@ class SidePanelView(QWidget):
         if remaining <= 0:
             self._countdown_timer.stop()
             self._cache_label.setText(
-                self._cache_base_text + " — 期限切れ"
+                self._cache_base_text + " — " + self._translate("side.cache.expired")
             )
             self._expire_time_utc = None
             if self._on_cache_expired:
@@ -744,13 +802,16 @@ class SidePanelView(QWidget):
         h, rem = divmod(total_sec, 3600)
         m, s = divmod(rem, 60)
         self._cache_label.setText(
-            f"{self._cache_base_text} — 残り {h}:{m:02d}:{s:02d}"
+            f"{self._cache_base_text} — {self._translate('side.cache.remaining', time=f'{h}:{m:02d}:{s:02d}') }"
         )
 
     def _refresh_selection_widgets(self) -> None:
         """現在の snapshot に基づいて選択一覧 UI を再構築する。"""
         self._selection_summary_label.setText(
-            f"選択 {len(self._selection_snapshot.slots)} 件"
+            self._translate(
+                "side.selection.summary",
+                count=len(self._selection_snapshot.slots),
+            )
         )
         self._selection_warning_label.setVisible(
             len(self._selection_snapshot.slots) > 10
@@ -762,7 +823,7 @@ class SidePanelView(QWidget):
         self._clear_layout(self._selection_list_layout)
 
         if self._selection_snapshot.is_empty:
-            empty_label = QLabel("選択はまだありません")
+            empty_label = QLabel(self._translate("side.selection.empty"))
             empty_label.setStyleSheet("color: #64748b; padding: 6px 2px;")
             self._selection_list_layout.addWidget(empty_label)
         else:
@@ -770,6 +831,7 @@ class SidePanelView(QWidget):
                 self._selection_list_layout.addWidget(
                     _SelectionCard(
                         slot,
+                        translate=self._translate,
                         on_delete_requested=self._fire_selection_delete_requested,
                     )
                 )
@@ -834,3 +896,24 @@ class SidePanelView(QWidget):
         """QTabWidget のタブ切り替えシグナルをコールバックに変換する。"""
         if self._on_tab_changed and index in _TAB_NAMES:
             self._on_tab_changed(_TAB_NAMES[index])
+
+    def _translate(self, key: str, **kwargs: object) -> str:
+        return self._translation_service.translate(
+            key,
+            self._ui_language,
+            **kwargs,
+        )
+
+    def _set_translation_placeholder(self) -> None:
+        self._translation_result.setHtml(
+            "<html><body style='color:#999;font-size:14px;'>"
+            f"{self._translate('side.translation.placeholder')}</body></html>",
+            self._katex_base_url,
+        )
+
+    def _set_custom_placeholder(self) -> None:
+        self._custom_result.setHtml(
+            "<html><body style='color:#999;font-size:14px;'>"
+            f"{self._translate('side.custom.placeholder')}</body></html>",
+            self._katex_base_url,
+        )

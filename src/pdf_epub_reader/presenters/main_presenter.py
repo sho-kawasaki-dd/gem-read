@@ -25,12 +25,15 @@ from pdf_epub_reader.dto import (
 from pdf_epub_reader.interfaces.model_interfaces import IAIModel, IDocumentModel
 from pdf_epub_reader.interfaces.view_interfaces import (
     ICacheDialogView,
+    ILanguageDialogView,
     IMainView,
     ISettingsDialogView,
 )
 from pdf_epub_reader.presenters.cache_presenter import CachePresenter
+from pdf_epub_reader.presenters.language_presenter import LanguagePresenter
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
 from pdf_epub_reader.presenters.settings_presenter import SettingsPresenter
+from pdf_epub_reader.services.translation_service import TranslationService
 from pdf_epub_reader.utils.config import AppConfig, save_config
 from pdf_epub_reader.utils.exceptions import (
     AICacheError,
@@ -55,9 +58,10 @@ class MainPresenter:
         document_model: IDocumentModel,
         panel_presenter: PanelPresenter,
         config: AppConfig | None = None,
-        settings_view_factory: Callable[[], ISettingsDialogView] | None = None,
+        settings_view_factory: Callable[[str], ISettingsDialogView] | None = None,
+        language_view_factory: Callable[[str], ILanguageDialogView] | None = None,
         ai_model: IAIModel | None = None,
-        cache_dialog_view_factory: Callable[[], ICacheDialogView] | None = None,
+        cache_dialog_view_factory: Callable[[str], ICacheDialogView] | None = None,
     ) -> None:
         """依存オブジェクトを受け取り、View のイベントを購読する。
 
@@ -78,7 +82,9 @@ class MainPresenter:
         self._document_model = document_model
         self._panel_presenter = panel_presenter
         self._config = config or AppConfig()
+        self._translation_service = TranslationService()
         self._settings_view_factory = settings_view_factory
+        self._language_view_factory = language_view_factory
         self._ai_model = ai_model
         self._cache_dialog_view_factory = cache_dialog_view_factory
         self._base_dpi: int = self._config.default_dpi
@@ -106,6 +112,10 @@ class MainPresenter:
         )
         self._view.set_on_pages_needed(self._on_pages_needed)
         self._view.set_on_settings_requested(self._on_settings_requested)
+        self._view.set_on_language_settings_requested(
+            self._on_language_settings_requested
+        )
+        self._view.apply_ui_language(self._config.ui_language)
 
         # Phase 6: 初期化時にモデルリストをサイドパネルに設定する
         self._panel_presenter.set_available_models(
@@ -114,6 +124,7 @@ class MainPresenter:
         self._panel_presenter.set_selected_model(
             self._config.gemini_model_name
         )
+        self._panel_presenter.apply_ui_language(self._config.ui_language)
         self._panel_presenter.set_on_selection_delete_handler(
             self._on_selection_delete_requested
         )
@@ -149,7 +160,9 @@ class MainPresenter:
         ユーザーが入力したパスワードで再試行する。
         """
         self._clear_selection_state(increment_generation=True)
-        self._view.show_status_message(f"Opening {file_path}...")
+        self._view.show_status_message(
+            self._translate("main.status.opening", file_path=file_path)
+        )
 
         # Phase 7: 既存キャッシュがあれば破棄する
         if self._ai_model is not None:
@@ -169,21 +182,25 @@ class MainPresenter:
             password = self._view.show_password_dialog(e.file_path)
             if password is None:
                 # ユーザーがキャンセルした場合はオープンを中止する。
-                self._view.show_status_message("Open cancelled")
+                self._view.show_status_message(
+                    self._translate("main.status.open_cancelled")
+                )
                 return
             try:
                 doc_info = await self._document_model.open_document(
                     file_path, password
                 )
             except DocumentOpenError as retry_e:
-                self._view.show_error_dialog(
-                    "Open Error", str(retry_e)
+                self._show_open_error(str(retry_e))
+                self._view.show_status_message(
+                    self._translate("main.status.open_failed")
                 )
-                self._view.show_status_message("Open failed")
                 return
         except DocumentOpenError as e:
-            self._view.show_error_dialog("Open Error", str(e))
-            self._view.show_status_message("Open failed")
+            self._show_open_error(str(e))
+            self._view.show_status_message(
+                self._translate("main.status.open_failed")
+            )
             return
 
         self._view.set_window_title(doc_info.title or doc_info.file_path)
@@ -203,7 +220,10 @@ class MainPresenter:
         self._view.display_pages(placeholders)
         self._view.display_toc(doc_info.toc)
         self._view.show_status_message(
-            f"Loaded {doc_info.total_pages} pages"
+            self._translate(
+                "main.status.loaded_pages",
+                count=doc_info.total_pages,
+            )
         )
 
     # --- Private callback handlers ---
@@ -292,7 +312,7 @@ class MainPresenter:
             and current_count > self._selection_warning_threshold
         ):
             self._view.show_status_message(
-                "選択数が多いため、API トークン制限や処理速度低下の恐れがあります"
+                self._translate("side.selection.warning")
             )
 
         return selection_id, self._selection_generation
@@ -343,12 +363,14 @@ class MainPresenter:
         self._sync_selection_views()
 
         if content.cropped_image and content.detection_reason:
-            reason_label = {
-                "embedded_image": "画像",
-                "math_font": "数式",
-            }[content.detection_reason]
+            reason_label = self._translate(
+                f"main.reason.{content.detection_reason}"
+            )
             self._view.show_status_message(
-                f"{reason_label}を検出 — 画像付きで送信します"
+                self._translate(
+                    "main.status.selection.auto_image_send",
+                    reason=reason_label,
+                )
             )
 
     def _mark_selection_error(
@@ -361,13 +383,15 @@ class MainPresenter:
         self._selection_slots[selection_id] = replace(
             self._selection_slots[selection_id],
             read_state="error",
-            extracted_text="抽出に失敗しました",
+            extracted_text="",
             has_thumbnail=False,
             content=None,
             error_message=message,
         )
         self._sync_selection_views()
-        self._view.show_status_message("選択領域の読み取りに失敗しました")
+        self._view.show_status_message(
+            self._translate("main.status.selection.read_failed")
+        )
 
     def _selection_result_is_current(
         self, selection_id: str, generation: int
@@ -443,12 +467,12 @@ class MainPresenter:
         except Exception:
             logger.warning("Failed to fetch cache data", exc_info=True)
             self._view.show_status_message(
-                "キャッシュ情報の取得に失敗しました"
+                self._translate("main.status.cache.fetch_failed")
             )
             return
 
         # ダイアログ表示
-        dialog_view = self._cache_dialog_view_factory()
+        dialog_view = self._cache_dialog_view_factory(self._config.ui_language)
         presenter = CachePresenter(
             dialog_view, cache_status, cache_list, self._config
         )
@@ -467,7 +491,10 @@ class MainPresenter:
                 status = await self._ai_model.update_cache_ttl(new_ttl)
                 self._panel_presenter.update_cache_status(status)
                 self._view.show_status_message(
-                    f"TTL を {new_ttl} 分に更新しました"
+                    self._translate(
+                        "main.status.cache.ttl_updated",
+                        minutes=new_ttl,
+                    )
                 )
             elif action == "delete_selected" and selected_name:
                 # 選択行のキャッシュを削除（外部キャッシュ含む）
@@ -478,7 +505,7 @@ class MainPresenter:
                         self._ai_model._cache_name = selected_name  # type: ignore[attr-defined]
                     await self._ai_model.invalidate_cache()
                     self._view.show_status_message(
-                        "選択キャッシュを削除しました"
+                        self._translate("main.status.cache.selected_deleted")
                     )
                 finally:
                     if hasattr(self._ai_model, '_cache_name'):
@@ -489,7 +516,12 @@ class MainPresenter:
                     self._panel_presenter.update_cache_status(CS())
         except Exception as exc:
             logger.warning("Cache management action failed", exc_info=True)
-            self._view.show_status_message(f"操作失敗: {exc}")
+            self._view.show_status_message(
+                self._translate(
+                    "main.status.cache.action_failed",
+                    details=str(exc),
+                )
+            )
 
     # --- Phase 7 Bugfix: 起動時バックグラウンドモデル検証 ---
 
@@ -508,7 +540,7 @@ class MainPresenter:
             available = await self._ai_model.list_available_models()
         except AIKeyMissingError:
             self._view.show_status_message(
-                "API キーを設定してください (Preferences → AI Models)"
+                self._translate("main.status.startup.api_key_missing")
             )
             return
         except Exception:
@@ -517,7 +549,7 @@ class MainPresenter:
                 exc_info=True,
             )
             self._view.show_status_message(
-                "⚠️ モデル一覧の取得に失敗しました。既存設定で続行します。"
+                self._translate("main.status.startup.model_fetch_failed")
             )
             return
 
@@ -537,8 +569,7 @@ class MainPresenter:
         )
         self._panel_presenter.set_selected_model("")
         self._view.show_status_message(
-            "⚠️ モデルが未設定または無効です。"
-            "Preferences (Ctrl+,) → AI Models タブで設定してください。"
+            self._translate("main.status.startup.invalid_model")
         )
 
     # --- Phase 7: キャッシュ操作 ---
@@ -553,11 +584,15 @@ class MainPresenter:
             return
         doc_info = self._document_model.get_document_info()
         if doc_info is None:
-            self._view.show_status_message("ドキュメントが開かれていません")
+            self._view.show_status_message(
+                self._translate("main.status.cache.no_document")
+            )
             return
 
         self._panel_presenter._view.set_cache_button_enabled(False)
-        self._view.show_status_message("キャッシュを作成中...")
+        self._view.show_status_message(
+            self._translate("main.status.cache.creating")
+        )
         try:
             # Phase 7.5: 既存キャッシュがあれば先に削除する（重複作成防止）
             existing = await self._ai_model.get_cache_status()
@@ -573,10 +608,18 @@ class MainPresenter:
             )
             self._panel_presenter.update_cache_status(status)
             self._view.show_status_message(
-                f"キャッシュ作成完了 ({status.token_count or '?'} tokens)"
+                self._translate(
+                    "main.status.cache.created",
+                    token_count=status.token_count or "?",
+                )
             )
         except AICacheError as exc:
-            self._view.show_status_message(f"キャッシュ作成失敗: {exc}")
+            self._view.show_status_message(
+                self._translate(
+                    "main.status.cache.create_failed",
+                    details=str(exc),
+                )
+            )
             logger.warning("Cache creation failed", exc_info=True)
         finally:
             self._panel_presenter._view.set_cache_button_enabled(True)
@@ -598,7 +641,9 @@ class MainPresenter:
             self._panel_presenter.update_cache_status(status)
         except Exception:
             logger.debug("Cache expired status refresh failed", exc_info=True)
-        self._view.show_status_message("キャッシュの有効期限が切れました")
+        self._view.show_status_message(
+            self._translate("main.status.cache.expired")
+        )
 
     async def _do_cache_invalidate(self) -> None:
         """キャッシュを無効化する。"""
@@ -609,7 +654,9 @@ class MainPresenter:
             await self._ai_model.invalidate_cache()
             from pdf_epub_reader.dto import CacheStatus
             self._panel_presenter.update_cache_status(CacheStatus())
-            self._view.show_status_message("キャッシュを削除しました")
+            self._view.show_status_message(
+                self._translate("main.status.cache.deleted")
+            )
         except Exception:
             logger.warning("Cache invalidation failed", exc_info=True)
         finally:
@@ -643,13 +690,29 @@ class MainPresenter:
         """
         if self._settings_view_factory is None:
             return
-        settings_view = self._settings_view_factory()
+        settings_view = self._settings_view_factory(self._config.ui_language)
         presenter = SettingsPresenter(
             settings_view, self._config, ai_model=self._ai_model
         )
         new_config = presenter.show()
         if new_config is not None:
             self._apply_config_changes(new_config)
+
+    def _on_language_settings_requested(self) -> None:
+        """表示言語設定ダイアログを開いて UI 表示言語を反映する。"""
+        if self._language_view_factory is None:
+            return
+        language_view = self._language_view_factory(self._config.ui_language)
+        presenter = LanguagePresenter(language_view, self._config)
+        new_config = presenter.show()
+        if new_config is not None:
+            self._apply_config_changes(new_config)
+            self._view.show_status_message(
+                self._translation_service.translate(
+                    "presenter.language.updated",
+                    new_config.ui_language,
+                )
+            )
 
     def _apply_config_changes(self, new_config: AppConfig) -> None:
         """新しい設定を各コンポーネントに反映する。
@@ -659,6 +722,7 @@ class MainPresenter:
         """
         old_dpi = self._config.default_dpi
         old_hq = self._config.high_quality_downscale
+        old_ui_language = self._config.ui_language
         self._config = new_config
         self._document_model.update_config(new_config)
 
@@ -672,6 +736,10 @@ class MainPresenter:
             new_config.gemini_model_name
         )
 
+        if old_ui_language != new_config.ui_language:
+            self._view.apply_ui_language(new_config.ui_language)
+            self._panel_presenter.apply_ui_language(new_config.ui_language)
+
         # 高品質縮小の ON/OFF が変わった場合は View に即反映する。
         if old_hq != new_config.high_quality_downscale:
             self._view.set_high_quality_downscale(
@@ -683,6 +751,19 @@ class MainPresenter:
             dpr = self._view.get_device_pixel_ratio()
             self._render_dpi = int(self._base_dpi * dpr)
             asyncio.ensure_future(self._reload_layout())
+
+    def _show_open_error(self, details: str) -> None:
+        self._view.show_error_dialog(
+            self._translate("main.error.open.title"),
+            self._translate("main.error.open.message", details=details),
+        )
+
+    def _translate(self, key: str, **kwargs: object) -> str:
+        return self._translation_service.translate(
+            key,
+            self._config.ui_language,
+            **kwargs,
+        )
 
     async def _reload_layout(self) -> None:
         """DPI 変更後にプレースホルダーを再計算し再描画する。

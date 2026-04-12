@@ -13,6 +13,7 @@ import pytest
 from tests.mocks.mock_models import MockAIModel, MockDocumentModel
 from tests.mocks.mock_views import (
     MockCacheDialogView,
+    MockLanguageDialogView,
     MockMainView,
     MockSettingsDialogView,
     MockSidePanelView,
@@ -98,11 +99,23 @@ class TestOpenFileFlow:
     @pytest.mark.asyncio
     async def test_open_file_shows_status_messages(
         self,
-        main_presenter: MainPresenter,
         mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
     ) -> None:
         """処理開始前後でユーザー向けステータスメッセージが出ることを確認する。"""
-        await main_presenter.open_file("/fake/doc.pdf")
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(ui_language="en"),
+        )
+
+        await presenter.open_file("/fake/doc.pdf")
 
         status_msgs = mock_main_view.get_calls("show_status_message")
         # 開始時と完了時の 2 段階でメッセージが出ることが重要。
@@ -227,6 +240,7 @@ class TestAreaSelectionFlow:
             view=mock_main_view,
             document_model=mock_document_model,
             panel_presenter=panel,
+            config=AppConfig(ui_language="ja"),
         )
         rect = RectCoords(x0=0.0, y0=0.0, x1=100.0, y1=100.0)
         await presenter._do_area_selected(0, rect)
@@ -686,6 +700,7 @@ class TestPasswordFlow:
         """パスワードダイアログをキャンセル → オープン中止。"""
         mock_document_model._should_require_password = True
         mock_main_view._password_dialog_return = None
+        main_presenter._config = AppConfig(ui_language="en")
 
         await main_presenter.open_file("/fake/protected.pdf")
 
@@ -699,7 +714,7 @@ class TestPasswordFlow:
 
         # キャンセルメッセージがステータスバーに出る。
         status_msgs = mock_main_view.get_calls("show_status_message")
-        assert any("cancelled" in msg[0].lower() for msg in status_msgs)
+        assert any("cancel" in msg[0].lower() for msg in status_msgs)
 
     @pytest.mark.asyncio
     async def test_wrong_password_shows_error(
@@ -712,6 +727,7 @@ class TestPasswordFlow:
         mock_document_model._should_require_password = True
         mock_document_model._accepted_password = "correct"
         mock_main_view._password_dialog_return = "wrong"
+        main_presenter._config = AppConfig(ui_language="en")
 
         await main_presenter.open_file("/fake/protected.pdf")
 
@@ -719,6 +735,7 @@ class TestPasswordFlow:
         error_calls = mock_main_view.get_calls("show_error_dialog")
         assert len(error_calls) == 1
         assert "Open Error" in error_calls[0][0]
+        assert "Could not open" in error_calls[0][1]
 
         # 文書は表示されない。
         assert len(mock_main_view.get_calls("display_pages")) == 0
@@ -744,17 +761,47 @@ class TestDocumentOpenError:
             raise DocumentOpenError(f"Cannot open {file_path}")
 
         mock_document_model.open_document = _raise_open_error  # type: ignore[assignment]
+        main_presenter._config = AppConfig(ui_language="en")
 
         await main_presenter.open_file("/fake/broken.pdf")
 
         error_calls = mock_main_view.get_calls("show_error_dialog")
         assert len(error_calls) == 1
         assert "Open Error" in error_calls[0][0]
+        assert "Could not open" in error_calls[0][1]
         assert len(mock_main_view.get_calls("display_pages")) == 0
 
 
 class TestSettingsFlow:
     """設定ダイアログ経由の設定変更フローを検証する。"""
+
+    def test_settings_factory_receives_current_ui_language(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        captured_languages: list[str] = []
+        mock_settings_view = MockSettingsDialogView()
+        mock_settings_view._exec_return = False
+
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(ui_language="en"),
+            settings_view_factory=lambda language: (
+                captured_languages.append(language) or mock_settings_view
+            ),
+        )
+
+        presenter._on_settings_requested()
+
+        assert captured_languages == ["en"]
 
     @pytest.mark.asyncio
     async def test_settings_ok_updates_config_and_calls_update_config(
@@ -777,7 +824,7 @@ class TestSettingsFlow:
             document_model=mock_document_model,
             panel_presenter=panel,
             config=config,
-            settings_view_factory=lambda: mock_settings_view,
+            settings_view_factory=lambda _language: mock_settings_view,
         )
         from unittest.mock import patch
 
@@ -810,7 +857,7 @@ class TestSettingsFlow:
             document_model=mock_document_model,
             panel_presenter=panel,
             config=config,
-            settings_view_factory=lambda: mock_settings_view,
+            settings_view_factory=lambda _language: mock_settings_view,
         )
         presenter._on_settings_requested()
 
@@ -848,7 +895,7 @@ class TestSettingsFlow:
             document_model=mock_document_model,
             panel_presenter=panel,
             config=config,
-            settings_view_factory=lambda: mock_settings_view,
+            settings_view_factory=lambda _language: mock_settings_view,
         )
 
         # ドキュメントを開いておく（_reload_layout が get_document_info を参照するため）
@@ -893,7 +940,7 @@ class TestSettingsFlow:
             document_model=mock_document_model,
             panel_presenter=panel,
             config=config,
-            settings_view_factory=lambda: mock_settings_view,
+            settings_view_factory=lambda _language: mock_settings_view,
         )
 
         await presenter.open_file("/fake/doc.pdf")
@@ -930,6 +977,49 @@ class TestSettingsFlow:
         # 例外が発生しないこと
         presenter._on_settings_requested()
 
+    def test_language_settings_ok_updates_ui_language_immediately(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        config = AppConfig(ui_language="ja")
+        language_view = MockLanguageDialogView()
+
+        def exec_with_language_change() -> bool:
+            language_view._selected_language = "en"
+            return True
+
+        language_view.exec_dialog = exec_with_language_change  # type: ignore[assignment]
+
+        panel = PanelPresenter(
+            view=mock_side_panel_view,
+            ai_model=mock_ai_model,
+            ui_language="ja",
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=config,
+            language_view_factory=lambda _language: language_view,
+        )
+
+        from unittest.mock import patch
+
+        with patch("pdf_epub_reader.presenters.language_presenter.save_config"):
+            presenter._on_language_settings_requested()
+
+        update_calls = mock_document_model.get_calls("update_config")
+        assert len(update_calls) == 1
+        assert update_calls[0][0].ui_language == "en"
+        assert mock_main_view.get_calls("apply_ui_language")[-1] == ("en",)
+        assert mock_side_panel_view.get_calls("apply_ui_language")[-1] == ("en",)
+        assert mock_main_view.get_calls("show_status_message")[-1] == (
+            "Display language updated.",
+        )
+
 
 class TestCacheCreateFlow:
     """Phase 7: キャッシュ作成オーケストレーションを検証する。"""
@@ -951,6 +1041,11 @@ class TestCacheCreateFlow:
             document_model=mock_document_model,
             panel_presenter=panel,
             ai_model=mock_ai_model,
+            config=AppConfig(
+                ui_language="ja",
+                gemini_model_name="models/gemini-test",
+                selected_models=["models/gemini-test"],
+            ),
         )
         # ドキュメントを事前に開く
         await presenter.open_file("/fake/doc.pdf")
@@ -991,6 +1086,11 @@ class TestCacheCreateFlow:
             document_model=mock_document_model,
             panel_presenter=panel,
             ai_model=mock_ai_model,
+            config=AppConfig(
+                ui_language="ja",
+                gemini_model_name="models/gemini-test",
+                selected_models=["models/gemini-test"],
+            ),
         )
         await presenter.open_file("/fake/doc.pdf")
         mock_main_view.calls.clear()
@@ -1059,6 +1159,36 @@ class TestCacheManagementDialog:
     """Phase 7: キャッシュ管理ダイアログのフローを検証する。"""
 
     @pytest.mark.asyncio
+    async def test_dialog_factory_receives_current_ui_language(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        captured_languages: list[str] = []
+        mock_dialog = MockCacheDialogView()
+        mock_dialog._show_return = None
+
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            ai_model=mock_ai_model,
+            config=AppConfig(ui_language="en"),
+            cache_dialog_view_factory=lambda language: (
+                captured_languages.append(language) or mock_dialog
+            ),
+        )
+
+        await presenter._do_cache_management()
+
+        assert captured_languages == ["en"]
+
+    @pytest.mark.asyncio
     async def test_dialog_update_ttl(
         self,
         mock_main_view: MockMainView,
@@ -1079,7 +1209,7 @@ class TestCacheManagementDialog:
             document_model=mock_document_model,
             panel_presenter=panel,
             ai_model=mock_ai_model,
-            cache_dialog_view_factory=lambda: mock_dialog,
+            cache_dialog_view_factory=lambda _language: mock_dialog,
         )
 
         await presenter._do_cache_management()
@@ -1110,7 +1240,7 @@ class TestCacheManagementDialog:
             document_model=mock_document_model,
             panel_presenter=panel,
             ai_model=mock_ai_model,
-            cache_dialog_view_factory=lambda: mock_dialog,
+            cache_dialog_view_factory=lambda _language: mock_dialog,
         )
         mock_ai_model.calls.clear()
 
@@ -1192,6 +1322,7 @@ class TestValidateModelsOnStartup:
         config = AppConfig(
             gemini_model_name="models/deprecated-model",
             selected_models=["models/deprecated-model"],
+            ui_language="ja",
         )
         panel = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
@@ -1222,6 +1353,7 @@ class TestValidateModelsOnStartup:
     ) -> None:
         """gemini_model_name が空の場合、config クリア + 案内が出ること。"""
         config = AppConfig(gemini_model_name="")
+        config.ui_language = "ja"
         panel = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
@@ -1256,6 +1388,7 @@ class TestValidateModelsOnStartup:
         config = AppConfig(
             gemini_model_name="models/existing",
             selected_models=["models/existing"],
+            ui_language="ja",
         )
         panel = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
@@ -1289,6 +1422,7 @@ class TestValidateModelsOnStartup:
             side_effect=AIKeyMissingError("API キーが設定されていません")
         )
         config = AppConfig()
+        config.ui_language = "ja"
         panel = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
@@ -1326,6 +1460,7 @@ class TestCacheExpiredRefresh:
             document_model=mock_document_model,
             panel_presenter=panel,
             ai_model=mock_ai_model,
+            config=AppConfig(ui_language="ja"),
         )
         mock_ai_model.calls.clear()
         mock_side_panel_view.calls.clear()

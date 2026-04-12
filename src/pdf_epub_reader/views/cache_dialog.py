@@ -27,15 +27,32 @@ from PySide6.QtWidgets import (
 )
 
 from pdf_epub_reader.dto import CacheStatus
-from pdf_epub_reader.utils.config import CACHE_TTL_MAX, CACHE_TTL_MIN
+from pdf_epub_reader.services.translation_service import TranslationService
+from pdf_epub_reader.utils.config import (
+    CACHE_TTL_MAX,
+    CACHE_TTL_MIN,
+    DEFAULT_UI_LANGUAGE,
+    normalize_ui_language,
+)
 
 
 class CacheDialog(QDialog):
     """ICacheDialogView Protocol を満たすキャッシュ管理ダイアログ実装。"""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        ui_language: str = DEFAULT_UI_LANGUAGE,
+    ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("キャッシュ管理")
+        self._ui_language = normalize_ui_language(ui_language, fallback="en")
+        self._translation_service = TranslationService()
+        self.setWindowTitle(
+            self._translation_service.translate(
+                "cache.dialog.title",
+                self._ui_language,
+            )
+        )
         self.setMinimumWidth(520)
         self.setMinimumHeight(360)
 
@@ -57,42 +74,50 @@ class CacheDialog(QDialog):
 
         form = QFormLayout()
         self._name_label = QLabel("---")
-        form.addRow("キャッシュ名:", self._name_label)
+        form.addRow(self._translate("cache.field.name"), self._name_label)
         self._model_label = QLabel("---")
-        form.addRow("モデル:", self._model_label)
+        form.addRow(self._translate("cache.field.model"), self._model_label)
         self._token_label = QLabel("---")
-        form.addRow("トークン数:", self._token_label)
+        form.addRow(self._translate("cache.field.tokens"), self._token_label)
         self._ttl_label = QLabel("---")
-        form.addRow("残り TTL:", self._ttl_label)
+        form.addRow(
+            self._translate("cache.field.remaining_ttl"),
+            self._ttl_label,
+        )
         self._expire_label = QLabel("---")
-        form.addRow("有効期限:", self._expire_label)
+        form.addRow(
+            self._translate("cache.field.expire_time"),
+            self._expire_label,
+        )
         self._active_label = QLabel("---")
-        form.addRow("ステータス:", self._active_label)
+        form.addRow(self._translate("cache.field.status"), self._active_label)
         tab1_layout.addLayout(form)
 
         # TTL 更新行
         ttl_row = QHBoxLayout()
-        ttl_row.addWidget(QLabel("新しい TTL:"))
+        ttl_row.addWidget(QLabel(self._translate("cache.field.new_ttl")))
         self._ttl_spin = QSpinBox()
         self._ttl_spin.setRange(CACHE_TTL_MIN, CACHE_TTL_MAX)
-        self._ttl_spin.setSuffix(" min")
+        self._ttl_spin.setSuffix(self._translate("common.minutes_suffix"))
         ttl_row.addWidget(self._ttl_spin)
-        self._update_ttl_btn = QPushButton("TTL 更新")
+        self._update_ttl_btn = QPushButton(
+            self._translate("cache.button.update_ttl")
+        )
         self._update_ttl_btn.clicked.connect(lambda: self._finish("update_ttl"))
         ttl_row.addWidget(self._update_ttl_btn)
         tab1_layout.addLayout(ttl_row)
 
         # 操作ボタン行
         btn_row = QHBoxLayout()
-        self._create_btn = QPushButton("作成")
+        self._create_btn = QPushButton(self._translate("cache.button.create"))
         self._create_btn.clicked.connect(lambda: self._finish("create"))
         btn_row.addWidget(self._create_btn)
-        self._delete_btn = QPushButton("削除")
+        self._delete_btn = QPushButton(self._translate("cache.button.delete"))
         self._delete_btn.clicked.connect(lambda: self._finish("delete"))
         btn_row.addWidget(self._delete_btn)
         tab1_layout.addLayout(btn_row)
 
-        self._tabs.addTab(tab1, "現在のキャッシュ")
+        self._tabs.addTab(tab1, self._translate("cache.tab.current"))
 
         # --- タブ2: キャッシュ確認 ---
         tab2 = QWidget()
@@ -100,7 +125,13 @@ class CacheDialog(QDialog):
 
         self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(
-            ["Name", "Model", "Display Name", "Tokens", "Expire"]
+            [
+                self._translate("cache.table.name"),
+                self._translate("cache.table.model"),
+                self._translate("cache.table.display_name"),
+                self._translate("cache.table.tokens"),
+                self._translate("cache.table.expire"),
+            ]
         )
         self._table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
@@ -116,18 +147,23 @@ class CacheDialog(QDialog):
             header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         tab2_layout.addWidget(self._table)
 
-        self._delete_selected_btn = QPushButton("選択行を削除")
+        self._delete_selected_btn = QPushButton(
+            self._translate("cache.button.delete_selected")
+        )
         self._delete_selected_btn.clicked.connect(
             lambda: self._finish("delete_selected")
         )
         tab2_layout.addWidget(self._delete_selected_btn)
 
-        self._tabs.addTab(tab2, "キャッシュ確認")
+        self._tabs.addTab(tab2, self._translate("cache.tab.list"))
 
         # --- 閉じるボタン ---
-        close_btn = QPushButton("閉じる")
-        close_btn.clicked.connect(self.reject)
-        layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        self._close_btn = QPushButton(self._translate("common.close"))
+        self._close_btn.clicked.connect(self.reject)
+        layout.addWidget(
+            self._close_btn,
+            alignment=Qt.AlignmentFlag.AlignRight,
+        )
 
     # --- Internal ---
 
@@ -150,7 +186,13 @@ class CacheDialog(QDialog):
     def set_cache_ttl_seconds(self, seconds: int | None) -> None:
         if seconds is not None:
             m, s = divmod(seconds, 60)
-            self._ttl_label.setText(f"{m} 分 {s} 秒")
+            self._ttl_label.setText(
+                self._translate(
+                    "cache.ttl.minutes_seconds",
+                    minutes=m,
+                    seconds=s,
+                )
+            )
         else:
             self._ttl_label.setText("---")
 
@@ -158,7 +200,11 @@ class CacheDialog(QDialog):
         self._expire_label.setText(expire_time or "---")
 
     def set_cache_is_active(self, active: bool) -> None:
-        self._active_label.setText("Active" if active else "Inactive")
+        self._active_label.setText(
+            self._translate(
+                "cache.status.active" if active else "cache.status.inactive"
+            )
+        )
         # active 時は削除/TTL更新を有効化、作成は無効化
         self._create_btn.setEnabled(not active)
         self._delete_btn.setEnabled(active)
@@ -229,7 +275,7 @@ class CacheDialog(QDialog):
         remaining = (self._expire_time_utc - now).total_seconds()
         if remaining <= 0:
             self._countdown_timer.stop()
-            self._ttl_label.setText("期限切れ")
+            self._ttl_label.setText(self._translate("cache.status.expired"))
             self._expire_time_utc = None
             return
         total_sec = int(remaining)
@@ -256,3 +302,10 @@ class CacheDialog(QDialog):
         if result == QDialog.DialogCode.Accepted:
             return self._action
         return None
+
+    def _translate(self, key: str, **kwargs: object) -> str:
+        return self._translation_service.translate(
+            key,
+            self._ui_language,
+            **kwargs,
+        )

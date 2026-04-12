@@ -23,6 +23,8 @@ from pdf_epub_reader.dto import (
 )
 from pdf_epub_reader.interfaces.model_interfaces import IAIModel
 from pdf_epub_reader.interfaces.view_interfaces import ISidePanelView
+from pdf_epub_reader.services.translation_service import TranslationService
+from pdf_epub_reader.utils.config import normalize_ui_language
 from pdf_epub_reader.utils.exceptions import (
     AIAPIError,
     AIKeyMissingError,
@@ -38,10 +40,17 @@ class PanelPresenter:
     AI 入力テキストと画像配列を組み立てる。
     """
 
-    def __init__(self, view: ISidePanelView, ai_model: IAIModel) -> None:
+    def __init__(
+        self,
+        view: ISidePanelView,
+        ai_model: IAIModel,
+        ui_language: str = "ja",
+    ) -> None:
         """依存オブジェクトを受け取り、サイドパネルのイベントを購読する。"""
         self._view = view
         self._ai_model = ai_model
+        self._translation_service = TranslationService()
+        self._ui_language = normalize_ui_language(ui_language, fallback="en")
         self._selection_snapshot = SelectionSnapshot()
         self._force_include_image: bool = False
         # Phase 6: リクエスト単位のモデル選択
@@ -74,6 +83,7 @@ class PanelPresenter:
             self._fire_cache_invalidate
         )
         self._view.set_on_cache_expired(self._on_cache_expired)
+        self._view.apply_ui_language(self._ui_language)
 
     # --- Public API (called by MainPresenter) ---
 
@@ -149,6 +159,14 @@ class PanelPresenter:
         self._current_model = model_name
         self._view.set_selected_model(model_name)
 
+    def apply_ui_language(self, language: str) -> None:
+        """表示言語を更新し、現在の表示内容を即時更新する。"""
+        self._ui_language = normalize_ui_language(language, fallback="en")
+        self._view.apply_ui_language(self._ui_language)
+        self._view.set_selection_snapshot(self._selection_snapshot)
+        self._view.set_combined_selection_preview(self._build_analysis_text())
+        self.update_cache_status(self._cache_status)
+
     def get_current_model(self) -> str | None:
         """サイドパネルで現在選択中のモデル名を返す。
 
@@ -192,9 +210,12 @@ class PanelPresenter:
         self._cache_status = status
         self._view.set_cache_active(status.is_active)
         if status.is_active:
-            brief = f"キャッシュ: ON ({status.token_count or '?'} tokens)"
+            brief = self._translate(
+                "presenter.panel.cache.on",
+                token_count=status.token_count or "?",
+            )
         else:
-            brief = "キャッシュ: OFF"
+            brief = self._translate("presenter.panel.cache.off")
         self._view.update_cache_status_brief(brief)
 
         # Phase 7.5: カウントダウン連携
@@ -236,10 +257,8 @@ class PanelPresenter:
             and self._cache_status.model_name != model_name
         ):
             ok = self._view.show_confirm_dialog(
-                "モデル変更確認",
-                "キャッシュは現在のモデル専用です。"
-                "モデルを変更するとキャッシュが削除されます。\n"
-                "続行しますか？",
+                self._translate("presenter.panel.model_change.title"),
+                self._translate("presenter.panel.model_change.message"),
             )
             if not ok:
                 self._view.set_selected_model(
@@ -249,11 +268,6 @@ class PanelPresenter:
             if self._on_cache_invalidate_handler:
                 self._on_cache_invalidate_handler()
         self._current_model = model_name
-
-    _MODEL_UNSET_MSG = (
-        "⚠️ モデルが未設定です。"
-        "Preferences (Ctrl+,) → AI Models タブで Fetch Models を実行してください。"
-    )
 
     def _on_translate_requested(self, include_explanation: bool) -> None:
         """翻訳ボタン押下を受け取り、非同期処理を開始する。"""
@@ -268,7 +282,9 @@ class PanelPresenter:
         if not analysis_text:
             return
         if not self._current_model:
-            self._view.update_result_text(self._MODEL_UNSET_MSG)
+            self._view.update_result_text(
+                self._translate("presenter.panel.model_unset")
+            )
             return
         self._view.show_loading(True)
         try:
@@ -287,16 +303,18 @@ class PanelPresenter:
             self._view.update_result_text(display)
         except AIKeyMissingError:
             self._view.update_result_text(
-                "⚠️ API キーが設定されていません。"
-                "設定ダイアログまたは環境変数で GEMINI_API_KEY を設定してください。"
+                self._translate("presenter.panel.api_key_missing")
             )
         except AIRateLimitError:
             self._view.update_result_text(
-                "⚠️ API レート制限に達しました。しばらく待ってから再試行してください。"
+                self._translate("presenter.panel.rate_limit")
             )
         except AIAPIError as exc:
             self._view.update_result_text(
-                f"⚠️ API エラー: {exc.message}"
+                self._translate(
+                    "presenter.panel.api_error",
+                    message=exc.message,
+                )
             )
         finally:
             self._view.show_loading(False)
@@ -311,7 +329,9 @@ class PanelPresenter:
         if not analysis_text:
             return
         if not self._current_model:
-            self._view.update_result_text(self._MODEL_UNSET_MSG)
+            self._view.update_result_text(
+                self._translate("presenter.panel.model_unset")
+            )
             return
         self._view.show_loading(True)
         try:
@@ -326,16 +346,18 @@ class PanelPresenter:
             self._view.update_result_text(result.raw_response)
         except AIKeyMissingError:
             self._view.update_result_text(
-                "⚠️ API キーが設定されていません。"
-                "設定ダイアログまたは環境変数で GEMINI_API_KEY を設定してください。"
+                self._translate("presenter.panel.api_key_missing")
             )
         except AIRateLimitError:
             self._view.update_result_text(
-                "⚠️ API レート制限に達しました。しばらく待ってから再試行してください。"
+                self._translate("presenter.panel.rate_limit")
             )
         except AIAPIError as exc:
             self._view.update_result_text(
-                f"⚠️ API エラー: {exc.message}"
+                self._translate(
+                    "presenter.panel.api_error",
+                    message=exc.message,
+                )
             )
         finally:
             self._view.show_loading(False)
@@ -343,7 +365,9 @@ class PanelPresenter:
     def _fire_cache_create(self) -> None:
         """View のキャッシュ作成ボタンを MainPresenter のハンドラに中継する。"""
         if not self._current_model:
-            self._view.update_result_text(self._MODEL_UNSET_MSG)
+            self._view.update_result_text(
+                self._translate("presenter.panel.model_unset")
+            )
             return
         if self._on_cache_create_handler:
             self._on_cache_create_handler()
@@ -386,9 +410,21 @@ class PanelPresenter:
             if not text:
                 continue
             parts.append(
-                f"選択 {slot.display_number} / ページ {slot.page_number + 1}\n\n{text}"
+                self._translate(
+                    "presenter.panel.selection_block",
+                    number=slot.display_number,
+                    page=slot.page_number + 1,
+                    text=text,
+                )
             )
         return "\n\n".join(parts)
+
+    def _translate(self, key: str, **kwargs: object) -> str:
+        return self._translation_service.translate(
+            key,
+            self._ui_language,
+            **kwargs,
+        )
 
     def _collect_images(self) -> list[bytes]:
         """現在の選択スナップショットから cropped_image を順序通り収集する。"""

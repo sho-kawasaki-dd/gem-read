@@ -9,6 +9,7 @@ JSON ファイルに永続化する。
 from __future__ import annotations
 
 import json
+import locale
 import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -56,11 +57,12 @@ ENV_GEMINI_API_KEY = "GEMINI_API_KEY"
 # --- AI デフォルト設定 ---
 DEFAULT_GEMINI_MODEL = ""
 DEFAULT_OUTPUT_LANGUAGE = "日本語"
+DEFAULT_UI_LANGUAGE: Literal["ja", "en"] = "en"
 DEFAULT_TRANSLATION_PROMPT = (
-    "あなたは学術文書の翻訳者です。与えられたテキストを {output_language} に翻訳してください。\n"
-    "- 数式は LaTeX 記法（$...$ または $$...$$）で記述してください。\n"
-    "- 化学式は LaTeX の \\ce{{}} コマンドで記述してください。\n"
-    "- 回答は Markdown 形式で出力してください。"
+    "You are a translator of academic documents. Translate the given text into {output_language}.\n"
+    "- Write mathematical expressions using LaTeX notation ($...$ or $$...$$).\n"
+    "- Write chemical formulas using the LaTeX \\ce{{}} command.\n"
+    "- Output the response in Markdown format."
 )
 
 # 解説付き翻訳モード時にシステムプロンプトへ追記する指示。
@@ -81,6 +83,42 @@ PAGE_CACHE_MAX = 500
 DEFAULT_CACHE_TTL_MINUTES = 60
 CACHE_TTL_MIN = 1
 CACHE_TTL_MAX = 1440
+
+UiLanguage = Literal["ja", "en"]
+
+
+def _get_system_locale_name() -> str | None:
+    """現在の OS ロケール名を返す。"""
+    try:
+        language_code, _ = locale.getlocale()
+    except (TypeError, ValueError):
+        return None
+    return language_code
+
+
+def normalize_ui_language(
+    value: str | None,
+    *,
+    fallback: UiLanguage = DEFAULT_UI_LANGUAGE,
+) -> UiLanguage:
+    """UI 言語コードを内部表現の ja / en に正規化する。"""
+    if not value:
+        return fallback
+
+    normalized = value.strip().replace("_", "-").lower()
+    if normalized.startswith("ja"):
+        return "ja"
+    if normalized.startswith("en"):
+        return "en"
+    return fallback
+
+
+def get_default_ui_language(locale_name: str | None = None) -> UiLanguage:
+    """既定の UI 言語を OS ロケールから決定する。"""
+    return normalize_ui_language(
+        locale_name or _get_system_locale_name(),
+        fallback=DEFAULT_UI_LANGUAGE,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +147,7 @@ class AppConfig:
     # ウィンドウ設定
     window_width: int = DEFAULT_WINDOW_WIDTH
     window_height: int = DEFAULT_WINDOW_HEIGHT
+    ui_language: UiLanguage = field(default_factory=get_default_ui_language)
 
     # 最近のファイル
     recent_files: list[str] = field(default_factory=list)
@@ -136,6 +175,9 @@ class AppConfig:
     # Phase 7: Context Cache 設定
     # サーバー側キャッシュの有効期間（分）。設定ダイアログの AI Models タブで変更可能。
     cache_ttl_minutes: int = DEFAULT_CACHE_TTL_MINUTES
+
+    def __post_init__(self) -> None:
+        self.ui_language = normalize_ui_language(self.ui_language)
 
 
 def _get_config_path() -> Path:
@@ -170,6 +212,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         # 設定項目が増えても古い設定ファイルがそのまま使える。
         known_fields = {f.name for f in AppConfig.__dataclass_fields__.values()}
         filtered = {k: v for k, v in data.items() if k in known_fields}
+        filtered.setdefault("ui_language", get_default_ui_language())
         return AppConfig(**filtered)
     except (json.JSONDecodeError, TypeError, KeyError) as e:
         logger.warning("設定ファイルの読み込みに失敗しました: %s — デフォルト値を使用します", e)
@@ -189,9 +232,11 @@ def save_config(config: AppConfig, path: Path | None = None) -> None:
     """
     config_path = path or _get_config_path()
     try:
+        payload = asdict(config)
+        payload["ui_language"] = normalize_ui_language(payload.get("ui_language"))
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(
-            json.dumps(asdict(config), ensure_ascii=False, indent=2),
+            json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
     except OSError as e:

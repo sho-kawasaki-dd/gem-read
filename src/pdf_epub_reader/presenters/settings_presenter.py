@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 
 from pdf_epub_reader.interfaces.model_interfaces import IAIModel
 from pdf_epub_reader.interfaces.view_interfaces import ISettingsDialogView
+from pdf_epub_reader.services.translation_service import TranslationService
 from pdf_epub_reader.utils.config import AppConfig, save_config
 from pdf_epub_reader.utils.exceptions import AIError
 
@@ -43,6 +45,7 @@ class SettingsPresenter:
         self._view = view
         self._config = config
         self._ai_model = ai_model
+        self._translation_service = TranslationService()
         self._view.set_on_reset_defaults(self._on_reset_defaults)
         self._view.set_on_fetch_models_requested(self._on_fetch_models)
 
@@ -106,6 +109,7 @@ class SettingsPresenter:
             output_language=self._view.get_output_language(),
             system_prompt_translation=self._view.get_system_prompt_translation(),
             cache_ttl_minutes=self._view.get_cache_ttl_minutes(),
+            ui_language=self._config.ui_language,
             # ダイアログ対象外のフィールドは既存値を引き継ぐ
             window_width=self._config.window_width,
             window_height=self._config.window_height,
@@ -114,7 +118,7 @@ class SettingsPresenter:
 
     def _on_reset_defaults(self) -> None:
         """「Reset to Defaults」ボタン押下時にデフォルト値で再 populate する。"""
-        self._populate_view(AppConfig())
+        self._populate_view(replace(AppConfig(), ui_language=self._config.ui_language))
 
     def _on_fetch_models(self) -> None:
         """「Fetch Models」ボタン押下時にモデル一覧を非同期取得する。
@@ -123,7 +127,9 @@ class SettingsPresenter:
         バックグラウンドタスクとして取得を開始する。
         """
         if self._ai_model is None:
-            self._view.show_fetch_models_error("AI model not available")
+            self._view.show_fetch_models_error(
+                self._translate("presenter.settings.ai_model_unavailable")
+            )
             return
         asyncio.ensure_future(self._fetch_models_async())
 
@@ -139,6 +145,18 @@ class SettingsPresenter:
             self._view.set_available_models_for_selection(model_tuples)
         except AIError as exc:
             logger.warning("モデル一覧の取得に失敗: %s", exc)
-            self._view.show_fetch_models_error(str(exc))
+            self._view.show_fetch_models_error(
+                self._translate(
+                    "presenter.settings.fetch_models_failed",
+                    details=str(exc),
+                )
+            )
         finally:
             self._view.set_fetch_models_loading(False)
+
+    def _translate(self, key: str, **kwargs: object) -> str:
+        return self._translation_service.translate(
+            key,
+            self._config.ui_language,
+            **kwargs,
+        )

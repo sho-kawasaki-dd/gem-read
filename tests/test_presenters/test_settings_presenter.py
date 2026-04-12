@@ -339,13 +339,14 @@ class TestFetchModels:
     ) -> None:
         """ai_model が None のとき、エラーが表示されること。"""
         presenter = SettingsPresenter(
-            mock_settings_view, AppConfig(), ai_model=None
+            mock_settings_view, AppConfig(ui_language="en"), ai_model=None
         )
 
         presenter._on_fetch_models()
 
         error_calls = mock_settings_view.get_calls("show_fetch_models_error")
         assert len(error_calls) == 1
+        assert error_calls[0][0] == "AI model is not available."
 
     @pytest.mark.asyncio
     async def test_fetch_models_error_shows_in_view(
@@ -359,11 +360,14 @@ class TestFetchModels:
             side_effect=AIAPIError("Network error", status_code=500)
         )
         presenter = SettingsPresenter(
-            mock_settings_view, AppConfig(), ai_model=mock_ai_model
+            mock_settings_view,
+            AppConfig(ui_language="en"),
+            ai_model=mock_ai_model,
         )
 
         await presenter._fetch_models_async()
 
         error_calls = mock_settings_view.get_calls("show_fetch_models_error")
         assert len(error_calls) == 1
+        assert "Failed to fetch the model list" in error_calls[0][0]
         assert "Network error" in error_calls[0][0]

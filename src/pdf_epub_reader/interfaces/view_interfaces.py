@@ -13,7 +13,7 @@ Presenter は View の「具体的な PySide6 実装」ではなく、
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from pdf_epub_reader.dto import (
     CacheStatus,
@@ -163,12 +163,22 @@ class IMainView(Protocol):
         """
         ...
 
+    def set_on_language_settings_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """表示言語設定ダイアログ起動要求のコールバックを登録する。"""
+        ...
+
     def set_high_quality_downscale(self, enabled: bool) -> None:
         """高品質縮小 (Pillow LANCZOS) の有効/無効を切り替える。
 
         設定ダイアログから変更されたとき Presenter が呼び出す。
         View は現在のズーム率に応じて即座に表示を更新する。
         """
+        ...
+
+    def apply_ui_language(self, language: str) -> None:
+        """現在の表示言語を適用し、静的文言を再構築する。"""
         ...
 
 
@@ -207,6 +217,7 @@ class ISidePanelView(Protocol):
     def show_loading(self, loading: bool) -> None: ...
     def update_cache_status_brief(self, text: str) -> None: ...
     def set_active_tab(self, mode: str) -> None: ...
+    def apply_ui_language(self, language: str) -> None: ...
 
     # --- Callback registration (View → Presenter) ---
 
@@ -483,3 +494,19 @@ class ISettingsDialogView(Protocol):
     def exec_dialog(self) -> bool:
         """ダイアログをモーダル表示し、OK なら True / Cancel なら False を返す。"""
         ...
+
+
+@runtime_checkable
+class ILanguageDialogView(Protocol):
+    """表示言語設定ダイアログが満たすべき契約。"""
+
+    def get_selected_language(self) -> Literal["ja", "en"]: ...
+
+    def set_selected_language(self, value: Literal["ja", "en"]) -> None: ...
+
+    def set_available_languages(
+        self,
+        languages: list[tuple[Literal["ja", "en"], str]],
+    ) -> None: ...
+
+    def exec_dialog(self) -> bool: ...
