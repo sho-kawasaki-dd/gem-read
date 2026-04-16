@@ -4,8 +4,12 @@ import type {
   SelectionRect,
 } from '../../shared/contracts/messages';
 
+// Context menu 起動時には live Selection が消えていることがあるため、直近 snapshot を保持しておく。
 let lastSelectionSnapshot: SelectionCapturePayload | null = null;
 
+/**
+ * ユーザー操作に追従して selection snapshot を更新し、遅延した background 処理でも同じ選択を再利用できるようにする。
+ */
 export function startSelectionTracking(): void {
   document.addEventListener('selectionchange', handleSelectionActivity);
   document.addEventListener('contextmenu', handleSelectionActivity);
@@ -13,7 +17,9 @@ export function startSelectionTracking(): void {
   document.addEventListener('keyup', handleSelectionActivity);
 }
 
-export function collectSelection(fallbackText?: string): SelectionCaptureResponse {
+export function collectSelection(
+  fallbackText?: string
+): SelectionCaptureResponse {
   const liveSnapshot = buildSelectionSnapshot(fallbackText);
   if (liveSnapshot) {
     lastSelectionSnapshot = liveSnapshot;
@@ -28,7 +34,9 @@ export function collectSelection(fallbackText?: string): SelectionCaptureRespons
       ok: true,
       payload: {
         ...lastSelectionSnapshot,
-        text: normalizeSelectionText(fallbackText) || lastSelectionSnapshot.text,
+        // 文字列だけ最新の fallbackText が届くケースでは、座標を保ったまま text だけ差し替える。
+        text:
+          normalizeSelectionText(fallbackText) || lastSelectionSnapshot.text,
       },
     };
   }
@@ -37,7 +45,8 @@ export function collectSelection(fallbackText?: string): SelectionCaptureRespons
   if (normalizedFallback) {
     return {
       ok: false,
-      error: '選択テキストの座標を保持できていません。選択し直してから再度実行してください。',
+      error:
+        '選択テキストの座標を保持できていません。選択し直してから再度実行してください。',
     };
   }
 
@@ -54,13 +63,17 @@ function handleSelectionActivity(): void {
   }
 }
 
-function buildSelectionSnapshot(fallbackText?: string): SelectionCapturePayload | null {
+function buildSelectionSnapshot(
+  fallbackText?: string
+): SelectionCapturePayload | null {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) {
     return null;
   }
 
-  const text = normalizeSelectionText(selection.toString()) || normalizeSelectionText(fallbackText);
+  const text =
+    normalizeSelectionText(selection.toString()) ||
+    normalizeSelectionText(fallbackText);
   if (!text) {
     return null;
   }
@@ -88,9 +101,10 @@ function normalizeSelectionText(text: string | undefined): string {
 
 function getUnionRect(range: Range): SelectionRect | null {
   const clientRects = Array.from(range.getClientRects()).filter(
-    (rect) => rect.width > 0 && rect.height > 0,
+    (rect) => rect.width > 0 && rect.height > 0
   );
   const baseRect = range.getBoundingClientRect();
+  // 複数行 selection は複数 rect に分割されるため、crop 用には外接矩形へ畳み込む。
   const rects = clientRects.length > 0 ? clientRects : [baseRect];
   const validRects = rects.filter((rect) => rect.width > 0 && rect.height > 0);
   if (validRects.length === 0) {

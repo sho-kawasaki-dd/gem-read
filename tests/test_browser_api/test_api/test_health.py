@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 
+# health は最小 liveness endpoint として独立に確認しておく。
 def test_health_returns_ok(api_client) -> None:
     response = api_client.get("/health")
 

@@ -4,6 +4,7 @@ from browser_api.application.dto import ModelCatalogResult
 from pdf_epub_reader.dto import ModelInfo
 
 
+# popup 向け model catalog が degraded metadata を保ったまま返ることを固定する suite。
 def test_models_returns_live_payload(api_client, stub_analyze_service) -> None:
     response = api_client.get("/models")
 

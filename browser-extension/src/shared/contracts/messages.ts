@@ -1,10 +1,24 @@
 export type OverlayStatus = 'loading' | 'success' | 'error';
-export type AnalysisAction = 'translation' | 'translation_with_explanation' | 'custom_prompt';
+export type AnalysisAction =
+  | 'translation'
+  | 'translation_with_explanation'
+  | 'custom_prompt';
 export type PopupConnectionStatus = 'reachable' | 'mock-mode' | 'unreachable';
 export type RuntimeAvailability = 'live' | 'mock' | 'degraded';
-export type DegradedReason = 'config-fallback' | 'mock-response' | 'offline' | 'unknown';
-export type ModelCatalogSource = 'live' | 'config_fallback' | 'storage_fallback';
+export type DegradedReason =
+  | 'config-fallback'
+  | 'mock-response'
+  | 'offline'
+  | 'unknown';
+export type ModelCatalogSource =
+  | 'live'
+  | 'config_fallback'
+  | 'storage_fallback';
 
+/**
+ * SelectionRect は content script で観測した viewport 座標系の矩形を表す。
+ * crop 実行時は background 側で screenshot bitmap 座標へ変換する前提なので、生の viewport 値を保持する。
+ */
 export interface SelectionRect {
   left: number;
   top: number;
@@ -12,6 +26,9 @@ export interface SelectionRect {
   height: number;
 }
 
+/**
+ * 選択文字列だけでなく、後続の crop と API metadata に必要な実行文脈をまとめて運ぶ payload。
+ */
 export interface SelectionCapturePayload {
   text: string;
   rect: SelectionRect;
@@ -91,6 +108,10 @@ export interface OverlayPayload {
   rawResponse?: string;
 }
 
+/**
+ * Phase 0 は単発 translation の message 群、Phase 1 は capture 済み session の再利用 message 群を表す。
+ * contract を shared に集約しておくと、background/content/popup が同じ payload 形状を前提に進化できる。
+ */
 export interface CollectSelectionMessage {
   type: 'phase0.collectSelection';
   fallbackText?: string;
@@ -155,4 +176,6 @@ export type ContentScriptMessage =
   | SeedOverlaySessionMessage
   | InvokeOverlayActionMessage;
 
-export type BackgroundRuntimeMessage = RunOverlayActionMessage | CacheOverlaySessionMessage;
+export type BackgroundRuntimeMessage =
+  | RunOverlayActionMessage
+  | CacheOverlaySessionMessage;

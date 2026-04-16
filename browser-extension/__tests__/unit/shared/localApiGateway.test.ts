@@ -14,6 +14,7 @@ function createJsonResponse(payload: unknown, status: number = 200): Response {
   } as unknown as Response;
 }
 
+// gateway が HTTP payload と degraded fallback をどう正規化するかを固定する suite。
 describe('localApiGateway', () => {
   it('sends analyze requests with action, model, and custom prompt options', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
@@ -30,7 +31,7 @@ describe('localApiGateway', () => {
         selection_metadata: {
           url: 'https://example.com/article',
         },
-      }),
+      })
     );
     vi.stubGlobal('fetch', fetchMock);
 
@@ -50,7 +51,7 @@ describe('localApiGateway', () => {
         apiBaseUrl: 'http://127.0.0.1:9000',
         modelName: 'gemini-2.5-pro',
         customPrompt: 'Summarize this',
-      },
+      }
     );
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -58,15 +59,17 @@ describe('localApiGateway', () => {
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-      }),
+      })
     );
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
-      text: 'Selected paragraph',
-      mode: 'custom_prompt',
-      model_name: 'gemini-2.5-pro',
-      custom_prompt: 'Summarize this',
-      images: ['data:image/webp;base64,preview'],
-    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject(
+      {
+        text: 'Selected paragraph',
+        mode: 'custom_prompt',
+        model_name: 'gemini-2.5-pro',
+        custom_prompt: 'Summarize this',
+        images: ['data:image/webp;base64,preview'],
+      }
+    );
     expect(result).toMatchObject({
       mode: 'custom_prompt',
       translated_text: 'custom answer',
@@ -75,7 +78,8 @@ describe('localApiGateway', () => {
   });
 
   it('returns reachable popup bootstrap status for live health and model responses', async () => {
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce(createJsonResponse({ status: 'ok' }))
       .mockResolvedValueOnce(
         createJsonResponse({
@@ -90,7 +94,7 @@ describe('localApiGateway', () => {
           availability: 'live',
           detail: null,
           degraded_reason: null,
-        }),
+        })
       );
     vi.stubGlobal('fetch', fetchMock);
 
@@ -107,7 +111,8 @@ describe('localApiGateway', () => {
   });
 
   it('falls back to mock-mode popup status when model fetch fails after health succeeds', async () => {
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce(createJsonResponse({ status: 'ok' }))
       .mockRejectedValueOnce(new Error('model endpoint unavailable'));
     vi.stubGlobal('fetch', fetchMock);

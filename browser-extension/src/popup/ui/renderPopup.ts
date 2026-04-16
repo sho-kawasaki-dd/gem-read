@@ -37,6 +37,10 @@ interface PopupRefs {
   modelDatalist: HTMLDataListElement;
 }
 
+/**
+ * Phase 1 の popup は本格 UI ではなく、Local API の接続確認と既定モデル設定の入口として機能する。
+ * 翻訳結果の表示責務を持たせないことで、将来 overlay 主体へ寄せても popup の責務が肥大化しない。
+ */
 export async function renderPopup(documentRef: Document): Promise<void> {
   const appRoot = documentRef.getElementById('app');
   if (!appRoot) {
@@ -255,7 +259,12 @@ export async function renderPopup(documentRef: Document): Promise<void> {
 
     const candidateUrl = refs.apiInput.value.trim();
     if (!isValidLocalApiBaseUrl(candidateUrl)) {
-      setMessage(refs, 'Use a localhost URL such as http://127.0.0.1:8000.', true);
+      // 拡張が任意ホストへ送信しないよう、UI 側でも localhost 制約を早めに明示する。
+      setMessage(
+        refs,
+        'Use a localhost URL such as http://127.0.0.1:8000.',
+        true
+      );
       return;
     }
 
@@ -271,7 +280,11 @@ export async function renderPopup(documentRef: Document): Promise<void> {
       setMessage(refs, 'Settings saved.', false);
       await refreshPopupState(state, refs, state.settings.apiBaseUrl, true);
     } catch (error) {
-      setMessage(refs, toErrorMessage(error, 'Failed to save popup settings.'), true);
+      setMessage(
+        refs,
+        toErrorMessage(error, 'Failed to save popup settings.'),
+        true
+      );
     } finally {
       setBusy(refs, false);
     }
@@ -286,10 +299,19 @@ export async function renderPopup(documentRef: Document): Promise<void> {
 
     setBusy(refs, true);
     try {
-      await refreshPopupState(state, refs, normalizeLocalApiBaseUrl(candidateUrl), false);
+      await refreshPopupState(
+        state,
+        refs,
+        normalizeLocalApiBaseUrl(candidateUrl),
+        false
+      );
       setMessage(refs, 'Connection status refreshed.', false);
     } catch (error) {
-      setMessage(refs, toErrorMessage(error, 'Failed to refresh popup status.'), true);
+      setMessage(
+        refs,
+        toErrorMessage(error, 'Failed to refresh popup status.'),
+        true
+      );
     } finally {
       setBusy(refs, false);
     }
@@ -301,7 +323,11 @@ export async function renderPopup(documentRef: Document): Promise<void> {
       await openOverlayShortcut(state, refs);
       setMessage(refs, 'Overlay shortcut opened on the active tab.', false);
     } catch (error) {
-      setMessage(refs, toErrorMessage(error, 'Failed to open overlay shortcut.'), true);
+      setMessage(
+        refs,
+        toErrorMessage(error, 'Failed to open overlay shortcut.'),
+        true
+      );
     } finally {
       setBusy(refs, false);
     }
@@ -311,20 +337,53 @@ export async function renderPopup(documentRef: Document): Promise<void> {
 }
 
 function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
-  const form = appRoot.querySelector<HTMLFormElement>('[data-role="settings-form"]');
+  const form = appRoot.querySelector<HTMLFormElement>(
+    '[data-role="settings-form"]'
+  );
   const apiInput = appRoot.querySelector<HTMLInputElement>('#api-base-url');
-  const defaultModelInput = appRoot.querySelector<HTMLInputElement>('#default-model');
-  const statusBadge = appRoot.querySelector<HTMLElement>('[data-role="status-badge"]');
-  const statusLine = appRoot.querySelector<HTMLElement>('[data-role="status-line"]');
-  const detailLine = appRoot.querySelector<HTMLElement>('[data-role="detail-line"]');
-  const sourceLine = appRoot.querySelector<HTMLElement>('[data-role="source-line"]');
-  const messageLine = appRoot.querySelector<HTMLElement>('[data-role="message-line"]');
-  const refreshButton = appRoot.querySelector<HTMLButtonElement>('[data-role="refresh-button"]');
-  const saveButton = appRoot.querySelector<HTMLButtonElement>('[data-role="save-button"]');
-  const openOverlayButton = appRoot.querySelector<HTMLButtonElement>('[data-role="open-overlay-button"]');
-  const modelDatalist = appRoot.querySelector<HTMLDataListElement>('#model-options');
+  const defaultModelInput =
+    appRoot.querySelector<HTMLInputElement>('#default-model');
+  const statusBadge = appRoot.querySelector<HTMLElement>(
+    '[data-role="status-badge"]'
+  );
+  const statusLine = appRoot.querySelector<HTMLElement>(
+    '[data-role="status-line"]'
+  );
+  const detailLine = appRoot.querySelector<HTMLElement>(
+    '[data-role="detail-line"]'
+  );
+  const sourceLine = appRoot.querySelector<HTMLElement>(
+    '[data-role="source-line"]'
+  );
+  const messageLine = appRoot.querySelector<HTMLElement>(
+    '[data-role="message-line"]'
+  );
+  const refreshButton = appRoot.querySelector<HTMLButtonElement>(
+    '[data-role="refresh-button"]'
+  );
+  const saveButton = appRoot.querySelector<HTMLButtonElement>(
+    '[data-role="save-button"]'
+  );
+  const openOverlayButton = appRoot.querySelector<HTMLButtonElement>(
+    '[data-role="open-overlay-button"]'
+  );
+  const modelDatalist =
+    appRoot.querySelector<HTMLDataListElement>('#model-options');
 
-  if (!form || !apiInput || !defaultModelInput || !statusBadge || !statusLine || !detailLine || !sourceLine || !messageLine || !refreshButton || !saveButton || !openOverlayButton || !modelDatalist) {
+  if (
+    !form ||
+    !apiInput ||
+    !defaultModelInput ||
+    !statusBadge ||
+    !statusLine ||
+    !detailLine ||
+    !sourceLine ||
+    !messageLine ||
+    !refreshButton ||
+    !saveButton ||
+    !openOverlayButton ||
+    !modelDatalist
+  ) {
     return null;
   }
 
@@ -348,7 +407,7 @@ async function refreshPopupState(
   state: PopupViewState,
   refs: PopupRefs,
   apiBaseUrl: string,
-  persistFetchedModels: boolean,
+  persistFetchedModels: boolean
 ): Promise<void> {
   try {
     const bootstrap = await fetchPopupBootstrap(apiBaseUrl);
@@ -372,7 +431,8 @@ async function refreshPopupState(
 
     if (fetchedModels.length === 0 && fallbackModels.length > 0) {
       state.status.modelSource = 'storage_fallback';
-      state.status.detail = state.status.detail ?? 'Using cached models from popup storage.';
+      state.status.detail =
+        state.status.detail ?? 'Using cached models from popup storage.';
     }
 
     syncView(refs, state);
@@ -383,7 +443,10 @@ async function refreshPopupState(
       apiBaseUrl,
       checkedAt: new Date().toISOString(),
       detail: toErrorMessage(error, 'Local API is unreachable.'),
-      modelSource: state.settings.lastKnownModels.length > 0 ? 'storage_fallback' : undefined,
+      modelSource:
+        state.settings.lastKnownModels.length > 0
+          ? 'storage_fallback'
+          : undefined,
       degradedReason: 'offline',
     };
     state.models = state.settings.lastKnownModels.map((modelId) => ({
@@ -395,17 +458,23 @@ async function refreshPopupState(
 }
 
 function syncView(refs: PopupRefs, state: PopupViewState): void {
-  refs.statusBadge.textContent = formatStatusBadge(state.status.connectionStatus);
+  refs.statusBadge.textContent = formatStatusBadge(
+    state.status.connectionStatus
+  );
   refs.statusLine.textContent = formatStatusLine(state.status);
   refs.detailLine.textContent = state.status.detail ?? '';
-  refs.sourceLine.textContent = formatSourceLine(state.status.modelSource, state.models);
+  refs.sourceLine.textContent = formatSourceLine(
+    state.status.modelSource,
+    state.models
+  );
   refs.apiInput.value = state.settings.apiBaseUrl;
   if (!refs.defaultModelInput.value) {
     refs.defaultModelInput.value = state.settings.defaultModel;
   }
   refs.modelDatalist.innerHTML = state.models
     .map(
-      (model) => `<option value="${escapeHtml(model.modelId)}">${escapeHtml(model.displayName)}</option>`,
+      (model) =>
+        `<option value="${escapeHtml(model.modelId)}">${escapeHtml(model.displayName)}</option>`
     )
     .join('');
 }
@@ -419,11 +488,20 @@ function setBusy(refs: PopupRefs, busy: boolean): void {
 function setMessage(refs: PopupRefs, message: string, isError: boolean): void {
   refs.messageLine.textContent = message;
   refs.messageLine.classList.toggle('is-error', isError);
-  refs.messageLine.classList.toggle('is-success', !isError && message.length > 0);
+  refs.messageLine.classList.toggle(
+    'is-success',
+    !isError && message.length > 0
+  );
 }
 
-async function openOverlayShortcut(state: PopupViewState, refs: PopupRefs): Promise<void> {
-  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+async function openOverlayShortcut(
+  state: PopupViewState,
+  refs: PopupRefs
+): Promise<void> {
+  const [activeTab] = await chrome.tabs.query({
+    active: true,
+    currentWindow: true,
+  });
   if (!activeTab?.id) {
     throw new Error('No active browser tab is available for overlay preview.');
   }
@@ -437,7 +515,8 @@ async function openOverlayShortcut(state: PopupViewState, refs: PopupRefs): Prom
       modelOptions: state.models,
       sessionReady: false,
       selectedText: 'Gem Read popup shortcut',
-      translatedText: 'Popup settings are ready. Use page selection and the context menu while Phase D/E are still in progress.',
+      translatedText:
+        'Popup settings are ready. Use page selection and the context menu while Phase D/E are still in progress.',
       rawResponse: `API: ${state.status.apiBaseUrl}\nStatus: ${formatStatusBadge(state.status.connectionStatus)}`,
       usedMock: state.status.connectionStatus === 'mock-mode',
       availability: state.status.availability,
@@ -448,7 +527,9 @@ async function openOverlayShortcut(state: PopupViewState, refs: PopupRefs): Prom
   await chrome.tabs.sendMessage(activeTab.id, message);
 }
 
-function formatStatusBadge(connectionStatus: PopupStatusPayload['connectionStatus']): string {
+function formatStatusBadge(
+  connectionStatus: PopupStatusPayload['connectionStatus']
+): string {
   if (connectionStatus === 'reachable') {
     return 'Reachable';
   }
@@ -470,11 +551,13 @@ function formatStatusLine(status: PopupStatusPayload): string {
 
 function formatSourceLine(
   source: ModelCatalogSource | undefined,
-  models: ModelOption[],
+  models: ModelOption[]
 ): string {
   const modelCount = models.length;
   if (!source) {
-    return modelCount > 0 ? `Cached models available: ${modelCount}` : 'No model suggestions are available yet.';
+    return modelCount > 0
+      ? `Cached models available: ${modelCount}`
+      : 'No model suggestions are available yet.';
   }
 
   return `Model source: ${source} | suggestions: ${modelCount}`;

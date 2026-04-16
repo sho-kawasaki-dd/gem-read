@@ -32,25 +32,31 @@ function createBlobLike(bytes: number[]) {
   };
 }
 
+// viewport 座標から bitmap crop へ変換する計算結果を固定する suite。
 describe('cropSelectionImage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     OffscreenCanvasMock.instances = [];
-    vi.spyOn(performance, 'now').mockReturnValueOnce(100).mockReturnValueOnce(116.4);
+    vi.spyOn(performance, 'now')
+      .mockReturnValueOnce(100)
+      .mockReturnValueOnce(116.4);
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
         blob: vi.fn().mockResolvedValue(createBlobLike([1, 2, 3])),
-      }),
+      })
     );
     vi.stubGlobal(
       'createImageBitmap',
       vi.fn().mockResolvedValue({
         width: 2000,
         height: 1000,
-      }),
+      })
     );
-    vi.stubGlobal('OffscreenCanvas', OffscreenCanvasMock as unknown as typeof OffscreenCanvas);
+    vi.stubGlobal(
+      'OffscreenCanvas',
+      OffscreenCanvasMock as unknown as typeof OffscreenCanvas
+    );
     convertToBlobMock.mockResolvedValue(createBlobLike([65, 66, 67]));
   });
 
@@ -79,7 +85,7 @@ describe('cropSelectionImage', () => {
       0,
       0,
       768,
-      192,
+      192
     );
     expect(result.imageDataUrl).toBe('data:image/webp;base64,QUJD');
     expect(result.durationMs).toBeCloseTo(16.4, 5);
@@ -96,7 +102,10 @@ describe('cropSelectionImage', () => {
       convertToBlob = vi.fn();
     }
 
-    vi.stubGlobal('OffscreenCanvas', NullCanvasMock as unknown as typeof OffscreenCanvas);
+    vi.stubGlobal(
+      'OffscreenCanvas',
+      NullCanvasMock as unknown as typeof OffscreenCanvas
+    );
 
     await expect(
       cropSelectionImage('data:image/png;base64,shot', {
@@ -107,7 +116,9 @@ describe('cropSelectionImage', () => {
         devicePixelRatio: 2,
         url: 'https://example.com/article',
         pageTitle: 'Example page',
-      }),
-    ).rejects.toThrow('OffscreenCanvas の 2D コンテキストを取得できませんでした。');
+      })
+    ).rejects.toThrow(
+      'OffscreenCanvas の 2D コンテキストを取得できませんでした。'
+    );
   });
 });

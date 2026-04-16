@@ -11,6 +11,7 @@ import {
 } from '../../../src/shared/storage/settingsStorage';
 import { getChromeMock } from '../../mocks/chrome';
 
+// storage schema の normalize と merge の振る舞いを固定する suite。
 describe('settingsStorage', () => {
   it('returns normalized defaults when storage is empty', async () => {
     const settings = await loadExtensionSettings();
@@ -27,7 +28,11 @@ describe('settingsStorage', () => {
     const settings = await saveExtensionSettings({
       apiBaseUrl: 'http://localhost:8123/',
       defaultModel: ' gemini-2.5-pro ',
-      lastKnownModels: ['gemini-2.5-pro', 'gemini-2.5-pro', ' gemini-2.5-flash '],
+      lastKnownModels: [
+        'gemini-2.5-pro',
+        'gemini-2.5-pro',
+        ' gemini-2.5-flash ',
+      ],
     });
 
     expect(settings).toEqual({
@@ -39,7 +44,7 @@ describe('settingsStorage', () => {
       {
         [EXTENSION_SETTINGS_STORAGE_KEY]: settings,
       },
-      expect.any(Function),
+      expect.any(Function)
     );
   });
 

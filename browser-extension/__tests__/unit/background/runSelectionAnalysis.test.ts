@@ -29,6 +29,7 @@ import { clearAnalysisSession } from '../../../src/background/services/analysisS
 import { runPhase0TranslationTest } from '../../../src/background/usecases/runPhase0TranslationTest';
 import { runSelectionAnalysis } from '../../../src/background/usecases/runSelectionAnalysis';
 
+// selection capture、crop、API 呼び出し、overlay 更新の orchestration を固定する suite。
 describe('runSelectionAnalysis', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -42,7 +43,9 @@ describe('runSelectionAnalysis', () => {
 
   it('renders loading then success overlay using stored settings', async () => {
     const chromeMock = getChromeMock();
-    chromeMock.tabs.captureVisibleTab.mockResolvedValue('data:image/png;base64,shot');
+    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
+      'data:image/png;base64,shot'
+    );
     collectSelectionMock.mockResolvedValue({
       ok: true,
       payload: {
@@ -73,7 +76,7 @@ describe('runSelectionAnalysis', () => {
 
     await runSelectionAnalysis(
       { id: 7, windowId: 9 } as chrome.tabs.Tab,
-      '  fallback text  ',
+      '  fallback text  '
     );
 
     expect(loadExtensionSettingsMock).toHaveBeenCalledTimes(1);
@@ -97,7 +100,7 @@ describe('runSelectionAnalysis', () => {
     });
     expect(cropSelectionImageMock).toHaveBeenCalledWith(
       'data:image/png;base64,shot',
-      expect.objectContaining({ text: 'fallback text' }),
+      expect.objectContaining({ text: 'fallback text' })
     );
     expect(sendAnalyzeTranslateRequestMock).toHaveBeenCalledWith(
       expect.objectContaining({ text: 'fallback text' }),
@@ -107,7 +110,7 @@ describe('runSelectionAnalysis', () => {
         apiBaseUrl: 'http://127.0.0.1:9000',
         modelName: 'gemini-2.5-flash',
         customPrompt: undefined,
-      },
+      }
     );
     expect(renderOverlayMock).toHaveBeenLastCalledWith(
       7,
@@ -127,13 +130,15 @@ describe('runSelectionAnalysis', () => {
         previewImageUrl: 'data:image/webp;base64,crop',
         imageCount: 1,
         timingMs: 12.5,
-      }),
+      })
     );
   });
 
   it('accepts explicit action overrides for custom prompt requests', async () => {
     const chromeMock = getChromeMock();
-    chromeMock.tabs.captureVisibleTab.mockResolvedValue('data:image/png;base64,shot');
+    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
+      'data:image/png;base64,shot'
+    );
     collectSelectionMock.mockResolvedValue({
       ok: true,
       payload: {
@@ -170,7 +175,7 @@ describe('runSelectionAnalysis', () => {
         apiBaseUrl: 'http://localhost:9010',
         modelName: 'gemini-2.5-pro',
         customPrompt: 'Summarize this',
-      },
+      }
     );
 
     expect(sendAnalyzeTranslateRequestMock).toHaveBeenCalledWith(
@@ -181,7 +186,7 @@ describe('runSelectionAnalysis', () => {
         apiBaseUrl: 'http://localhost:9010',
         modelName: 'gemini-2.5-pro',
         customPrompt: 'Summarize this',
-      },
+      }
     );
     expect(renderOverlayMock).toHaveBeenLastCalledWith(
       7,
@@ -200,7 +205,7 @@ describe('runSelectionAnalysis', () => {
         usedMock: true,
         availability: 'mock',
         degradedReason: 'mock-response',
-      }),
+      })
     );
   });
 
@@ -216,7 +221,7 @@ describe('runSelectionAnalysis', () => {
       'fallback',
       {
         action: 'translation_with_explanation',
-      },
+      }
     );
 
     expect(chromeMock.tabs.captureVisibleTab).not.toHaveBeenCalled();
@@ -239,7 +244,9 @@ describe('runSelectionAnalysis', () => {
 
   it('reuses the cached session for overlay-triggered reruns', async () => {
     const chromeMock = getChromeMock();
-    chromeMock.tabs.captureVisibleTab.mockResolvedValue('data:image/png;base64,shot');
+    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
+      'data:image/png;base64,shot'
+    );
     collectSelectionMock.mockResolvedValue({
       ok: true,
       payload: {
@@ -282,17 +289,13 @@ describe('runSelectionAnalysis', () => {
 
     await runSelectionAnalysis(
       { id: 7, windowId: 9 } as chrome.tabs.Tab,
-      'fallback',
+      'fallback'
     );
 
-    await runSelectionAnalysis(
-      { id: 7, windowId: 9 } as chrome.tabs.Tab,
-      '',
-      {
-        action: 'translation_with_explanation',
-        reuseCachedSession: true,
-      },
-    );
+    await runSelectionAnalysis({ id: 7, windowId: 9 } as chrome.tabs.Tab, '', {
+      action: 'translation_with_explanation',
+      reuseCachedSession: true,
+    });
 
     expect(collectSelectionMock).toHaveBeenCalledTimes(1);
     expect(chromeMock.tabs.captureVisibleTab).toHaveBeenCalledTimes(1);
@@ -301,13 +304,15 @@ describe('runSelectionAnalysis', () => {
       2,
       expect.objectContaining({ text: 'fallback' }),
       'data:image/webp;base64,crop',
-      expect.objectContaining({ action: 'translation_with_explanation' }),
+      expect.objectContaining({ action: 'translation_with_explanation' })
     );
   });
 
   it('keeps the phase0 wrapper delegating to translation action', async () => {
     const chromeMock = getChromeMock();
-    chromeMock.tabs.captureVisibleTab.mockResolvedValue('data:image/png;base64,shot');
+    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
+      'data:image/png;base64,shot'
+    );
     collectSelectionMock.mockResolvedValue({
       ok: true,
       payload: {
@@ -338,13 +343,13 @@ describe('runSelectionAnalysis', () => {
 
     await runPhase0TranslationTest(
       { id: 7, windowId: 9 } as chrome.tabs.Tab,
-      'fallback',
+      'fallback'
     );
 
     expect(sendAnalyzeTranslateRequestMock).toHaveBeenCalledWith(
       expect.any(Object),
       'data:image/webp;base64,crop',
-      expect.objectContaining({ action: 'translation' }),
+      expect.objectContaining({ action: 'translation' })
     );
   });
 });

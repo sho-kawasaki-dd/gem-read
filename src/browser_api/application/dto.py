@@ -8,6 +8,8 @@ from pdf_epub_reader.dto import ModelInfo
 
 @dataclass(frozen=True, slots=True)
 class AnalyzeTranslateCommand:
+    """Application-layer request detached from HTTP schema and transport details."""
+
     text: str
     model_name: str | None
     images: list[str]
@@ -18,6 +20,8 @@ class AnalyzeTranslateCommand:
 
 @dataclass(frozen=True, slots=True)
 class AnalyzeTranslateResult:
+    """Normalized analyze result returned by the service before HTTP serialization."""
+
     mode: Literal["translation", "translation_with_explanation", "custom_prompt"]
     translated_text: str
     explanation: str | None
@@ -31,6 +35,8 @@ class AnalyzeTranslateResult:
 
 @dataclass(frozen=True, slots=True)
 class ModelCatalogResult:
+    """Model list plus availability metadata for degraded popup states."""
+
     models: list[ModelInfo]
     source: Literal["live", "config_fallback"]
     availability: Literal["live", "degraded"]

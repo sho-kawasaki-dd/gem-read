@@ -13,9 +13,12 @@ DEFAULT_EXTENSION_ORIGIN_REGEX = r"chrome-extension://.*"
 
 
 def create_app() -> FastAPI:
+    """Create the FastAPI app with browser-extension-specific CORS and router wiring."""
+
     app = FastAPI(title=DEFAULT_API_TITLE, lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
+        # 拡張機能からの localhost bridge 呼び出しだけを許可し、一般的な cross-origin 利用は想定しない。
         allow_origin_regex=DEFAULT_EXTENSION_ORIGIN_REGEX,
         allow_credentials=True,
         allow_methods=["*"],

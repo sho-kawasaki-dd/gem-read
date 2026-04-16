@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 async def list_models(
     services: BrowserAPIServices = Depends(get_services),
 ) -> ModelListResponse:
+    """Expose model candidates for popup bootstrap while preserving degraded fallback metadata."""
+
     try:
         result = await services.analyze_service.list_models()
         return ModelListResponse.from_result(result)

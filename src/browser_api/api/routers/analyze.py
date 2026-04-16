@@ -22,6 +22,8 @@ async def analyze_translate(
     request: AnalyzeTranslateRequest,
     services: BrowserAPIServices = Depends(get_services),
 ) -> AnalyzeTranslateResponse:
+    """Accept browser-extension analyze requests and delegate all behavior to the application service."""
+
     try:
         result = await services.analyze_service.analyze_translate(
             request.to_command()

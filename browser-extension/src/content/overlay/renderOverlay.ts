@@ -6,10 +6,15 @@ import type {
 } from '../../shared/contracts/messages';
 
 const OVERLAY_HOST_ID = 'gem-read-phase0-overlay-host';
+// minimize 状態と draft 入力は再描画を跨いで維持したいので module state に置く。
 let isOverlayMinimized = false;
 let draftModelName = '';
 let draftCustomPrompt = '';
 
+/**
+ * Overlay は content script 側で一元管理し、payload から都度 DOM を再構築する。
+ * こうしておくと background から渡る状態だけで表示を復元でき、ページ本体の DOM 状態に依存しにくい。
+ */
 export function renderOverlay(payload: OverlayPayload): void {
   if (payload.modelName !== undefined) {
     draftModelName = payload.modelName;
@@ -24,8 +29,10 @@ export function renderOverlay(payload: OverlayPayload): void {
     : renderPanelMarkup(payload);
 
   if (isOverlayMinimized) {
-    const launcherButton = root.querySelector<HTMLButtonElement>('.launcher-button');
-    const closeButton = root.querySelector<HTMLButtonElement>('.launcher-close');
+    const launcherButton =
+      root.querySelector<HTMLButtonElement>('.launcher-button');
+    const closeButton =
+      root.querySelector<HTMLButtonElement>('.launcher-close');
     launcherButton?.addEventListener('click', () => {
       isOverlayMinimized = false;
       renderOverlay(payload);
@@ -40,7 +47,9 @@ export function renderOverlay(payload: OverlayPayload): void {
   const resultSection = root.querySelector<HTMLElement>('.result-section');
   const resultLabel = root.querySelector<HTMLElement>('.result-label');
   const resultBox = root.querySelector<HTMLElement>('.result-box');
-  const explanationSection = root.querySelector<HTMLElement>('.explanation-section');
+  const explanationSection = root.querySelector<HTMLElement>(
+    '.explanation-section'
+  );
   const explanationBox = root.querySelector<HTMLElement>('.explanation-box');
   const rawSection = root.querySelector<HTMLElement>('.raw-section');
   const rawBox = root.querySelector<HTMLElement>('.raw-box');
@@ -51,19 +60,51 @@ export function renderOverlay(payload: OverlayPayload): void {
   const minimizeButton = root.querySelector<HTMLButtonElement>('.minimize');
   const modelInput = root.querySelector<HTMLInputElement>('.model-input');
   const modelDatalist = root.querySelector<HTMLDataListElement>('.model-list');
-  const customPromptInput = root.querySelector<HTMLTextAreaElement>('.custom-prompt-input');
+  const customPromptInput = root.querySelector<HTMLTextAreaElement>(
+    '.custom-prompt-input'
+  );
   const customButton = root.querySelector<HTMLButtonElement>('.action-custom');
-  const translationButton = root.querySelector<HTMLButtonElement>('.action-translation');
-  const explanationButton = root.querySelector<HTMLButtonElement>('.action-explanation');
+  const translationButton = root.querySelector<HTMLButtonElement>(
+    '.action-translation'
+  );
+  const explanationButton = root.querySelector<HTMLButtonElement>(
+    '.action-explanation'
+  );
   const actionHint = root.querySelector<HTMLElement>('.action-hint');
   const bannerSection = root.querySelector<HTMLElement>('.banner-section');
   const bannerBox = root.querySelector<HTMLElement>('.banner-box');
 
-  if (!selectionBox || !previewSection || !previewImage || !resultSection || !resultLabel || !resultBox || !explanationSection || !explanationBox || !rawSection || !rawBox || !errorSection || !errorBox || !metaBox || !closeButton || !minimizeButton || !modelInput || !modelDatalist || !customPromptInput || !customButton || !translationButton || !explanationButton || !actionHint || !bannerSection || !bannerBox) {
+  if (
+    !selectionBox ||
+    !previewSection ||
+    !previewImage ||
+    !resultSection ||
+    !resultLabel ||
+    !resultBox ||
+    !explanationSection ||
+    !explanationBox ||
+    !rawSection ||
+    !rawBox ||
+    !errorSection ||
+    !errorBox ||
+    !metaBox ||
+    !closeButton ||
+    !minimizeButton ||
+    !modelInput ||
+    !modelDatalist ||
+    !customPromptInput ||
+    !customButton ||
+    !translationButton ||
+    !explanationButton ||
+    !actionHint ||
+    !bannerSection ||
+    !bannerBox
+  ) {
     return;
   }
 
-  selectionBox.textContent = payload.selectedText || 'No selection text captured.';
+  selectionBox.textContent =
+    payload.selectedText || 'No selection text captured.';
 
   previewSection.hidden = !payload.previewImageUrl;
   if (payload.previewImageUrl) {
@@ -89,15 +130,19 @@ export function renderOverlay(payload: OverlayPayload): void {
   modelInput.value = draftModelName;
   modelDatalist.innerHTML = (payload.modelOptions ?? [])
     .map(
-      (model) => `<option value="${escapeHtml(model.modelId)}">${escapeHtml(model.displayName)}</option>`,
+      (model) =>
+        `<option value="${escapeHtml(model.modelId)}">${escapeHtml(model.displayName)}</option>`
     )
     .join('');
   customPromptInput.value = draftCustomPrompt;
 
-  const actionsEnabled = Boolean(payload.sessionReady) && payload.status !== 'loading';
+  // cached session がない段階で action を押しても再利用できる selection がないため、button を閉じておく。
+  const actionsEnabled =
+    Boolean(payload.sessionReady) && payload.status !== 'loading';
   translationButton.disabled = !actionsEnabled;
   explanationButton.disabled = !actionsEnabled;
-  customButton.disabled = !actionsEnabled || customPromptInput.value.trim().length === 0;
+  customButton.disabled =
+    !actionsEnabled || customPromptInput.value.trim().length === 0;
   actionHint.textContent = actionsEnabled
     ? 'Reuse the captured selection with a different action or model.'
     : 'Select text and run Gem Read once before action buttons become available.';
@@ -109,18 +154,38 @@ export function renderOverlay(payload: OverlayPayload): void {
     draftModelName = modelInput.value.trim();
   });
   customPromptInput.addEventListener('input', () => {
+    // 再描画前でも途中入力を失わないよう、draft を module state に戻す。
     draftCustomPrompt = customPromptInput.value;
-    customButton.disabled = !actionsEnabled || customPromptInput.value.trim().length === 0;
+    customButton.disabled =
+      !actionsEnabled || customPromptInput.value.trim().length === 0;
   });
 
   translationButton.addEventListener('click', () => {
-    void runOverlayAction('translation', modelInput.value, customPromptInput.value, errorBox, errorSection);
+    void runOverlayAction(
+      'translation',
+      modelInput.value,
+      customPromptInput.value,
+      errorBox,
+      errorSection
+    );
   });
   explanationButton.addEventListener('click', () => {
-    void runOverlayAction('translation_with_explanation', modelInput.value, customPromptInput.value, errorBox, errorSection);
+    void runOverlayAction(
+      'translation_with_explanation',
+      modelInput.value,
+      customPromptInput.value,
+      errorBox,
+      errorSection
+    );
   });
   customButton.addEventListener('click', () => {
-    void runOverlayAction('custom_prompt', modelInput.value, customPromptInput.value, errorBox, errorSection);
+    void runOverlayAction(
+      'custom_prompt',
+      modelInput.value,
+      customPromptInput.value,
+      errorBox,
+      errorSection
+    );
   });
 
   minimizeButton.addEventListener('click', () => {
@@ -432,7 +497,10 @@ function buildMetaText(payload: OverlayPayload): string {
   return items.join(' | ');
 }
 
-function getStatusLabel(status: OverlayPayload['status'], usedMock?: boolean): string {
+function getStatusLabel(
+  status: OverlayPayload['status'],
+  usedMock?: boolean
+): string {
   if (status === 'loading') {
     return 'Running';
   }
@@ -453,7 +521,9 @@ function getResultLabel(action: OverlayPayload['action']): string {
 }
 
 function shouldShowBanner(payload: OverlayPayload): boolean {
-  return !payload.sessionReady || payload.usedMock || Boolean(payload.degradedReason);
+  return (
+    !payload.sessionReady || payload.usedMock || Boolean(payload.degradedReason)
+  );
 }
 
 function buildBannerText(payload: OverlayPayload): string {
@@ -474,7 +544,7 @@ async function runOverlayAction(
   modelName: string,
   customPrompt: string,
   errorBox: HTMLElement,
-  errorSection: HTMLElement,
+  errorSection: HTMLElement
 ): Promise<void> {
   if (action === 'custom_prompt' && customPrompt.trim().length === 0) {
     errorBox.textContent = 'Custom prompt cannot be empty.';
@@ -487,11 +557,15 @@ async function runOverlayAction(
     payload: {
       action,
       modelName: modelName.trim() || undefined,
-      customPrompt: action === 'custom_prompt' ? customPrompt.trim() : undefined,
+      customPrompt:
+        action === 'custom_prompt' ? customPrompt.trim() : undefined,
     },
   };
 
-  const response = await chrome.runtime.sendMessage(message) as RunOverlayActionResponse | undefined;
+  // Overlay は privileged 処理を持たず、実行そのものは background に委譲する。
+  const response = (await chrome.runtime.sendMessage(message)) as
+    | RunOverlayActionResponse
+    | undefined;
   if (response && !response.ok) {
     errorBox.textContent = response.error ?? 'Overlay action failed.';
     errorSection.hidden = false;
@@ -529,5 +603,6 @@ function ensureOverlayRoot(): ShadowRoot {
     document.documentElement.appendChild(host);
   }
 
+  // Shadow DOM に閉じ込めて、対象ページの CSS と overlay の見た目が干渉しないようにする。
   return host.shadowRoot ?? host.attachShadow({ mode: 'open' });
 }

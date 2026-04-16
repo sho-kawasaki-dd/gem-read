@@ -37,3 +37,34 @@
 4. `AIModel.analyze()` includes cached content when the model matches.
 5. If cache-backed analysis fails for non-rate-limit reasons, AIModel clears the cache linkage and retries without cache.
 6. Cache can expire, be invalidated manually, be replaced, or be cleared on shutdown.
+
+## Browser Extension Phase 1 Flow
+
+1. The user selects text on a web page.
+2. The content script tracks the selection snapshot so text and rectangle data survive short-lived browser selection loss.
+3. A context-menu action reaches the background runtime.
+4. Background requests the latest selection snapshot from the content script.
+5. Background captures a visible-tab screenshot.
+6. Background converts viewport coordinates into bitmap coordinates and crops the selected area before any API call.
+7. Background sends text, cropped image, model choice, and selection metadata to `browser_api`.
+8. The overlay first renders a loading state, then renders the translated result, explanation, or error state.
+
+## Overlay Rerun Flow
+
+1. After the first successful capture, background stores a tab-scoped analysis session.
+2. The overlay exposes translation, translation-with-explanation, and custom-prompt action buttons.
+3. When the user presses one of those buttons, the content script forwards the request to background.
+4. Background reuses the cached selection and crop preview instead of reacquiring the live browser selection.
+5. The new API result is rendered into the same overlay.
+
+This rerun flow exists because live browser selections are unreliable once the user starts interacting with overlay controls.
+
+## Popup Bootstrap Flow
+
+1. The popup loads saved extension settings from `chrome.storage.local`.
+2. The popup checks `/health` on the Local API.
+3. If health succeeds, the popup requests `/models`.
+4. If model loading succeeds, the popup renders a reachable state with live model choices.
+5. If model loading fails but health succeeded, the popup stays usable and renders a degraded state instead of failing closed.
+
+This distinction lets users tell the difference between an offline Local API and a reachable API that is running in mock or config-fallback mode.

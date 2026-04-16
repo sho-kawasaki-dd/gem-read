@@ -13,11 +13,15 @@ from pdf_epub_reader.models.ai_model import AIModel
 
 @dataclass(slots=True)
 class BrowserAPIServices:
+    """Small service container hung off FastAPI app state during lifespan."""
+
     analyze_service: AnalyzeService
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Compose long-lived services once per process so routers stay thin and stateless."""
+
     config = load_runtime_config()
     ai_model = AIModel(api_key=load_api_key(), config=config)
     app.state.services = BrowserAPIServices(
@@ -30,4 +34,6 @@ async def lifespan(app: FastAPI):
 
 
 def get_services(request: Request) -> BrowserAPIServices:
+    """Resolve the prebuilt service container for the current request."""
+
     return request.app.state.services

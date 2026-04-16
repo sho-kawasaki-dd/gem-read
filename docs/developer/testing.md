@@ -48,6 +48,12 @@ If a new feature adds branching logic, prefer putting that logic in a presenter 
 
 For the browser extension, keep entry files thin and prefer direct tests for usecases, services, overlay rendering, and selection state modules.
 
+When reading or extending the Phase 1 browser-extension and browser_api code, use comments and docstrings as a guide to design intent rather than as a substitute for tests.
+
+- Entry files should explain why they are thin, not restate the calls they make.
+- Services and usecases should explain why state is cached, delegated, or normalized.
+- Test fixtures and stubs should explain which contract they isolate.
+
 ## Browser API Test Commands
 
 - Focused browser_api suite: `uv run pytest tests/test_browser_api/ -q`

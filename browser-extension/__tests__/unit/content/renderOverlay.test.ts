@@ -11,6 +11,7 @@ function getShadowRoot(): ShadowRoot {
   return host.shadowRoot;
 }
 
+// overlay が payload から状態を再構成し、action を background に委譲する契約を固定する suite。
 describe('renderOverlay', () => {
   it('renders a loading overlay with action controls and selection text', () => {
     renderOverlay({
@@ -28,12 +29,24 @@ describe('renderOverlay', () => {
 
     const root = getShadowRoot();
     expect(root.querySelector('.badge')?.textContent).toContain('Running');
-    expect(root.querySelector('.selection-box')?.textContent).toBe('Selected paragraph');
-    expect(root.querySelector('.meta-box')?.textContent).toContain('Background workflow is running.');
-    expect((root.querySelector('.action-translation') as HTMLButtonElement).disabled).toBe(true);
-    expect((root.querySelector('.model-input') as HTMLInputElement).value).toBe('gemini-2.5-flash');
-    expect((root.querySelector('.result-section') as HTMLElement).hidden).toBe(true);
-    expect((root.querySelector('.error-section') as HTMLElement).hidden).toBe(true);
+    expect(root.querySelector('.selection-box')?.textContent).toBe(
+      'Selected paragraph'
+    );
+    expect(root.querySelector('.meta-box')?.textContent).toContain(
+      'Background workflow is running.'
+    );
+    expect(
+      (root.querySelector('.action-translation') as HTMLButtonElement).disabled
+    ).toBe(true);
+    expect((root.querySelector('.model-input') as HTMLInputElement).value).toBe(
+      'gemini-2.5-flash'
+    );
+    expect((root.querySelector('.result-section') as HTMLElement).hidden).toBe(
+      true
+    );
+    expect((root.querySelector('.error-section') as HTMLElement).hidden).toBe(
+      true
+    );
   });
 
   it('renders success details, shows runtime banner, and reuses the same host element', () => {
@@ -83,20 +96,34 @@ describe('renderOverlay', () => {
     });
 
     const root = getShadowRoot();
-    expect(document.querySelectorAll('#gem-read-phase0-overlay-host')).toHaveLength(1);
+    expect(
+      document.querySelectorAll('#gem-read-phase0-overlay-host')
+    ).toHaveLength(1);
     expect(root.querySelector('.badge')?.textContent).toContain('Mock Result');
-    expect(root.querySelector('.banner-box')?.textContent).toContain('Mock mode is active');
-    expect(root.querySelector('.result-box')?.textContent).toBe('翻訳結果');
-    expect(root.querySelector('.explanation-box')?.textContent).toBe('補足説明');
-    expect(root.querySelector('.raw-box')?.textContent).toContain('---');
-    expect((root.querySelector('.preview-section') as HTMLElement).hidden).toBe(false);
-    expect((root.querySelector('.preview-image') as HTMLImageElement).src).toBe(
-      'data:image/webp;base64,preview',
+    expect(root.querySelector('.banner-box')?.textContent).toContain(
+      'Mock mode is active'
     );
-    expect((root.querySelector('.action-translation') as HTMLButtonElement).disabled).toBe(false);
+    expect(root.querySelector('.result-box')?.textContent).toBe('翻訳結果');
+    expect(root.querySelector('.explanation-box')?.textContent).toBe(
+      '補足説明'
+    );
+    expect(root.querySelector('.raw-box')?.textContent).toContain('---');
+    expect((root.querySelector('.preview-section') as HTMLElement).hidden).toBe(
+      false
+    );
+    expect((root.querySelector('.preview-image') as HTMLImageElement).src).toBe(
+      'data:image/webp;base64,preview'
+    );
+    expect(
+      (root.querySelector('.action-translation') as HTMLButtonElement).disabled
+    ).toBe(false);
     expect(root.querySelector('.meta-box')?.textContent).toContain('images=1');
-    expect(root.querySelector('.meta-box')?.textContent).toContain('crop=12.3ms');
-    expect(root.querySelector('.meta-box')?.textContent).toContain('mock-response');
+    expect(root.querySelector('.meta-box')?.textContent).toContain(
+      'crop=12.3ms'
+    );
+    expect(root.querySelector('.meta-box')?.textContent).toContain(
+      'mock-response'
+    );
   });
 
   it('sends overlay action messages to the background runtime', async () => {
@@ -122,7 +149,9 @@ describe('renderOverlay', () => {
 
     const root = getShadowRoot();
     const modelInput = root.querySelector('.model-input') as HTMLInputElement;
-    const customPromptInput = root.querySelector('.custom-prompt-input') as HTMLTextAreaElement;
+    const customPromptInput = root.querySelector(
+      '.custom-prompt-input'
+    ) as HTMLTextAreaElement;
     modelInput.value = 'gemini-2.5-pro';
     customPromptInput.value = 'Explain the terminology';
     modelInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -155,7 +184,9 @@ describe('renderOverlay', () => {
     (root.querySelector('.minimize') as HTMLButtonElement).click();
 
     root = getShadowRoot();
-    expect(root.querySelector('.launcher-button')?.textContent).toContain('Gem Read');
+    expect(root.querySelector('.launcher-button')?.textContent).toContain(
+      'Gem Read'
+    );
 
     (root.querySelector('.launcher-button') as HTMLButtonElement).click();
     root = getShadowRoot();

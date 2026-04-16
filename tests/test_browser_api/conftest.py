@@ -14,6 +14,8 @@ from pdf_epub_reader.dto import ModelInfo
 
 @dataclass
 class StubAnalyzeService:
+    """Test double that isolates router tests from real AnalyzeService and AIModel wiring."""
+
     result: AnalyzeTranslateResult | None = None
     models_result: ModelCatalogResult | None = None
     error: Exception | None = None
@@ -74,6 +76,7 @@ def stub_analyze_service(
 @pytest.fixture
 def api_client(stub_analyze_service: StubAnalyzeService) -> TestClient:
     app = create_app()
+    # router test では app state の依存だけ差し替え、HTTP 境界の検証対象を最小化する。
     app.dependency_overrides[get_services] = lambda: BrowserAPIServices(
         analyze_service=stub_analyze_service
     )

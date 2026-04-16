@@ -54,10 +54,14 @@ export interface PopupBootstrapResult {
   models: ModelOption[];
 }
 
+/**
+ * Background から browser_api へ送る HTTP payload をここで正規化する。
+ * Content script は CSP の影響を受けやすいため、Local API 通信の詳細は shared gateway に寄せる。
+ */
 export async function sendAnalyzeTranslateRequest(
   selection: SelectionCapturePayload,
   imageDataUrl: string,
-  options: SendAnalyzeRequestOptions = {},
+  options: SendAnalyzeRequestOptions = {}
 ): Promise<AnalyzeApiResponse> {
   const apiBaseUrl = options.apiBaseUrl ?? PHASE0_API_BASE_URL;
   const action = options.action ?? 'translation';
@@ -68,6 +72,7 @@ export async function sendAnalyzeTranslateRequest(
     },
     body: JSON.stringify({
       text: selection.text,
+      // Phase 1 では crop 済み preview をそのまま 1 枚送る。複数画像対応は後続 phase で拡張する。
       images: [imageDataUrl],
       mode: action,
       model_name: options.modelName,
@@ -85,7 +90,9 @@ export async function sendAnalyzeTranslateRequest(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Local API request failed (${response.status}): ${errorText}`);
+    throw new Error(
+      `Local API request failed (${response.status}): ${errorText}`
+    );
   }
 
   const payload = (await response.json()) as RawAnalyzeApiResponse;
@@ -103,8 +110,12 @@ export async function sendAnalyzeTranslateRequest(
   };
 }
 
+/**
+ * Popup は health と model catalog をまとめて確認し、UI 初期表示に必要な状態を一度で得る。
+ * model 取得に失敗しても設定画面は開けるよう、degraded な bootstrap 結果を返して描画を継続する。
+ */
 export async function fetchPopupBootstrap(
-  apiBaseUrl: string = PHASE0_API_BASE_URL,
+  apiBaseUrl: string = PHASE0_API_BASE_URL
 ): Promise<PopupBootstrapResult> {
   await fetchHealth(apiBaseUrl);
 
@@ -123,7 +134,8 @@ export async function fetchPopupBootstrap(
       models: modelCatalog.models,
     };
   } catch (error) {
-    const detail = error instanceof Error ? error.message : 'Failed to fetch model list.';
+    const detail =
+      error instanceof Error ? error.message : 'Failed to fetch model list.';
     return {
       status: {
         connectionStatus: 'mock-mode',
@@ -143,7 +155,9 @@ async function fetchHealth(apiBaseUrl: string): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/health`);
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Local API health check failed (${response.status}): ${errorText}`);
+    throw new Error(
+      `Local API health check failed (${response.status}): ${errorText}`
+    );
   }
 
   const payload = (await response.json()) as RawHealthApiResponse;
@@ -152,11 +166,15 @@ async function fetchHealth(apiBaseUrl: string): Promise<void> {
   }
 }
 
-async function fetchModelCatalog(apiBaseUrl: string): Promise<ModelListApiResponse> {
+async function fetchModelCatalog(
+  apiBaseUrl: string
+): Promise<ModelListApiResponse> {
   const response = await fetch(`${apiBaseUrl}/models`);
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Local API model request failed (${response.status}): ${errorText}`);
+    throw new Error(
+      `Local API model request failed (${response.status}): ${errorText}`
+    );
   }
 
   const payload = (await response.json()) as RawModelListApiResponse;
@@ -173,7 +191,10 @@ async function fetchModelCatalog(apiBaseUrl: string): Promise<ModelListApiRespon
   };
 }
 
-function getConnectionStatus(modelCatalog: ModelListApiResponse): PopupConnectionStatus {
+function getConnectionStatus(
+  modelCatalog: ModelListApiResponse
+): PopupConnectionStatus {
+  // live catalog が返ってこなくても mock/config fallback なら接続自体は成立しているため、mock-mode として扱う。
   if (modelCatalog.availability === 'live' && modelCatalog.source === 'live') {
     return 'reachable';
   }

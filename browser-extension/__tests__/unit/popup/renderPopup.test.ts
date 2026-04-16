@@ -20,6 +20,7 @@ async function settle(): Promise<void> {
   await Promise.resolve();
 }
 
+// popup が設定編集と接続確認に責務を絞っていることを固定する suite。
 describe('renderPopup', () => {
   it('loads saved settings and renders live popup status', async () => {
     document.body.innerHTML = '<div id="app"></div>';
@@ -32,10 +33,11 @@ describe('renderPopup', () => {
           lastKnownModels: ['gemini-2.5-pro'],
         },
       },
-      () => undefined,
+      () => undefined
     );
 
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce(createJsonResponse({ status: 'ok' }))
       .mockResolvedValueOnce(
         createJsonResponse({
@@ -50,16 +52,22 @@ describe('renderPopup', () => {
           availability: 'live',
           detail: null,
           degraded_reason: null,
-        }),
+        })
       );
     vi.stubGlobal('fetch', fetchMock);
 
     await renderPopup(document);
     await settle();
 
-    expect(document.querySelector('[data-role="status-badge"]')?.textContent).toContain('Reachable');
-    expect((document.querySelector('#api-base-url') as HTMLInputElement).value).toBe('http://127.0.0.1:8001');
-    expect((document.querySelector('#default-model') as HTMLInputElement).value).toBe('gemini-2.5-pro');
+    expect(
+      document.querySelector('[data-role="status-badge"]')?.textContent
+    ).toContain('Reachable');
+    expect(
+      (document.querySelector('#api-base-url') as HTMLInputElement).value
+    ).toBe('http://127.0.0.1:8001');
+    expect(
+      (document.querySelector('#default-model') as HTMLInputElement).value
+    ).toBe('gemini-2.5-pro');
     expect(document.querySelectorAll('#model-options option')).toHaveLength(1);
     expect(chromeMock.storage.local.set).toHaveBeenCalledWith(
       {
@@ -69,7 +77,7 @@ describe('renderPopup', () => {
           lastKnownModels: ['gemini-2.5-flash'],
         },
       },
-      expect.any(Function),
+      expect.any(Function)
     );
   });
 
@@ -77,7 +85,8 @@ describe('renderPopup', () => {
     document.body.innerHTML = '<div id="app"></div>';
     const chromeMock = getChromeMock();
 
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce(createJsonResponse({ status: 'ok' }))
       .mockResolvedValueOnce(
         createJsonResponse({
@@ -92,7 +101,7 @@ describe('renderPopup', () => {
           availability: 'live',
           detail: null,
           degraded_reason: null,
-        }),
+        })
       )
       .mockResolvedValueOnce(createJsonResponse({ status: 'ok' }))
       .mockResolvedValueOnce(
@@ -108,20 +117,28 @@ describe('renderPopup', () => {
           availability: 'live',
           detail: null,
           degraded_reason: null,
-        }),
+        })
       );
     vi.stubGlobal('fetch', fetchMock);
 
     await renderPopup(document);
     await settle();
 
-    const apiInput = document.querySelector('#api-base-url') as HTMLInputElement;
-    const defaultModelInput = document.querySelector('#default-model') as HTMLInputElement;
-    const form = document.querySelector('[data-role="settings-form"]') as HTMLFormElement;
+    const apiInput = document.querySelector(
+      '#api-base-url'
+    ) as HTMLInputElement;
+    const defaultModelInput = document.querySelector(
+      '#default-model'
+    ) as HTMLInputElement;
+    const form = document.querySelector(
+      '[data-role="settings-form"]'
+    ) as HTMLFormElement;
 
     apiInput.value = 'http://localhost:9001/';
     defaultModelInput.value = ' gemini-2.5-pro ';
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    form.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    );
     await settle();
 
     expect(chromeMock.storage.local.set).toHaveBeenCalledWith(
@@ -132,9 +149,11 @@ describe('renderPopup', () => {
           lastKnownModels: ['gemini-2.5-flash'],
         },
       },
-      expect.any(Function),
+      expect.any(Function)
     );
-    expect(document.querySelector('[data-role="message-line"]')?.textContent).toContain('Settings saved.');
+    expect(
+      document.querySelector('[data-role="message-line"]')?.textContent
+    ).toContain('Settings saved.');
   });
 
   it('opens the overlay shortcut on the active tab', async () => {
@@ -143,7 +162,8 @@ describe('renderPopup', () => {
     chromeMock.tabs.query.mockResolvedValue([{ id: 7 }] as chrome.tabs.Tab[]);
     chromeMock.tabs.sendMessage.mockResolvedValue(undefined);
 
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce(createJsonResponse({ status: 'ok' }))
       .mockResolvedValueOnce(
         createJsonResponse({
@@ -158,20 +178,29 @@ describe('renderPopup', () => {
           availability: 'live',
           detail: null,
           degraded_reason: null,
-        }),
+        })
       );
     vi.stubGlobal('fetch', fetchMock);
 
     await renderPopup(document);
     await settle();
 
-    const defaultModelInput = document.querySelector('#default-model') as HTMLInputElement;
+    const defaultModelInput = document.querySelector(
+      '#default-model'
+    ) as HTMLInputElement;
     defaultModelInput.value = 'gemini-2.5-pro';
 
-    (document.querySelector('[data-role="open-overlay-button"]') as HTMLButtonElement).click();
+    (
+      document.querySelector(
+        '[data-role="open-overlay-button"]'
+      ) as HTMLButtonElement
+    ).click();
     await settle();
 
-    expect(chromeMock.tabs.query).toHaveBeenCalledWith({ active: true, currentWindow: true });
+    expect(chromeMock.tabs.query).toHaveBeenCalledWith({
+      active: true,
+      currentWindow: true,
+    });
     expect(chromeMock.tabs.sendMessage).toHaveBeenCalledWith(
       7,
       expect.objectContaining({
@@ -180,7 +209,7 @@ describe('renderPopup', () => {
           status: 'success',
           modelName: 'gemini-2.5-pro',
         }),
-      }),
+      })
     );
   });
 });

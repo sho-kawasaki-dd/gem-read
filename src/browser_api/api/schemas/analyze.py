@@ -12,6 +12,8 @@ from browser_api.application.dto import (
 
 
 class SelectionRectPayload(BaseModel):
+    """Viewport-space rectangle copied from the content script snapshot."""
+
     left: float
     top: float
     width: float
@@ -19,6 +21,8 @@ class SelectionRectPayload(BaseModel):
 
 
 class SelectionMetadataPayload(BaseModel):
+    """Optional page context carried through for diagnostics and future features."""
+
     url: str | None = None
     page_title: str | None = None
     viewport_width: float | None = None
@@ -28,6 +32,8 @@ class SelectionMetadataPayload(BaseModel):
 
 
 class AnalyzeTranslateRequest(BaseModel):
+    """HTTP schema accepted from the browser extension."""
+
     text: str = Field(min_length=1)
     model_name: str | None = None
     images: list[str] = Field(default_factory=list)
@@ -37,11 +43,15 @@ class AnalyzeTranslateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_custom_prompt(self) -> "AnalyzeTranslateRequest":
+        """Keep custom prompt validation at the HTTP boundary so the service sees a consistent command."""
+
         if self.mode == "custom_prompt" and not (self.custom_prompt and self.custom_prompt.strip()):
             raise ValueError("custom_prompt is required when mode=custom_prompt")
         return self
 
     def to_command(self) -> AnalyzeTranslateCommand:
+        """Convert the transport schema into the application command used by AnalyzeService."""
+
         selection_metadata: dict[str, Any] | None = None
         if self.selection_metadata is not None:
             selection_metadata = self.selection_metadata.model_dump(mode="json")
@@ -57,6 +67,8 @@ class AnalyzeTranslateRequest(BaseModel):
 
 
 class AnalyzeTranslateResponse(BaseModel):
+    """HTTP response schema returned to the browser extension."""
+
     ok: bool = True
     mode: Literal["translation", "translation_with_explanation", "custom_prompt"]
     translated_text: str
@@ -73,6 +85,8 @@ class AnalyzeTranslateResponse(BaseModel):
         cls,
         result: AnalyzeTranslateResult,
     ) -> "AnalyzeTranslateResponse":
+        """Serialize the application result without exposing service internals."""
+
         return cls(
             mode=result.mode,
             translated_text=result.translated_text,
@@ -87,11 +101,15 @@ class AnalyzeTranslateResponse(BaseModel):
 
 
 class ModelPayload(BaseModel):
+    """Transport form of a model option shown in the popup."""
+
     model_id: str
     display_name: str
 
 
 class ModelListResponse(BaseModel):
+    """Model catalog plus fallback metadata so the popup can explain degraded states."""
+
     ok: bool = True
     models: list[ModelPayload]
     source: Literal["live", "config_fallback"]
@@ -101,6 +119,8 @@ class ModelListResponse(BaseModel):
 
     @classmethod
     def from_result(cls, result: ModelCatalogResult) -> "ModelListResponse":
+        """Serialize application model catalog results for the popup."""
+
         return cls(
             models=[
                 ModelPayload(

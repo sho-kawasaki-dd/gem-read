@@ -3,6 +3,7 @@ import { afterEach, beforeEach, vi } from 'vitest';
 import { createChromeMock } from './mocks/chrome';
 
 beforeEach(() => {
+  // 各 suite が差分だけを書けるよう、共通の browser/chrome 初期状態をここで用意する。
   vi.restoreAllMocks();
   document.head.innerHTML = '';
   document.body.innerHTML = '';

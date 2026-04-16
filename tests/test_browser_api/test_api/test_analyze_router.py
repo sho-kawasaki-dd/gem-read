@@ -4,6 +4,7 @@ from browser_api.application.dto import AnalyzeTranslateResult
 from pdf_epub_reader.utils.exceptions import AIAPIError
 
 
+# router が schema validation と HTTP error mapping を担うことを固定する suite。
 def test_translate_returns_response_payload(api_client, stub_analyze_service) -> None:
     response = api_client.post(
         "/analyze/translate",

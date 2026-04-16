@@ -23,6 +23,12 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class AnalyzeService:
+    """Coordinate browser_api analyze flows without leaking HTTP or legacy model details.
+
+    router は request/response 変換だけに留め、model 解決、画像 decode、mock fallback といった
+    browser-extension 固有の振る舞いはこの service に集約する。
+    """
+
     ai_gateway: GemReadAIGateway
     config: AppConfig
 
@@ -30,6 +36,8 @@ class AnalyzeService:
         self,
         command: AnalyzeTranslateCommand,
     ) -> AnalyzeTranslateResult:
+        """Run a translation-like action and normalize the result for the browser extension."""
+
         resolved_model_name = self._resolve_model_name(command.model_name)
         image_bytes = self._decode_image_payloads(command.images)
         ai_request = self._build_ai_request(
@@ -51,12 +59,15 @@ class AnalyzeService:
                 selection_metadata=command.selection_metadata,
             )
         except AIKeyMissingError:
+            # API key 未設定でも extension 側の結線確認は進めたいので、mock で degraded success を返す。
             logger.info(
                 "GEMINI_API_KEY is not configured; returning mock response for browser API validation"
             )
             return self._build_mock_response(command, len(image_bytes))
 
     async def list_models(self) -> ModelCatalogResult:
+        """Return live model data when possible, otherwise fall back to configured model names."""
+
         try:
             models = await self.ai_gateway.list_available_models()
             return ModelCatalogResult(
@@ -65,6 +76,7 @@ class AnalyzeService:
                 availability="live",
             )
         except AIKeyMissingError:
+            # popup はモデル一覧取得失敗だけで全体を unusable にしないため、設定値から候補を組み立てる。
             logger.info(
                 "GEMINI_API_KEY is not configured; returning configured model fallback"
             )
@@ -95,6 +107,8 @@ class AnalyzeService:
         resolved_model_name: str,
         image_bytes: list[bytes],
     ) -> AnalysisRequest:
+        """Map browser_api actions onto the legacy AnalysisRequest contract."""
+
         if command.mode == "custom_prompt":
             return AnalysisRequest(
                 text=command.text,
@@ -113,6 +127,8 @@ class AnalyzeService:
         )
 
     def _resolve_model_name(self, requested_model_name: str | None) -> str:
+        """Prefer per-request model overrides, then fall back to configured defaults."""
+
         model_name = (requested_model_name or self.config.gemini_model_name).strip()
         if not model_name:
             raise MissingModelError(
@@ -121,8 +137,11 @@ class AnalyzeService:
         return model_name
 
     def _decode_image_payloads(self, images: list[str]) -> list[bytes]:
+        """Decode data URL or raw base64 image payloads before they reach the AI gateway."""
+
         decoded_images: list[bytes] = []
         for image in images:
+            # browser-extension は data URL を送るので、metadata prefix を剥がしてから decode する。
             payload = image.split(",", 1)[1] if image.startswith("data:") else image
             try:
                 decoded_images.append(base64.b64decode(payload))
@@ -131,6 +150,8 @@ class AnalyzeService:
         return decoded_images
 
     def _build_config_fallback_models(self) -> list[ModelInfo]:
+        """Collapse configured model names into a stable deduplicated fallback list."""
+
         names: list[str] = []
         for candidate in [self.config.gemini_model_name, *self.config.selected_models]:
             normalized = candidate.strip()
@@ -147,6 +168,8 @@ class AnalyzeService:
         command: AnalyzeTranslateCommand,
         image_count: int,
     ) -> AnalyzeTranslateResult:
+        """Return a deterministic mock payload so UI and transport can be validated without Gemini credentials."""
+
         if command.mode == "custom_prompt":
             translated_text = f"[mock: custom_prompt] {command.text}"
             raw_response = (

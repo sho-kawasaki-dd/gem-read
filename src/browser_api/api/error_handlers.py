@@ -7,6 +7,8 @@ from pdf_epub_reader.utils.exceptions import AIAPIError
 
 
 def to_http_exception(error: Exception) -> HTTPException:
+    """Translate application and upstream errors into stable HTTP responses for the extension."""
+
     if isinstance(error, MissingModelError | InvalidImagePayloadError):
         return HTTPException(status_code=400, detail=str(error))
 

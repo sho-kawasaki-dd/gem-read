@@ -19,6 +19,7 @@ function createRange(rects: Array<ReturnType<typeof createRect>>): Range {
   } as unknown as Range;
 }
 
+// selection が失われた後でも直前 snapshot を再利用できる契約を固定する suite。
 describe('snapshotStore', () => {
   it('collects and normalizes the current selection snapshot', async () => {
     vi.resetModules();
@@ -33,7 +34,8 @@ describe('snapshotStore', () => {
     } as unknown as Selection);
     document.title = 'Article';
 
-    const { collectSelection } = await import('../../../src/content/selection/snapshotStore');
+    const { collectSelection } =
+      await import('../../../src/content/selection/snapshotStore');
     const result = collectSelection();
 
     expect(result).toEqual({
@@ -65,9 +67,8 @@ describe('snapshotStore', () => {
       getRangeAt: () => range,
     } as unknown as Selection);
 
-    const { collectSelection, startSelectionTracking } = await import(
-      '../../../src/content/selection/snapshotStore'
-    );
+    const { collectSelection, startSelectionTracking } =
+      await import('../../../src/content/selection/snapshotStore');
     startSelectionTracking();
     document.dispatchEvent(new Event('selectionchange'));
 
@@ -85,13 +86,17 @@ describe('snapshotStore', () => {
 
   it('returns a guidance error when no snapshot can be recovered', async () => {
     vi.resetModules();
-    vi.spyOn(window, 'getSelection').mockReturnValue({ rangeCount: 0 } as Selection);
+    vi.spyOn(window, 'getSelection').mockReturnValue({
+      rangeCount: 0,
+    } as Selection);
 
-    const { collectSelection } = await import('../../../src/content/selection/snapshotStore');
+    const { collectSelection } =
+      await import('../../../src/content/selection/snapshotStore');
 
     expect(collectSelection('fallback')).toEqual({
       ok: false,
-      error: '選択テキストの座標を保持できていません。選択し直してから再度実行してください。',
+      error:
+        '選択テキストの座標を保持できていません。選択し直してから再度実行してください。',
     });
     expect(collectSelection()).toEqual({
       ok: false,

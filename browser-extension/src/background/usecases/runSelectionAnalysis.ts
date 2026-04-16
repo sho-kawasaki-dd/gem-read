@@ -7,7 +7,10 @@ import type {
 } from '../../shared/contracts/messages';
 import { loadExtensionSettings } from '../../shared/storage/settingsStorage';
 import { sendAnalyzeTranslateRequest } from '../gateways/localApiGateway';
-import { collectSelection, renderOverlay } from '../gateways/tabMessagingGateway';
+import {
+  collectSelection,
+  renderOverlay,
+} from '../gateways/tabMessagingGateway';
 import {
   getAnalysisSession,
   setAnalysisSession,
@@ -23,10 +26,14 @@ export interface RunSelectionAnalysisOptions {
   reuseCachedSession?: boolean;
 }
 
+/**
+ * Phase 1 の解析フローを background 側で束ねる use case。
+ * 初回実行では selection/crop/session 作成まで進め、overlay からの再実行では cached session を再利用する。
+ */
 export async function runSelectionAnalysis(
   tab: chrome.tabs.Tab,
   fallbackSelectionText: string,
-  options: RunSelectionAnalysisOptions = {},
+  options: RunSelectionAnalysisOptions = {}
 ): Promise<void> {
   const tabId = tab.id;
   if (tabId === undefined) {
@@ -34,11 +41,17 @@ export async function runSelectionAnalysis(
   }
 
   const settings = await loadExtensionSettings();
-  const resolvedRequestOptions = resolveAnalyzeRequestOptions(settings, options);
+  const resolvedRequestOptions = resolveAnalyzeRequestOptions(
+    settings,
+    options
+  );
   const modelOptions = buildModelOptions(settings);
-  const cachedSession = options.reuseCachedSession ? getCachedSession(tabId) : undefined;
+  const cachedSession = options.reuseCachedSession
+    ? getCachedSession(tabId)
+    : undefined;
 
   try {
+    // loading を先に描画して、selection 取得や crop の待ち時間でも UI 上の文脈を保つ。
     await renderOverlay(tabId, {
       status: 'loading',
       action: resolvedRequestOptions.action,
@@ -49,12 +62,20 @@ export async function runSelectionAnalysis(
       selectedText: fallbackSelectionText,
     });
 
-    const session = cachedSession ?? await createFreshSession(tab, tabId, fallbackSelectionText, modelOptions);
+    // overlay からの再実行では captureVisibleTab をやり直さず、直前 session をそのまま再利用する。
+    const session =
+      cachedSession ??
+      (await createFreshSession(
+        tab,
+        tabId,
+        fallbackSelectionText,
+        modelOptions
+      ));
 
     const apiResponse = await sendAnalyzeTranslateRequest(
       session.selection,
       session.previewImageUrl,
-      resolvedRequestOptions,
+      resolvedRequestOptions
     );
 
     setAnalysisSession(tabId, {
@@ -84,7 +105,8 @@ export async function runSelectionAnalysis(
       rawResponse: apiResponse.raw_response,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : '不明なエラーが発生しました。';
+    const message =
+      error instanceof Error ? error.message : '不明なエラーが発生しました。';
     await renderOverlay(tabId, {
       status: 'error',
       action: resolvedRequestOptions.action,
@@ -102,13 +124,14 @@ async function createFreshSession(
   tab: chrome.tabs.Tab,
   tabId: number,
   fallbackSelectionText: string,
-  modelOptions: ModelOption[],
+  modelOptions: ModelOption[]
 ): Promise<SelectionAnalysisSession> {
   const selection = await collectSelection(tabId, fallbackSelectionText);
   if (!selection.ok || !selection.payload) {
     throw new Error(selection.error ?? '選択テキストを取得できませんでした。');
   }
 
+  // browser 提供の selectionText は整形差があるため、座標は content script、文字列は fallback と live snapshot の両方を見る。
   const resolvedSelection = {
     ...selection.payload,
     text: fallbackSelectionText.trim() || selection.payload.text,
@@ -117,9 +140,10 @@ async function createFreshSession(
   const screenshotDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
     format: 'png',
   });
+  // crop は browser 側で済ませ、Python には必要最小限の画像だけを送る。
   const cropResult = await cropSelectionImage(
     screenshotDataUrl,
-    resolvedSelection,
+    resolvedSelection
   );
 
   const session: SelectionAnalysisSession = {
@@ -141,6 +165,7 @@ function getCachedSession(tabId: number): SelectionAnalysisSession | undefined {
 
   return {
     ...session,
+    // 呼び出し側が候補配列を書き換えても store 本体を汚染しないよう参照を切る。
     modelOptions: [...session.modelOptions],
   };
 }
@@ -154,7 +179,7 @@ function buildModelOptions(settings: ExtensionSettings): ModelOption[] {
 
 function resolveAnalyzeRequestOptions(
   settings: ExtensionSettings,
-  options: RunSelectionAnalysisOptions,
+  options: RunSelectionAnalysisOptions
 ): AnalyzeRequestOptions & { apiBaseUrl: string } {
   const resolvedModelName = options.modelName ?? settings.defaultModel;
 

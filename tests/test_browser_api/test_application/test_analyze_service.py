@@ -15,6 +15,8 @@ from pdf_epub_reader.utils.exceptions import AIAPIError, AIKeyMissingError
 
 @dataclass
 class StubAIGateway:
+    """Gateway stub for service tests so AnalyzeService behavior is verified without live Gemini calls."""
+
     result: AnalysisResult | None = None
     models_result: list[ModelInfo] | None = None
     error: Exception | None = None
@@ -56,6 +58,8 @@ def _build_command(
 
 
 class TestAnalyzeService:
+    """Verify service-only behavior such as fallback rules, request mapping, and image decoding."""
+
     @pytest.mark.asyncio
     async def test_uses_requested_model_and_decodes_images(self) -> None:
         image_bytes = b"image-payload"
