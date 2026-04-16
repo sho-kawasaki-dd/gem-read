@@ -434,6 +434,8 @@ async function openOverlayShortcut(state: PopupViewState, refs: PopupRefs): Prom
       status: 'success',
       action: 'translation',
       modelName: refs.defaultModelInput.value.trim() || undefined,
+      modelOptions: state.models,
+      sessionReady: false,
       selectedText: 'Gem Read popup shortcut',
       translatedText: 'Popup settings are ready. Use page selection and the context menu while Phase D/E are still in progress.',
       rawResponse: `API: ${state.status.apiBaseUrl}\nStatus: ${formatStatusBadge(state.status.connectionStatus)}`,

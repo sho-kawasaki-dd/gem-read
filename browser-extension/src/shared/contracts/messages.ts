@@ -75,7 +75,9 @@ export interface OverlayPayload {
   status: OverlayStatus;
   action?: AnalysisAction;
   modelName?: string;
+  modelOptions?: ModelOption[];
   customPrompt?: string;
+  sessionReady?: boolean;
   selectedText?: string;
   translatedText?: string;
   explanation?: string | null;
@@ -99,6 +101,58 @@ export interface RenderOverlayMessage {
   payload: OverlayPayload;
 }
 
+export interface SeedOverlaySessionPayload {
+  previewImageUrl: string;
+  cropDurationMs: number;
+  modelOptions?: ModelOption[];
+  fallbackText?: string;
+}
+
+export interface SeedOverlaySessionMessage {
+  type: 'phase1.seedOverlaySession';
+  payload: SeedOverlaySessionPayload;
+}
+
+export interface SeedOverlaySessionResponse {
+  ok: boolean;
+  error?: string;
+}
+
+export interface InvokeOverlayActionMessage {
+  type: 'phase1.invokeOverlayAction';
+  payload: RunOverlayActionPayload;
+}
+
+export interface RunOverlayActionPayload {
+  action: AnalysisAction;
+  modelName?: string;
+  customPrompt?: string;
+}
+
+export interface RunOverlayActionMessage {
+  type: 'phase1.runOverlayAction';
+  payload: RunOverlayActionPayload;
+}
+
+export interface RunOverlayActionResponse {
+  ok: boolean;
+  error?: string;
+}
+
+export interface CacheOverlaySessionMessage {
+  type: 'phase1.cacheOverlaySession';
+  payload: {
+    selection: SelectionCapturePayload;
+    previewImageUrl: string;
+    cropDurationMs: number;
+    modelOptions: ModelOption[];
+  };
+}
+
 export type ContentScriptMessage =
   | CollectSelectionMessage
-  | RenderOverlayMessage;
+  | RenderOverlayMessage
+  | SeedOverlaySessionMessage
+  | InvokeOverlayActionMessage;
+
+export type BackgroundRuntimeMessage = RunOverlayActionMessage | CacheOverlaySessionMessage;

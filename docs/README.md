@@ -6,6 +6,9 @@ This directory contains end-user and developer documentation for Gem Read.
 
 - Windows PowerShell: `.\gem-read_launch.ps1`
 - Canonical module entry point: `uv run python -m pdf_epub_reader`
+- Browser extension local API: `uv run python -m browser_api`
+
+The desktop reader remains the primary product. The browser extension docs in this repository describe the current local-first Phase 1 implementation, where the extension talks to a FastAPI process on `127.0.0.1` or `localhost`.
 
 ## User Docs
 

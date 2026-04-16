@@ -14,3 +14,5 @@ This section is the user-facing manual for Gem Read.
 These pages focus on how to install, configure, and use the desktop application.
 On Windows PowerShell, the recommended launcher is `.\gem-read_launch.ps1` from the repository root.
 They do not cover internal MVP architecture or test strategy.
+
+The repository also contains a local-first browser extension Phase 1 preview. That flow depends on a separately started FastAPI process and is documented in the browser extension sections of the getting started, operations, and troubleshooting pages below.

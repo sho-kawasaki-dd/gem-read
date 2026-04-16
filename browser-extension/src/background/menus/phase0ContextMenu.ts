@@ -4,7 +4,7 @@ export async function ensurePhase0ContextMenu(): Promise<void> {
   await removeAllContextMenus();
   await createContextMenu({
     id: PHASE0_MENU_ID,
-    title: '翻訳テスト',
+    title: 'Gem Read で翻訳',
     contexts: ['selection'],
   });
 }

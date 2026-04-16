@@ -52,6 +52,8 @@ For the browser extension, keep entry files thin and prefer direct tests for use
 
 - Focused browser_api suite: `uv run pytest tests/test_browser_api/ -q`
 - Full Python suite: `uv run pytest tests/ -q`
+- Local browser API launch: `uv run python -m browser_api`
+- Local browser API dev launch with reload: `uv run uvicorn browser_api.main:app --host 127.0.0.1 --port 8000 --reload`
 
 The browser_api tests stub the AI gateway or FastAPI dependency wiring so they do not require live Gemini access.
 
@@ -63,7 +65,7 @@ The browser_api tests stub the AI gateway or FastAPI dependency wiring so they d
 - Chromium smoke E2E: `npm run test:e2e`
 - Build regression check: `npm run build`
 
-The Playwright smoke test loads the unpacked extension from `dist/`, selects text on a local fixture page, verifies selection capture through the service worker, and confirms overlay rendering. Native browser context menus are not automated in this smoke path; the unit test suite covers the background usecase that normally sits behind the context-menu click.
+The Playwright smoke test loads the unpacked extension from `dist/`, saves popup settings against a stub local API, selects text on a local fixture page, seeds an overlay session, and confirms the explanation rerun path through the background runtime. Native browser context menus are not automated in this smoke path; the unit test suite covers the background usecase that normally sits behind the context-menu click.
 
 ## CI Checks
 
@@ -76,16 +78,26 @@ These workflows are intentionally split so branch protection can require each ga
 ## Browser API Coverage Areas
 
 - `application/services/analyze_service.py`: model resolution, Base64 image decode, AI key fallback, and response shaping
-- `/health` and `/analyze/translate`: success responses, request validation, 400 mapping, and upstream AI error mapping
+- `/health`, `/models`, and `/analyze/translate`: success responses, request validation, custom prompt behavior, config fallback behavior, 400 mapping, and upstream AI error mapping
 
 ## Browser Extension Coverage Areas
 
-- `background/usecases/runPhase0TranslationTest.ts`: loading, success, and error overlay orchestration
+- `background/usecases/runSelectionAnalysis.ts`: settings-aware orchestration, session reuse, and action reruns
 - `background/services/cropSelectionImage.ts`: crop coordinate scaling and output encoding
+- `shared/gateways/localApiGateway.ts`: popup bootstrap and analyze request shaping
 - `content/selection/snapshotStore.ts`: selection capture, fallback reuse, and guidance errors
-- `content/overlay/renderOverlay.ts`: DOM rendering, visibility toggles, and close interaction
+- `content/overlay/renderOverlay.ts`: DOM rendering, action controls, minimize/reopen flow, and background message dispatch
+- `popup/ui/renderPopup.ts`: popup status rendering, settings persistence, and overlay shortcut flow
 
 ## Smoke Launch Checks
 
 - Validate the canonical startup path with `uv run python -m pdf_epub_reader`.
+- Validate the browser API startup path with `uv run python -m browser_api`.
 - On Windows, also validate `.\gem-read_launch.ps1` to ensure the PowerShell wrapper still resolves the repository root correctly.
+
+## Browser Extension Manual Checks
+
+- Start `uv run python -m browser_api` before opening the extension popup.
+- In the popup, confirm `Reachable`, `Mock Mode`, or `Unreachable` matches the local API state.
+- With `GEMINI_API_KEY` unset, confirm popup can still reach the API and the overlay shows explicit mock-mode text.
+- After a selection-triggered request, confirm overlay action buttons can rerun explanation and custom prompt without recapturing the selection.
