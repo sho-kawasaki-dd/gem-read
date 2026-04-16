@@ -1,0 +1,1 @@
+from browser_api.api.app import app

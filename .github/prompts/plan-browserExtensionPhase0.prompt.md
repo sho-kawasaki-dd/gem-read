@@ -34,7 +34,7 @@
 - `browser-extension/src/content.ts` — 選択座標取得、簡易オーバーレイUIの描画
 
 **Verification**
-1. FastAPIサーバーを `uvicorn src.browser_api.main:app --reload` で起動し、エラーなく立ち上がるか（CORSの有効化）。
+1. FastAPIサーバーを `uv run uvicorn browser_api.main:app --reload` で起動し、エラーなく立ち上がるか（CORSの有効化）。
 2. ブラウザ上でテキストを選択して右クリック -> [翻訳テスト] をクリックした際、Content Script のオーバーレイに選択テキスト、正しく Crop された画像、AI の応答結果（またはモック）が表示されるか。
 3. 画像切り抜きのパフォーマンス（Canvas処理時間）がコンソールログ上で数ミリ秒〜数十ミリ秒以内に収まり、著しいラグを引き起こしていないか確認する。
 4. 拡張機能の manifest に `host_permissions` が含まれ、Background から `127.0.0.1` / `localhost` の両方へ疎通できることを確認する。

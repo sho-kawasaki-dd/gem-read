@@ -1,1 +1,3 @@
-console.log("Popup loaded");
+import { mountPopup } from './popup/entry';
+
+mountPopup();

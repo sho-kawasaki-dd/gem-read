@@ -1,0 +1,1 @@
+"""Browser extension local API package."""

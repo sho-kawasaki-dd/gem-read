@@ -1,0 +1,12 @@
+from __future__ import annotations
+
+from pdf_epub_reader.dto import AnalysisRequest, AnalysisResult
+from pdf_epub_reader.models.ai_model import AIModel
+
+
+class GemReadAIGateway:
+    def __init__(self, ai_model: AIModel) -> None:
+        self._ai_model = ai_model
+
+    async def analyze(self, request: AnalysisRequest) -> AnalysisResult:
+        return await self._ai_model.analyze(request)

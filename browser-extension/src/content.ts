@@ -1,1 +1,3 @@
-console.log("Gem Read Content Script Loaded");
+import { registerContentRuntime } from './content/entry';
+
+registerContentRuntime();
