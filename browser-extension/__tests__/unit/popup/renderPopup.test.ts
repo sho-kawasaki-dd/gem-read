@@ -1,0 +1,186 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import { EXTENSION_SETTINGS_STORAGE_KEY } from '../../../src/shared/config/phase0';
+import { renderPopup } from '../../../src/popup/ui/renderPopup';
+import { getChromeMock } from '../../mocks/chrome';
+
+function createJsonResponse(payload: unknown, status: number = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: vi.fn().mockResolvedValue(payload),
+    text: vi.fn().mockResolvedValue(JSON.stringify(payload)),
+  } as unknown as Response;
+}
+
+async function settle(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+describe('renderPopup', () => {
+  it('loads saved settings and renders live popup status', async () => {
+    document.body.innerHTML = '<div id="app"></div>';
+    const chromeMock = getChromeMock();
+    chromeMock.storage.local.set(
+      {
+        [EXTENSION_SETTINGS_STORAGE_KEY]: {
+          apiBaseUrl: 'http://127.0.0.1:8001',
+          defaultModel: 'gemini-2.5-pro',
+          lastKnownModels: ['gemini-2.5-pro'],
+        },
+      },
+      () => undefined,
+    );
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(createJsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          ok: true,
+          models: [
+            {
+              model_id: 'gemini-2.5-flash',
+              display_name: 'Gemini 2.5 Flash',
+            },
+          ],
+          source: 'live',
+          availability: 'live',
+          detail: null,
+          degraded_reason: null,
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await renderPopup(document);
+    await settle();
+
+    expect(document.querySelector('[data-role="status-badge"]')?.textContent).toContain('Reachable');
+    expect((document.querySelector('#api-base-url') as HTMLInputElement).value).toBe('http://127.0.0.1:8001');
+    expect((document.querySelector('#default-model') as HTMLInputElement).value).toBe('gemini-2.5-pro');
+    expect(document.querySelectorAll('#model-options option')).toHaveLength(1);
+    expect(chromeMock.storage.local.set).toHaveBeenCalledWith(
+      {
+        [EXTENSION_SETTINGS_STORAGE_KEY]: {
+          apiBaseUrl: 'http://127.0.0.1:8001',
+          defaultModel: 'gemini-2.5-pro',
+          lastKnownModels: ['gemini-2.5-flash'],
+        },
+      },
+      expect.any(Function),
+    );
+  });
+
+  it('saves popup settings with normalized values', async () => {
+    document.body.innerHTML = '<div id="app"></div>';
+    const chromeMock = getChromeMock();
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(createJsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          ok: true,
+          models: [
+            {
+              model_id: 'gemini-2.5-flash',
+              display_name: 'Gemini 2.5 Flash',
+            },
+          ],
+          source: 'live',
+          availability: 'live',
+          detail: null,
+          degraded_reason: null,
+        }),
+      )
+      .mockResolvedValueOnce(createJsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          ok: true,
+          models: [
+            {
+              model_id: 'gemini-2.5-pro',
+              display_name: 'Gemini 2.5 Pro',
+            },
+          ],
+          source: 'live',
+          availability: 'live',
+          detail: null,
+          degraded_reason: null,
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await renderPopup(document);
+    await settle();
+
+    const apiInput = document.querySelector('#api-base-url') as HTMLInputElement;
+    const defaultModelInput = document.querySelector('#default-model') as HTMLInputElement;
+    const form = document.querySelector('[data-role="settings-form"]') as HTMLFormElement;
+
+    apiInput.value = 'http://localhost:9001/';
+    defaultModelInput.value = ' gemini-2.5-pro ';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+
+    expect(chromeMock.storage.local.set).toHaveBeenCalledWith(
+      {
+        [EXTENSION_SETTINGS_STORAGE_KEY]: {
+          apiBaseUrl: 'http://localhost:9001',
+          defaultModel: 'gemini-2.5-pro',
+          lastKnownModels: ['gemini-2.5-flash'],
+        },
+      },
+      expect.any(Function),
+    );
+    expect(document.querySelector('[data-role="message-line"]')?.textContent).toContain('Settings saved.');
+  });
+
+  it('opens the overlay shortcut on the active tab', async () => {
+    document.body.innerHTML = '<div id="app"></div>';
+    const chromeMock = getChromeMock();
+    chromeMock.tabs.query.mockResolvedValue([{ id: 7 }] as chrome.tabs.Tab[]);
+    chromeMock.tabs.sendMessage.mockResolvedValue(undefined);
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(createJsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          ok: true,
+          models: [
+            {
+              model_id: 'gemini-2.5-pro',
+              display_name: 'Gemini 2.5 Pro',
+            },
+          ],
+          source: 'live',
+          availability: 'live',
+          detail: null,
+          degraded_reason: null,
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await renderPopup(document);
+    await settle();
+
+    const defaultModelInput = document.querySelector('#default-model') as HTMLInputElement;
+    defaultModelInput.value = 'gemini-2.5-pro';
+
+    (document.querySelector('[data-role="open-overlay-button"]') as HTMLButtonElement).click();
+    await settle();
+
+    expect(chromeMock.tabs.query).toHaveBeenCalledWith({ active: true, currentWindow: true });
+    expect(chromeMock.tabs.sendMessage).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({
+        type: 'phase0.renderOverlay',
+        payload: expect.objectContaining({
+          status: 'success',
+          modelName: 'gemini-2.5-pro',
+        }),
+      }),
+    );
+  });
+});

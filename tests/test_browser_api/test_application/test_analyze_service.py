@@ -8,16 +8,19 @@ import pytest
 from browser_api.application.dto import AnalyzeTranslateCommand
 from browser_api.application.errors import InvalidImagePayloadError, MissingModelError
 from browser_api.application.services.analyze_service import AnalyzeService
-from pdf_epub_reader.dto import AnalysisResult
+from pdf_epub_reader.dto import AnalysisResult, ModelInfo
 from pdf_epub_reader.utils.config import AppConfig
-from pdf_epub_reader.utils.exceptions import AIKeyMissingError
+from pdf_epub_reader.utils.exceptions import AIAPIError, AIKeyMissingError
 
 
 @dataclass
 class StubAIGateway:
     result: AnalysisResult | None = None
+    models_result: list[ModelInfo] | None = None
     error: Exception | None = None
+    model_error: Exception | None = None
     requests: list[object] | None = None
+    model_calls: int = 0
 
     async def analyze(self, request):
         if self.requests is not None:
@@ -27,18 +30,27 @@ class StubAIGateway:
         assert self.result is not None
         return self.result
 
+    async def list_available_models(self):
+        self.model_calls += 1
+        if self.model_error is not None:
+            raise self.model_error
+        assert self.models_result is not None
+        return self.models_result
+
 
 def _build_command(
     *,
     mode: str = "translation",
     model_name: str | None = None,
     images: list[str] | None = None,
+    custom_prompt: str | None = None,
 ):
     return AnalyzeTranslateCommand(
         text="Selected text",
         model_name=model_name,
         images=images or [],
         mode=mode,
+        custom_prompt=custom_prompt,
         selection_metadata={"url": "https://example.com/article"},
     )
 
@@ -97,6 +109,28 @@ class TestAnalyzeService:
         assert gateway.requests[0].include_explanation is True
 
     @pytest.mark.asyncio
+    async def test_custom_prompt_uses_custom_mode_and_prompt(self) -> None:
+        gateway = StubAIGateway(
+            result=AnalysisResult(raw_response="custom answer"),
+            requests=[],
+        )
+        service = AnalyzeService(
+            ai_gateway=gateway,
+            config=AppConfig(gemini_model_name="default-model"),
+        )
+
+        result = await service.analyze_translate(
+            _build_command(mode="custom_prompt", custom_prompt="Summarize this")
+        )
+
+        assert result.mode == "custom_prompt"
+        assert result.translated_text == "custom answer"
+        assert result.raw_response == "custom answer"
+        request = gateway.requests[0]
+        assert request.mode.value == "custom_prompt"
+        assert request.custom_prompt == "Summarize this"
+
+    @pytest.mark.asyncio
     async def test_falls_back_to_mock_when_api_key_is_missing(self) -> None:
         gateway = StubAIGateway(error=AIKeyMissingError("missing key"), requests=[])
         service = AnalyzeService(
@@ -113,6 +147,23 @@ class TestAnalyzeService:
         assert result.explanation is not None
         assert "Mock explanation" in result.raw_response
         assert result.selection_metadata == {"url": "https://example.com/article"}
+
+    @pytest.mark.asyncio
+    async def test_custom_prompt_mock_response_contains_prompt(self) -> None:
+        gateway = StubAIGateway(error=AIKeyMissingError("missing key"), requests=[])
+        service = AnalyzeService(
+            ai_gateway=gateway,
+            config=AppConfig(gemini_model_name="default-model"),
+        )
+
+        result = await service.analyze_translate(
+            _build_command(mode="custom_prompt", custom_prompt="Summarize")
+        )
+
+        assert result.used_mock is True
+        assert result.availability == "mock"
+        assert result.degraded_reason == "mock-response"
+        assert "Prompt: Summarize" in result.raw_response
 
     @pytest.mark.asyncio
     async def test_raises_missing_model_when_request_and_config_are_empty(self) -> None:
@@ -137,3 +188,60 @@ class TestAnalyzeService:
             await service.analyze_translate(
                 _build_command(images=["data:image/png;base64,not-base64!!!"])
             )
+
+    @pytest.mark.asyncio
+    async def test_list_models_returns_live_results_when_gateway_succeeds(self) -> None:
+        gateway = StubAIGateway(
+            models_result=[
+                ModelInfo(model_id="gemini-2.5-pro", display_name="Gemini 2.5 Pro"),
+            ]
+        )
+        service = AnalyzeService(
+            ai_gateway=gateway,
+            config=AppConfig(gemini_model_name="default-model"),
+        )
+
+        result = await service.list_models()
+
+        assert result.source == "live"
+        assert result.availability == "live"
+        assert result.models[0].model_id == "gemini-2.5-pro"
+
+    @pytest.mark.asyncio
+    async def test_list_models_falls_back_to_config_when_api_key_is_missing(self) -> None:
+        gateway = StubAIGateway(model_error=AIKeyMissingError("missing key"))
+        service = AnalyzeService(
+            ai_gateway=gateway,
+            config=AppConfig(
+                gemini_model_name="gemini-2.5-flash",
+                selected_models=["gemini-2.5-flash", "gemini-2.5-pro"],
+            ),
+        )
+
+        result = await service.list_models()
+
+        assert result.source == "config_fallback"
+        assert result.availability == "degraded"
+        assert result.degraded_reason == "mock-response"
+        assert [model.model_id for model in result.models] == [
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_list_models_falls_back_to_config_when_upstream_errors(self) -> None:
+        gateway = StubAIGateway(model_error=AIAPIError("upstream down", status_code=503))
+        service = AnalyzeService(
+            ai_gateway=gateway,
+            config=AppConfig(
+                gemini_model_name="gemini-2.5-flash",
+                selected_models=["gemini-2.5-pro"],
+            ),
+        )
+
+        result = await service.list_models()
+
+        assert result.source == "config_fallback"
+        assert result.availability == "degraded"
+        assert result.degraded_reason == "config-fallback"
+        assert "upstream down" in (result.detail or "")

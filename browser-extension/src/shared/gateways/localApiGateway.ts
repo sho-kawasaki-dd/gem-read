@@ -1,0 +1,182 @@
+import { PHASE0_API_BASE_URL } from '../config/phase0';
+import type {
+  AnalysisAction,
+  AnalyzeApiResponse,
+  DegradedReason,
+  ModelCatalogSource,
+  ModelListApiResponse,
+  ModelOption,
+  PopupConnectionStatus,
+  PopupStatusPayload,
+  SelectionCapturePayload,
+} from '../contracts/messages';
+
+interface RawAnalyzeApiResponse {
+  ok: boolean;
+  mode: AnalysisAction;
+  translated_text: string;
+  explanation: string | null;
+  raw_response: string;
+  used_mock: boolean;
+  image_count: number;
+  availability?: 'live' | 'mock';
+  degraded_reason?: DegradedReason | null;
+  selection_metadata?: Record<string, unknown> | null;
+}
+
+interface RawModelApiResponse {
+  model_id: string;
+  display_name: string;
+}
+
+interface RawModelListApiResponse {
+  ok: boolean;
+  models: RawModelApiResponse[];
+  source: Extract<ModelCatalogSource, 'live' | 'config_fallback'>;
+  availability: 'live' | 'degraded';
+  detail?: string;
+  degraded_reason?: DegradedReason | null;
+}
+
+interface RawHealthApiResponse {
+  status: string;
+}
+
+export interface SendAnalyzeRequestOptions {
+  action?: AnalysisAction;
+  apiBaseUrl?: string;
+  modelName?: string;
+  customPrompt?: string;
+}
+
+export interface PopupBootstrapResult {
+  status: PopupStatusPayload;
+  models: ModelOption[];
+}
+
+export async function sendAnalyzeTranslateRequest(
+  selection: SelectionCapturePayload,
+  imageDataUrl: string,
+  options: SendAnalyzeRequestOptions = {},
+): Promise<AnalyzeApiResponse> {
+  const apiBaseUrl = options.apiBaseUrl ?? PHASE0_API_BASE_URL;
+  const action = options.action ?? 'translation';
+  const response = await fetch(`${apiBaseUrl}/analyze/translate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text: selection.text,
+      images: [imageDataUrl],
+      mode: action,
+      model_name: options.modelName,
+      custom_prompt: options.customPrompt,
+      selection_metadata: {
+        url: selection.url,
+        page_title: selection.pageTitle,
+        viewport_width: selection.viewportWidth,
+        viewport_height: selection.viewportHeight,
+        device_pixel_ratio: selection.devicePixelRatio,
+        rect: selection.rect,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Local API request failed (${response.status}): ${errorText}`);
+  }
+
+  const payload = (await response.json()) as RawAnalyzeApiResponse;
+  return {
+    ok: payload.ok,
+    mode: payload.mode,
+    translated_text: payload.translated_text,
+    explanation: payload.explanation,
+    raw_response: payload.raw_response,
+    used_mock: payload.used_mock,
+    image_count: payload.image_count,
+    availability: payload.availability,
+    degraded_reason: payload.degraded_reason,
+    selection_metadata: payload.selection_metadata,
+  };
+}
+
+export async function fetchPopupBootstrap(
+  apiBaseUrl: string = PHASE0_API_BASE_URL,
+): Promise<PopupBootstrapResult> {
+  await fetchHealth(apiBaseUrl);
+
+  try {
+    const modelCatalog = await fetchModelCatalog(apiBaseUrl);
+    return {
+      status: {
+        connectionStatus: getConnectionStatus(modelCatalog),
+        availability: modelCatalog.availability,
+        apiBaseUrl,
+        checkedAt: new Date().toISOString(),
+        detail: modelCatalog.detail,
+        modelSource: modelCatalog.source,
+        degradedReason: modelCatalog.degradedReason,
+      },
+      models: modelCatalog.models,
+    };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'Failed to fetch model list.';
+    return {
+      status: {
+        connectionStatus: 'mock-mode',
+        availability: 'degraded',
+        apiBaseUrl,
+        checkedAt: new Date().toISOString(),
+        detail,
+        modelSource: 'storage_fallback',
+        degradedReason: 'config-fallback',
+      },
+      models: [],
+    };
+  }
+}
+
+async function fetchHealth(apiBaseUrl: string): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/health`);
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Local API health check failed (${response.status}): ${errorText}`);
+  }
+
+  const payload = (await response.json()) as RawHealthApiResponse;
+  if (payload.status !== 'ok') {
+    throw new Error(`Unexpected Local API health response: ${payload.status}`);
+  }
+}
+
+async function fetchModelCatalog(apiBaseUrl: string): Promise<ModelListApiResponse> {
+  const response = await fetch(`${apiBaseUrl}/models`);
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Local API model request failed (${response.status}): ${errorText}`);
+  }
+
+  const payload = (await response.json()) as RawModelListApiResponse;
+  return {
+    ok: payload.ok,
+    models: payload.models.map((model) => ({
+      modelId: model.model_id,
+      displayName: model.display_name,
+    })),
+    source: payload.source,
+    availability: payload.availability,
+    detail: payload.detail,
+    degradedReason: payload.degraded_reason ?? undefined,
+  };
+}
+
+function getConnectionStatus(modelCatalog: ModelListApiResponse): PopupConnectionStatus {
+  if (modelCatalog.availability === 'live' && modelCatalog.source === 'live') {
+    return 'reachable';
+  }
+
+  return 'mock-mode';
+}

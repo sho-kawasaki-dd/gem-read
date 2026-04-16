@@ -31,12 +31,43 @@ def test_translate_returns_response_payload(api_client, stub_analyze_service) ->
     payload = response.json()
     assert payload["ok"] is True
     assert payload["translated_text"] == "こんにちは"
+    assert payload["availability"] == "live"
     assert payload["selection_metadata"]["url"] == "https://example.com"
     assert len(stub_analyze_service.calls) == 1
     command = stub_analyze_service.calls[0]
     assert command.text == "Hello"
     assert command.images == ["data:image/png;base64,QUJD"]
     assert command.selection_metadata["page_title"] == "Example"
+
+
+def test_translate_accepts_custom_prompt_mode(api_client, stub_analyze_service) -> None:
+    response = api_client.post(
+        "/analyze/translate",
+        json={
+            "text": "Hello",
+            "images": [],
+            "mode": "custom_prompt",
+            "custom_prompt": "Summarize this",
+        },
+    )
+
+    assert response.status_code == 200
+    command = stub_analyze_service.calls[0]
+    assert command.mode == "custom_prompt"
+    assert command.custom_prompt == "Summarize this"
+
+
+def test_translate_rejects_custom_prompt_mode_without_prompt(api_client) -> None:
+    response = api_client.post(
+        "/analyze/translate",
+        json={
+            "text": "Hello",
+            "images": [],
+            "mode": "custom_prompt",
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_translate_returns_400_for_missing_model(api_client, stub_analyze_service) -> None:
@@ -82,6 +113,8 @@ def test_translate_rejects_empty_text(api_client, stub_analyze_service) -> None:
         raw_response="unused",
         used_mock=False,
         image_count=0,
+        availability="live",
+        degraded_reason=None,
         selection_metadata=None,
     )
 

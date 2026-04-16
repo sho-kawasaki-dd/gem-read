@@ -9,6 +9,8 @@ function createEventHook() {
 }
 
 export function createChromeMock(): typeof chrome {
+  const storageLocalState: Record<string, unknown> = {};
+
   return {
     tabs: {
       captureVisibleTab: vi.fn(),
@@ -16,6 +18,7 @@ export function createChromeMock(): typeof chrome {
       sendMessage: vi.fn(),
     },
     runtime: {
+      lastError: undefined,
       onInstalled: createEventHook(),
       onMessage: createEventHook(),
       onStartup: createEventHook(),
@@ -24,6 +27,53 @@ export function createChromeMock(): typeof chrome {
       create: vi.fn(),
       removeAll: vi.fn(),
       onClicked: createEventHook(),
+    },
+    storage: {
+      local: {
+        get: vi.fn((keys: string | string[] | Record<string, unknown> | null, callback: (items: Record<string, unknown>) => void) => {
+          if (typeof keys === 'string') {
+            callback({ [keys]: storageLocalState[keys] });
+            return;
+          }
+
+          if (Array.isArray(keys)) {
+            const items: Record<string, unknown> = {};
+            for (const key of keys) {
+              items[key] = storageLocalState[key];
+            }
+            callback(items);
+            return;
+          }
+
+          if (keys && typeof keys === 'object') {
+            const items: Record<string, unknown> = {};
+            for (const key of Object.keys(keys)) {
+              items[key] = storageLocalState[key] ?? keys[key];
+            }
+            callback(items);
+            return;
+          }
+
+          callback({ ...storageLocalState });
+        }),
+        set: vi.fn((items: Record<string, unknown>, callback?: () => void) => {
+          Object.assign(storageLocalState, items);
+          callback?.();
+        }),
+        remove: vi.fn((keys: string | string[], callback?: () => void) => {
+          const keyList = Array.isArray(keys) ? keys : [keys];
+          for (const key of keyList) {
+            delete storageLocalState[key];
+          }
+          callback?.();
+        }),
+        clear: vi.fn((callback?: () => void) => {
+          for (const key of Object.keys(storageLocalState)) {
+            delete storageLocalState[key];
+          }
+          callback?.();
+        }),
+      },
     },
   } as unknown as typeof chrome;
 }
