@@ -1,0 +1,35 @@
+name: browser_api tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  pytest-browser-api:
+    name: pytest browser_api
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync Python dependencies
+        run: uv sync --dev
+
+      - name: Run browser_api pytest subset
+        run: uv run pytest tests/test_browser_api/ -q

@@ -1,0 +1,48 @@
+name: browser extension playwright
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  playwright-smoke:
+    name: playwright smoke
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: browser-extension
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: browser-extension/package-lock.json
+
+      - name: Install browser extension dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+
+      - name: Run Playwright smoke suite
+        run: npm run test:e2e
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-artifacts
+          path: |
+            browser-extension/playwright-report
+            browser-extension/test-results
+          if-no-files-found: ignore

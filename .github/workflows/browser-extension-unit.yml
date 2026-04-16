@@ -1,0 +1,35 @@
+name: browser extension unit
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  vitest:
+    name: vitest
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: browser-extension
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: browser-extension/package-lock.json
+
+      - name: Install browser extension dependencies
+        run: npm ci
+
+      - name: Run Vitest suite
+        run: npm run test
