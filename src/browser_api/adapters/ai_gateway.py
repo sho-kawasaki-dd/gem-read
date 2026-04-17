@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pdf_epub_reader.dto import AnalysisRequest, AnalysisResult, ModelInfo
+from pdf_epub_reader.dto import AnalysisRequest, AnalysisResult, CacheStatus, ModelInfo
 from pdf_epub_reader.models.ai_model import AIModel
 
 
@@ -18,3 +18,25 @@ class GemReadAIGateway:
 
     async def list_available_models(self) -> list[ModelInfo]:
         return await self._ai_model.list_available_models()
+
+    async def count_tokens(self, text: str, *, model_name: str | None = None) -> int:
+        return await self._ai_model.count_tokens(text, model_name=model_name)
+
+    async def create_cache(
+        self,
+        full_text: str,
+        *,
+        model_name: str | None = None,
+        display_name: str | None = None,
+    ) -> CacheStatus:
+        return await self._ai_model.create_cache(
+            full_text,
+            model_name=model_name,
+            display_name=display_name,
+        )
+
+    async def get_cache_status(self) -> CacheStatus:
+        return await self._ai_model.get_cache_status()
+
+    async def delete_cache(self, cache_name: str) -> None:
+        await self._ai_model.delete_cache(cache_name)

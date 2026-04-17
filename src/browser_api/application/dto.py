@@ -74,3 +74,48 @@ class ModelCatalogResult:
     availability: Literal["live", "degraded"]
     detail: str | None = None
     degraded_reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CacheCreateCommand:
+    """Application-layer request for creating a single active context cache."""
+
+    full_text: str
+    model_name: str | None
+    display_name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CacheStatusResult:
+    """Normalized cache status exposed by browser_api."""
+
+    is_active: bool = False
+    ttl_seconds: int | None = None
+    token_count: int | None = None
+    cache_name: str | None = None
+    display_name: str | None = None
+    model_name: str | None = None
+    expire_time: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CacheDeleteResult:
+    """Deletion acknowledgement returned after a cache delete request."""
+
+    cache_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class TokenCountCommand:
+    """Application-layer request for token preflight estimation."""
+
+    text: str
+    model_name: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class TokenCountResult:
+    """Normalized token counting result for extension UX."""
+
+    token_count: int
+    model_name: str

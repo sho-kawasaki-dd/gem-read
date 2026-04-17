@@ -6,17 +6,23 @@ from dataclasses import dataclass
 
 from browser_api.adapters.ai_gateway import GemReadAIGateway
 from browser_api.application.dto import (
+    CacheCreateCommand,
+    CacheDeleteResult,
+    CacheStatusResult,
     AnalyzeTranslateCommand,
     AnalyzeTranslateResult,
     ModelCatalogResult,
+    TokenCountCommand,
+    TokenCountResult,
 )
 from browser_api.application.errors import (
     InvalidImagePayloadError,
     MissingModelError,
+    UnsupportedCacheModelError,
 )
-from pdf_epub_reader.dto import AnalysisMode, AnalysisRequest, ModelInfo
+from pdf_epub_reader.dto import AnalysisMode, AnalysisRequest, CacheStatus, ModelInfo
 from pdf_epub_reader.utils.config import AppConfig
-from pdf_epub_reader.utils.exceptions import AIAPIError, AIKeyMissingError
+from pdf_epub_reader.utils.exceptions import AICacheError, AIAPIError, AIKeyMissingError
 
 logger = logging.getLogger(__name__)
 _IMAGE_ONLY_PLACEHOLDER = "[image-only selection]"
@@ -100,6 +106,54 @@ class AnalyzeService:
                 ),
                 degraded_reason="config-fallback",
             )
+
+    async def count_tokens(
+        self,
+        command: TokenCountCommand,
+    ) -> TokenCountResult:
+        """Count tokens for a candidate text payload using the resolved Gemini model."""
+
+        resolved_model_name = self._resolve_model_name(command.model_name)
+        token_count = await self.ai_gateway.count_tokens(
+            command.text,
+            model_name=resolved_model_name,
+        )
+        return TokenCountResult(
+            token_count=token_count,
+            model_name=resolved_model_name,
+        )
+
+    async def create_cache(
+        self,
+        command: CacheCreateCommand,
+    ) -> CacheStatusResult:
+        """Create a context cache using the resolved Gemini model and normalize the result."""
+
+        resolved_model_name = self._resolve_model_name(command.model_name)
+        try:
+            status = await self.ai_gateway.create_cache(
+                command.full_text,
+                model_name=resolved_model_name,
+                display_name=command.display_name,
+            )
+        except AICacheError as exc:
+            if self._is_unsupported_cache_model_error(exc):
+                raise UnsupportedCacheModelError(str(exc)) from exc
+            raise
+
+        return self._to_cache_status_result(status)
+
+    async def get_cache_status(self) -> CacheStatusResult:
+        """Return the currently active cache status from the AI gateway."""
+
+        status = await self.ai_gateway.get_cache_status()
+        return self._to_cache_status_result(status)
+
+    async def delete_cache(self, cache_name: str) -> CacheDeleteResult:
+        """Delete a named cache and return a stable acknowledgement payload."""
+
+        await self.ai_gateway.delete_cache(cache_name)
+        return CacheDeleteResult(cache_name=cache_name)
 
     def _build_ai_request(
         self,
@@ -205,4 +259,25 @@ class AnalyzeService:
             availability="mock",
             degraded_reason="mock-response",
             selection_metadata=command.selection_metadata,
+        )
+
+    @staticmethod
+    def _to_cache_status_result(status: CacheStatus) -> CacheStatusResult:
+        return CacheStatusResult(
+            is_active=status.is_active,
+            ttl_seconds=status.ttl_seconds,
+            token_count=status.token_count,
+            cache_name=status.cache_name,
+            display_name=status.display_name,
+            model_name=status.model_name,
+            expire_time=status.expire_time,
+        )
+
+    @staticmethod
+    def _is_unsupported_cache_model_error(error: AICacheError) -> bool:
+        normalized = str(error).lower()
+        return (
+            "サポートしていません" in str(error)
+            or "not support" in normalized
+            or "not supported for createcachedcontent" in normalized
         )

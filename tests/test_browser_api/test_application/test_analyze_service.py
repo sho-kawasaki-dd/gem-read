@@ -6,11 +6,16 @@ from dataclasses import dataclass
 import pytest
 
 from browser_api.application.dto import AnalyzeTranslateCommand
-from browser_api.application.errors import InvalidImagePayloadError, MissingModelError
+from browser_api.application.dto import CacheCreateCommand, TokenCountCommand
+from browser_api.application.errors import (
+    InvalidImagePayloadError,
+    MissingModelError,
+    UnsupportedCacheModelError,
+)
 from browser_api.application.services.analyze_service import AnalyzeService
-from pdf_epub_reader.dto import AnalysisResult, ModelInfo
+from pdf_epub_reader.dto import AnalysisResult, CacheStatus, ModelInfo
 from pdf_epub_reader.utils.config import AppConfig
-from pdf_epub_reader.utils.exceptions import AIAPIError, AIKeyMissingError
+from pdf_epub_reader.utils.exceptions import AICacheError, AIAPIError, AIKeyMissingError
 
 
 @dataclass
@@ -21,8 +26,18 @@ class StubAIGateway:
     models_result: list[ModelInfo] | None = None
     error: Exception | None = None
     model_error: Exception | None = None
+    token_result: int | None = None
+    token_error: Exception | None = None
+    cache_result: CacheStatus | None = None
+    cache_create_error: Exception | None = None
+    cache_status_error: Exception | None = None
+    delete_cache_error: Exception | None = None
     requests: list[object] | None = None
     model_calls: int = 0
+    token_calls: list[object] | None = None
+    cache_create_calls: list[object] | None = None
+    cache_status_calls: int = 0
+    delete_cache_calls: list[str] | None = None
 
     async def analyze(self, request):
         if self.requests is not None:
@@ -38,6 +53,47 @@ class StubAIGateway:
             raise self.model_error
         assert self.models_result is not None
         return self.models_result
+
+    async def count_tokens(self, text: str, *, model_name: str | None = None):
+        if self.token_calls is not None:
+            self.token_calls.append({"text": text, "model_name": model_name})
+        if self.token_error is not None:
+            raise self.token_error
+        assert self.token_result is not None
+        return self.token_result
+
+    async def create_cache(
+        self,
+        full_text: str,
+        *,
+        model_name: str | None = None,
+        display_name: str | None = None,
+    ):
+        if self.cache_create_calls is not None:
+            self.cache_create_calls.append(
+                {
+                    "full_text": full_text,
+                    "model_name": model_name,
+                    "display_name": display_name,
+                }
+            )
+        if self.cache_create_error is not None:
+            raise self.cache_create_error
+        assert self.cache_result is not None
+        return self.cache_result
+
+    async def get_cache_status(self):
+        self.cache_status_calls += 1
+        if self.cache_status_error is not None:
+            raise self.cache_status_error
+        assert self.cache_result is not None
+        return self.cache_result
+
+    async def delete_cache(self, cache_name: str):
+        if self.delete_cache_calls is not None:
+            self.delete_cache_calls.append(cache_name)
+        if self.delete_cache_error is not None:
+            raise self.delete_cache_error
 
 
 def _build_command(
@@ -285,3 +341,120 @@ class TestAnalyzeService:
         assert result.availability == "degraded"
         assert result.degraded_reason == "config-fallback"
         assert "upstream down" in (result.detail or "")
+
+    @pytest.mark.asyncio
+    async def test_count_tokens_uses_requested_model(self) -> None:
+        gateway = StubAIGateway(token_result=321, token_calls=[])
+        service = AnalyzeService(
+            ai_gateway=gateway,
+            config=AppConfig(gemini_model_name="default-model"),
+        )
+
+        result = await service.count_tokens(
+            TokenCountCommand(text="Article body", model_name="gemini-2.5-flash")
+        )
+
+        assert result.token_count == 321
+        assert result.model_name == "gemini-2.5-flash"
+        assert gateway.token_calls == [
+            {"text": "Article body", "model_name": "gemini-2.5-flash"}
+        ]
+
+    @pytest.mark.asyncio
+    async def test_create_cache_returns_normalized_status(self) -> None:
+        gateway = StubAIGateway(
+            cache_result=CacheStatus(
+                is_active=True,
+                ttl_seconds=3600,
+                token_count=2048,
+                cache_name="cachedContents/abc123",
+                display_name="example-article",
+                model_name="gemini-2.5-flash",
+                expire_time="2026-04-17T10:00:00+00:00",
+            ),
+            cache_create_calls=[],
+        )
+        service = AnalyzeService(
+            ai_gateway=gateway,
+            config=AppConfig(gemini_model_name="default-model"),
+        )
+
+        result = await service.create_cache(
+            CacheCreateCommand(
+                full_text="Long article body",
+                model_name="gemini-2.5-flash",
+                display_name="example-article",
+            )
+        )
+
+        assert result.is_active is True
+        assert result.cache_name == "cachedContents/abc123"
+        assert gateway.cache_create_calls == [
+            {
+                "full_text": "Long article body",
+                "model_name": "gemini-2.5-flash",
+                "display_name": "example-article",
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_get_cache_status_returns_inactive_when_no_cache_exists(self) -> None:
+        gateway = StubAIGateway(cache_result=CacheStatus(is_active=False))
+        service = AnalyzeService(
+            ai_gateway=gateway,
+            config=AppConfig(gemini_model_name="default-model"),
+        )
+
+        result = await service.get_cache_status()
+
+        assert result.is_active is False
+        assert gateway.cache_status_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_delete_cache_returns_acknowledgement(self) -> None:
+        gateway = StubAIGateway(delete_cache_calls=[])
+        service = AnalyzeService(
+            ai_gateway=gateway,
+            config=AppConfig(gemini_model_name="default-model"),
+        )
+
+        result = await service.delete_cache("cachedContents/abc123")
+
+        assert result.cache_name == "cachedContents/abc123"
+        assert gateway.delete_cache_calls == ["cachedContents/abc123"]
+
+    @pytest.mark.asyncio
+    async def test_create_cache_raises_unsupported_cache_model_for_supported_error_text(self) -> None:
+        gateway = StubAIGateway(
+            cache_create_error=AICacheError(
+                "このモデルはコンテキストキャッシュをサポートしていません: gemini-2.5-flash-lite"
+            )
+        )
+        service = AnalyzeService(
+            ai_gateway=gateway,
+            config=AppConfig(gemini_model_name="default-model"),
+        )
+
+        with pytest.raises(UnsupportedCacheModelError):
+            await service.create_cache(
+                CacheCreateCommand(
+                    full_text="Long article body",
+                    model_name="gemini-2.5-flash-lite",
+                )
+            )
+
+    @pytest.mark.asyncio
+    async def test_create_cache_propagates_generic_cache_errors(self) -> None:
+        gateway = StubAIGateway(cache_create_error=AICacheError("Gemini cache upstream failed"))
+        service = AnalyzeService(
+            ai_gateway=gateway,
+            config=AppConfig(gemini_model_name="default-model"),
+        )
+
+        with pytest.raises(AICacheError):
+            await service.create_cache(
+                CacheCreateCommand(
+                    full_text="Long article body",
+                    model_name="gemini-2.5-flash",
+                )
+            )
