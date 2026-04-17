@@ -45,6 +45,10 @@ export function registerBackgroundRuntime(): void {
     void ensurePhase0ContextMenu();
   });
 
+  chrome.tabs.onRemoved?.addListener((tabId) => {
+    void clearAnalysisSession(tabId);
+  });
+
   chrome.contextMenus.onClicked.addListener((info, tab) => {
     if (!tab?.id) {
       return;
@@ -72,28 +76,24 @@ export function registerBackgroundRuntime(): void {
         message.type === 'phase1.cacheOverlaySession' &&
         sender.tab?.id !== undefined
       ) {
-        // Overlay 上の再実行は再選択を要求しないため、直前の selection/crop 結果を tab 単位で保持する。
-        cacheOverlaySession(sender.tab.id, message);
-        sendResponse({ ok: true });
-        return false;
+        void handleCacheOverlaySession(sender.tab.id, message, sendResponse);
+        return true;
       }
 
       if (
         message.type === 'phase2.clearOverlaySession' &&
         sender.tab?.id !== undefined
       ) {
-        clearAnalysisSession(sender.tab.id);
-        sendResponse({ ok: true });
-        return false;
+        void handleClearOverlaySession(sender.tab.id, sendResponse);
+        return true;
       }
 
       if (
         message.type === 'phase2.cacheBatchOverlaySession' &&
         sender.tab?.id !== undefined
       ) {
-        cacheBatchOverlaySession(sender.tab.id, message);
-        sendResponse({ ok: true });
-        return false;
+        void handleCacheBatchOverlaySession(sender.tab.id, message, sendResponse);
+        return true;
       }
 
       if (message.type === 'phase3.openOverlay') {
@@ -160,22 +160,22 @@ async function handleBrowserCommand(
   }
 }
 
-function cacheOverlaySession(
+async function cacheOverlaySession(
   tabId: number,
   message: CacheOverlaySessionMessage
-): void {
-  setAnalysisSession(tabId, {
+): Promise<void> {
+  await setAnalysisSession(tabId, {
     items: [message.payload.item],
     modelOptions: message.payload.modelOptions,
     lastAction: 'translation',
   });
 }
 
-function cacheBatchOverlaySession(
+async function cacheBatchOverlaySession(
   tabId: number,
   message: CacheBatchOverlaySessionMessage
-): void {
-  setAnalysisSession(tabId, {
+): Promise<void> {
+  await setAnalysisSession(tabId, {
     items: message.payload.items.map((item) => ({
       ...item,
       selection: {
@@ -188,6 +188,54 @@ function cacheBatchOverlaySession(
     lastModelName: message.payload.lastModelName,
     lastCustomPrompt: message.payload.lastCustomPrompt,
   });
+}
+
+async function handleCacheOverlaySession(
+  tabId: number,
+  message: CacheOverlaySessionMessage,
+  sendResponse: (response: { ok: boolean; error?: string }) => void
+): Promise<void> {
+  try {
+    await cacheOverlaySession(tabId, message);
+    sendResponse({ ok: true });
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      error:
+        error instanceof Error ? error.message : 'Failed to cache overlay session.',
+    });
+  }
+}
+
+async function handleCacheBatchOverlaySession(
+  tabId: number,
+  message: CacheBatchOverlaySessionMessage,
+  sendResponse: (response: { ok: boolean; error?: string }) => void
+): Promise<void> {
+  try {
+    await cacheBatchOverlaySession(tabId, message);
+    sendResponse({ ok: true });
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Failed to cache batch overlay session.',
+    });
+  }
+}
+
+async function handleClearOverlaySession(
+  tabId: number,
+  sendResponse: (response: { ok: boolean }) => void
+): Promise<void> {
+  try {
+    await clearAnalysisSession(tabId);
+    sendResponse({ ok: true });
+  } catch {
+    sendResponse({ ok: false });
+  }
 }
 
 async function handleOpenOverlayRequest(

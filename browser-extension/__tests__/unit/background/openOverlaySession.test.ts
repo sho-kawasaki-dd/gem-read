@@ -18,9 +18,9 @@ import {
 import { openOverlaySession } from '../../../src/background/usecases/openOverlaySession';
 
 describe('openOverlaySession', () => {
-	beforeEach(() => {
+	beforeEach(async () => {
 		vi.clearAllMocks();
-		clearAnalysisSession(7);
+		await clearAnalysisSession(7);
 		loadExtensionSettingsMock.mockResolvedValue({
 			apiBaseUrl: 'http://127.0.0.1:9000',
 			defaultModel: 'gemini-2.5-flash',
@@ -29,7 +29,7 @@ describe('openOverlaySession', () => {
 	});
 
 	it('renders the cached batch session when one exists', async () => {
-		setAnalysisSession(7, {
+		await setAnalysisSession(7, {
 			items: [
 				{
 					id: 'selection-1',

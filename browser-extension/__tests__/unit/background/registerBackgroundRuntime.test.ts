@@ -43,9 +43,9 @@ import {
 } from '../../../src/shared/config/phase0';
 
 describe('registerBackgroundRuntime', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    clearAnalysisSession(7);
+    await clearAnalysisSession(7);
   });
 
   function getContextMenuHandler() {
@@ -82,6 +82,7 @@ describe('registerBackgroundRuntime', () => {
     expect(chromeMock.contextMenus.onClicked.addListener).toHaveBeenCalledTimes(
       1
     );
+    expect(chromeMock.tabs.onRemoved.addListener).toHaveBeenCalledTimes(1);
     expect(chromeMock.runtime.onMessage.addListener).toHaveBeenCalledTimes(1);
     expect(chromeMock.commands.onCommand.addListener).toHaveBeenCalledTimes(1);
   });
@@ -167,7 +168,7 @@ describe('registerBackgroundRuntime', () => {
     });
   });
 
-  it('stores the cached overlay session as a batch item', () => {
+  it('stores the cached overlay session as a batch item', async () => {
     registerBackgroundRuntime();
 
     const handler = getRuntimeMessageHandler();
@@ -199,13 +200,16 @@ describe('registerBackgroundRuntime', () => {
       sendResponse
     );
 
-    expect(keepChannelOpen).toBe(false);
-    expect(sendResponse).toHaveBeenCalledWith({ ok: true });
-    expect(getAnalysisSession(7)?.items).toHaveLength(1);
-    expect(getAnalysisSession(7)?.items[0]?.id).toBe('selection-1');
+    expect(keepChannelOpen).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect((await getAnalysisSession(7))?.items).toHaveLength(1);
+    expect((await getAnalysisSession(7))?.items[0]?.id).toBe('selection-1');
   });
 
-  it('clears the cached session when the overlay closes', () => {
+  it('clears the cached session when the overlay closes', async () => {
     registerBackgroundRuntime();
 
     const handler = getRuntimeMessageHandler();
@@ -235,6 +239,10 @@ describe('registerBackgroundRuntime', () => {
       { tab: { id: 7 } },
       vi.fn()
     );
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
 
     const sendResponse = vi.fn();
     const keepChannelOpen = handler(
@@ -245,9 +253,13 @@ describe('registerBackgroundRuntime', () => {
       sendResponse
     );
 
-    expect(keepChannelOpen).toBe(false);
+    expect(keepChannelOpen).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     expect(sendResponse).toHaveBeenCalledWith({ ok: true });
-    expect(getAnalysisSession(7)).toBeUndefined();
+    expect(await getAnalysisSession(7)).toBeUndefined();
   });
 
   it('delegates session item append requests to the updateSelectionSession usecase', async () => {
@@ -369,5 +381,51 @@ describe('registerBackgroundRuntime', () => {
     });
     expect(openOverlaySessionMock).toHaveBeenCalledWith(7);
     expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it('clears the cached session when the tab is removed', async () => {
+    registerBackgroundRuntime();
+
+    const onRemovedHandler = (
+      getChromeMock().tabs.onRemoved.addListener as unknown as ReturnType<
+        typeof vi.fn
+      >
+    ).mock.calls[0][0] as (tabId: number) => void;
+
+    const handler = getRuntimeMessageHandler();
+    handler(
+      {
+        type: 'phase1.cacheOverlaySession',
+        payload: {
+          item: {
+            id: 'selection-1',
+            source: 'text-selection',
+            selection: {
+              text: 'Selected text',
+              rect: { left: 1, top: 2, width: 3, height: 4 },
+              viewportWidth: 100,
+              viewportHeight: 100,
+              devicePixelRatio: 1,
+              url: 'https://example.com',
+              pageTitle: 'Example',
+            },
+            includeImage: true,
+            previewImageUrl: 'data:image/webp;base64,crop',
+            cropDurationMs: 12,
+          },
+          modelOptions: [],
+        },
+      },
+      { tab: { id: 7 } },
+      vi.fn()
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    onRemovedHandler(7);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(await getAnalysisSession(7)).toBeUndefined();
   });
 });

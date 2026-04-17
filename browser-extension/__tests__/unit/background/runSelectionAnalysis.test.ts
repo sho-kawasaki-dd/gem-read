@@ -31,9 +31,9 @@ import { runSelectionAnalysis } from '../../../src/background/usecases/runSelect
 
 // selection capture、crop、API 呼び出し、overlay 更新の orchestration を固定する suite。
 describe('runSelectionAnalysis', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    clearAnalysisSession(7);
+    await clearAnalysisSession(7);
     loadExtensionSettingsMock.mockResolvedValue({
       apiBaseUrl: 'http://127.0.0.1:9000',
       defaultModel: 'gemini-2.5-flash',

@@ -31,7 +31,7 @@ export async function appendSelectionSessionItem(
     throw new Error('Active tab could not be resolved.');
   }
 
-  const existingSession = getAnalysisSession(tabId);
+  const existingSession = await getAnalysisSession(tabId);
   if ((existingSession?.items.length ?? 0) >= MAX_SELECTION_SESSION_ITEMS) {
     throw new Error(
       `You can keep up to ${MAX_SELECTION_SESSION_ITEMS} selections in one batch.`
@@ -63,7 +63,7 @@ export async function appendSelectionSessionItem(
     lastCustomPrompt: existingSession?.lastCustomPrompt,
   };
 
-  setAnalysisSession(tabId, nextSession);
+  await setAnalysisSession(tabId, nextSession);
   await renderOverlay(tabId, buildOverlayPayload(nextSession));
   return nextItem;
 }
@@ -82,7 +82,7 @@ export async function appendLiveSelectionSessionItem(
       selection.error ??
       'A live text selection is required. Select text on the page and try again.';
     const settings = await loadExtensionSettings();
-    const session = getAnalysisSession(tabId);
+    const session = await getAnalysisSession(tabId);
     await renderOverlay(
       tabId,
       session
@@ -109,7 +109,7 @@ export async function removeSelectionSessionItem(
   tabId: number,
   itemId: string
 ): Promise<void> {
-  const session = getAnalysisSession(tabId);
+  const session = await getAnalysisSession(tabId);
   if (!session) {
     return;
   }
@@ -120,7 +120,7 @@ export async function removeSelectionSessionItem(
   }
 
   if (nextItems.length === 0) {
-    clearAnalysisSession(tabId);
+    await clearAnalysisSession(tabId);
     await renderOverlay(tabId, {
       status: 'success',
       action: session.lastAction,
@@ -141,7 +141,7 @@ export async function removeSelectionSessionItem(
     modelOptions: [...session.modelOptions],
   };
 
-  setAnalysisSession(tabId, nextSession);
+  await setAnalysisSession(tabId, nextSession);
   await renderOverlay(tabId, buildOverlayPayload(nextSession));
 }
 
@@ -150,7 +150,7 @@ export async function toggleSelectionSessionItemImage(
   itemId: string,
   includeImage: boolean
 ): Promise<void> {
-  const session = getAnalysisSession(tabId);
+  const session = await getAnalysisSession(tabId);
   if (!session) {
     throw new Error('Analysis session could not be found.');
   }
@@ -182,7 +182,7 @@ export async function toggleSelectionSessionItemImage(
     modelOptions: [...session.modelOptions],
   };
 
-  setAnalysisSession(tabId, nextSession);
+  await setAnalysisSession(tabId, nextSession);
   await renderOverlay(tabId, buildOverlayPayload(nextSession));
 }
 

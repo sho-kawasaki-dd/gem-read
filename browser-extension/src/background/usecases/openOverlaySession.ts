@@ -7,7 +7,7 @@ import {
 } from './updateSelectionSession';
 
 export async function openOverlaySession(tabId: number): Promise<void> {
-	const session = getAnalysisSession(tabId);
+	const session = await getAnalysisSession(tabId);
 	if (session?.items.length) {
 		await renderOverlay(
 			tabId,

@@ -31,9 +31,9 @@ import {
 import { getChromeMock } from '../../mocks/chrome';
 
 describe('updateSelectionSession', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    clearAnalysisSession(7);
+    await clearAnalysisSession(7);
     loadExtensionSettingsMock.mockResolvedValue({
       apiBaseUrl: 'http://127.0.0.1:9000',
       defaultModel: 'gemini-2.5-flash',
@@ -78,7 +78,7 @@ describe('updateSelectionSession', () => {
     );
 
     expect(item.includeImage).toBe(false);
-    expect(getAnalysisSession(7)?.items).toHaveLength(1);
+    expect((await getAnalysisSession(7))?.items).toHaveLength(1);
     expect(renderOverlayMock).toHaveBeenCalledWith(
       7,
       expect.objectContaining({
@@ -186,7 +186,7 @@ describe('updateSelectionSession', () => {
 
     await removeSelectionSessionItem(7, item.id);
 
-    expect(getAnalysisSession(7)).toBeUndefined();
+    expect(await getAnalysisSession(7)).toBeUndefined();
     expect(renderOverlayMock).toHaveBeenLastCalledWith(
       7,
       expect.objectContaining({
@@ -218,7 +218,7 @@ describe('updateSelectionSession', () => {
 
     await toggleSelectionSessionItemImage(7, item.id, true);
 
-    expect(getAnalysisSession(7)?.items[0].includeImage).toBe(true);
+    expect((await getAnalysisSession(7))?.items[0].includeImage).toBe(true);
     expect(chromeMock.tabs.captureVisibleTab).toHaveBeenCalledTimes(1);
     expect(renderOverlayMock).toHaveBeenLastCalledWith(
       7,

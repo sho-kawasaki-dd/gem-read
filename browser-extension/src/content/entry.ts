@@ -29,6 +29,9 @@ import {
 export function registerContentRuntime(): void {
   console.log('Gem Read Content Script Loaded');
   startSelectionTracking();
+  void chrome.runtime.sendMessage({
+    type: 'phase2.clearOverlaySession',
+  });
 
   chrome.runtime.onMessage.addListener(
     (message: ContentScriptMessage, _sender, sendResponse) => {

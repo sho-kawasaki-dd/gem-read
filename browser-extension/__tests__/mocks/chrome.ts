@@ -11,11 +11,13 @@ function createEventHook() {
 export function createChromeMock(): typeof chrome {
   // storage を含む最小 mock を共有し、suite ごとの ad hoc 実装差を避ける。
   const storageLocalState: Record<string, unknown> = {};
+  const storageSessionState: Record<string, unknown> = {};
 
   return {
     tabs: {
       captureVisibleTab: vi.fn(),
       get: vi.fn(),
+      onRemoved: createEventHook(),
       query: vi.fn(),
       sendMessage: vi.fn(),
     },
@@ -81,6 +83,56 @@ export function createChromeMock(): typeof chrome {
         clear: vi.fn((callback?: () => void) => {
           for (const key of Object.keys(storageLocalState)) {
             delete storageLocalState[key];
+          }
+          callback?.();
+        }),
+      },
+      session: {
+        get: vi.fn(
+          (
+            keys: string | string[] | Record<string, unknown> | null,
+            callback: (items: Record<string, unknown>) => void
+          ) => {
+            if (typeof keys === 'string') {
+              callback({ [keys]: storageSessionState[keys] });
+              return;
+            }
+
+            if (Array.isArray(keys)) {
+              const items: Record<string, unknown> = {};
+              for (const key of keys) {
+                items[key] = storageSessionState[key];
+              }
+              callback(items);
+              return;
+            }
+
+            if (keys && typeof keys === 'object') {
+              const items: Record<string, unknown> = {};
+              for (const key of Object.keys(keys)) {
+                items[key] = storageSessionState[key] ?? keys[key];
+              }
+              callback(items);
+              return;
+            }
+
+            callback({ ...storageSessionState });
+          }
+        ),
+        set: vi.fn((items: Record<string, unknown>, callback?: () => void) => {
+          Object.assign(storageSessionState, items);
+          callback?.();
+        }),
+        remove: vi.fn((keys: string | string[], callback?: () => void) => {
+          const keyList = Array.isArray(keys) ? keys : [keys];
+          for (const key of keyList) {
+            delete storageSessionState[key];
+          }
+          callback?.();
+        }),
+        clear: vi.fn((callback?: () => void) => {
+          for (const key of Object.keys(storageSessionState)) {
+            delete storageSessionState[key];
           }
           callback?.();
         }),

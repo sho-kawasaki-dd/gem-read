@@ -51,7 +51,7 @@ export async function runSelectionAnalysis(
     options
   );
   const modelOptions = buildModelOptions(settings);
-  const cachedSession = getCachedSession(tabId);
+  const cachedSession = await getCachedSession(tabId);
   const reusableSession = options.reuseCachedSession ? cachedSession : undefined;
 
   try {
@@ -82,7 +82,7 @@ export async function runSelectionAnalysis(
       resolvedRequestOptions
     );
 
-    setAnalysisSession(tabId, {
+    await setAnalysisSession(tabId, {
       ...session,
       lastAction: apiResponse.mode,
       lastModelName: resolvedRequestOptions.modelName,
@@ -113,15 +113,16 @@ export async function runSelectionAnalysis(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : '不明なエラーが発生しました。';
+    const availableSession = reusableSession ?? (await getCachedSession(tabId));
     await renderOverlay(tabId, {
       status: 'error',
       action: resolvedRequestOptions.action,
       modelName: resolvedRequestOptions.modelName,
       modelOptions,
-      sessionItems: reusableSession?.items ?? getCachedSession(tabId)?.items,
+      sessionItems: availableSession?.items,
       maxSessionItems: MAX_SELECTION_SESSION_ITEMS,
       customPrompt: resolvedRequestOptions.customPrompt,
-      sessionReady: Boolean(reusableSession || getCachedSession(tabId)),
+      sessionReady: Boolean(availableSession),
       selectedText: fallbackSelectionText,
       error: message,
     });
@@ -136,7 +137,7 @@ async function resolveAnalysisSession(
   reuseCachedSession: boolean
 ): Promise<SelectionAnalysisSession> {
   if (reuseCachedSession) {
-    const session = getCachedSession(tabId);
+    const session = await getCachedSession(tabId);
     if (session?.items.length) {
       return session;
     }
@@ -189,12 +190,14 @@ async function createFreshSession(
     modelOptions,
     lastAction: 'translation',
   };
-  setAnalysisSession(tabId, session);
+  await setAnalysisSession(tabId, session);
   return session;
 }
 
-function getCachedSession(tabId: number): SelectionAnalysisSession | undefined {
-  const session = getAnalysisSession(tabId);
+async function getCachedSession(
+  tabId: number
+): Promise<SelectionAnalysisSession | undefined> {
+  const session = await getAnalysisSession(tabId);
   if (!session) {
     return undefined;
   }
