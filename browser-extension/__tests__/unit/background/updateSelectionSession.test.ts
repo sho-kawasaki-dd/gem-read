@@ -23,6 +23,7 @@ import {
 import {
   appendSelectionSessionItem,
   removeSelectionSessionItem,
+  toggleSelectionSessionItemImage,
 } from '../../../src/background/usecases/updateSelectionSession';
 import { getChromeMock } from '../../mocks/chrome';
 
@@ -100,6 +101,38 @@ describe('updateSelectionSession', () => {
       expect.objectContaining({
         sessionReady: false,
         sessionItems: [],
+      })
+    );
+  });
+
+  it('toggles image inclusion for an existing session item without recapturing', async () => {
+    const chromeMock = getChromeMock();
+    (chromeMock.tabs.captureVisibleTab as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      'data:image/png;base64,shot'
+    );
+
+    const item = await appendSelectionSessionItem(
+      { id: 7, windowId: 3 } as chrome.tabs.Tab,
+      {
+        text: 'Selected text',
+        rect: { left: 1, top: 2, width: 3, height: 4 },
+        viewportWidth: 100,
+        viewportHeight: 100,
+        devicePixelRatio: 1,
+        url: 'https://example.com',
+        pageTitle: 'Example',
+      },
+      'text-selection'
+    );
+
+    await toggleSelectionSessionItemImage(7, item.id, true);
+
+    expect(getAnalysisSession(7)?.items[0].includeImage).toBe(true);
+    expect(chromeMock.tabs.captureVisibleTab).toHaveBeenCalledTimes(1);
+    expect(renderOverlayMock).toHaveBeenLastCalledWith(
+      7,
+      expect.objectContaining({
+        sessionItems: [expect.objectContaining({ id: item.id, includeImage: true })],
       })
     );
   });

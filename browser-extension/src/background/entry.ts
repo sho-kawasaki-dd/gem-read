@@ -7,6 +7,7 @@ import { runSelectionAnalysis } from './usecases/runSelectionAnalysis';
 import {
   appendSelectionSessionItem,
   removeSelectionSessionItem,
+  toggleSelectionSessionItemImage,
 } from './usecases/updateSelectionSession';
 import {
   PHASE0_MENU_ID,
@@ -20,6 +21,7 @@ import type {
   CacheOverlaySessionMessage,
   RemoveSessionItemResponse,
   RunOverlayActionResponse,
+  ToggleSessionItemImageResponse,
 } from '../shared/contracts/messages';
 
 /**
@@ -93,6 +95,14 @@ export function registerBackgroundRuntime(): void {
         sender.tab?.id !== undefined
       ) {
         void handleRemoveSessionItem(message, sender.tab.id, sendResponse);
+        return true;
+      }
+
+      if (
+        message.type === 'phase2.toggleSessionItemImage' &&
+        sender.tab?.id !== undefined
+      ) {
+        void handleToggleSessionItemImage(message, sender.tab.id, sendResponse);
         return true;
       }
 
@@ -214,6 +224,29 @@ async function handleRemoveSessionItem(
     sendResponse({
       ok: false,
       error: error instanceof Error ? error.message : 'Failed to remove selection item.',
+    });
+  }
+}
+
+async function handleToggleSessionItemImage(
+  message: Extract<BackgroundRuntimeMessage, { type: 'phase2.toggleSessionItemImage' }>,
+  tabId: number,
+  sendResponse: (response: ToggleSessionItemImageResponse) => void
+): Promise<void> {
+  try {
+    await toggleSelectionSessionItemImage(
+      tabId,
+      message.payload.itemId,
+      message.payload.includeImage
+    );
+    sendResponse({ ok: true });
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Failed to update selection image inclusion.',
     });
   }
 }

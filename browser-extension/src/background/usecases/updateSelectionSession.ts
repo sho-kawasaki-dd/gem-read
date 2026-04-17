@@ -104,6 +104,47 @@ export async function removeSelectionSessionItem(
   await renderOverlay(tabId, buildOverlayPayload(nextSession));
 }
 
+export async function toggleSelectionSessionItemImage(
+  tabId: number,
+  itemId: string,
+  includeImage: boolean
+): Promise<void> {
+  const session = getAnalysisSession(tabId);
+  if (!session) {
+    throw new Error('Analysis session could not be found.');
+  }
+
+  let foundItem = false;
+  const nextItems = session.items.map((item) => {
+    if (item.id !== itemId) {
+      return item;
+    }
+
+    foundItem = true;
+    if (includeImage && !item.previewImageUrl) {
+      throw new Error('A cached crop preview is required before enabling image inclusion.');
+    }
+
+    return {
+      ...item,
+      includeImage,
+    };
+  });
+
+  if (!foundItem) {
+    throw new Error('Selection item could not be found.');
+  }
+
+  const nextSession: SelectionAnalysisSession = {
+    ...session,
+    items: nextItems,
+    modelOptions: [...session.modelOptions],
+  };
+
+  setAnalysisSession(tabId, nextSession);
+  await renderOverlay(tabId, buildOverlayPayload(nextSession));
+}
+
 export function buildOverlayPayload(
   session: SelectionAnalysisSession
 ): OverlayPayload {
@@ -114,7 +155,13 @@ export function buildOverlayPayload(
     action: session.lastAction,
     modelName: session.lastModelName,
     modelOptions: [...session.modelOptions],
-    sessionItems: session.items.map((item) => ({ ...item })),
+    sessionItems: session.items.map((item) => ({
+      ...item,
+      selection: {
+        ...item.selection,
+        rect: { ...item.selection.rect },
+      },
+    })),
     maxSessionItems: MAX_SELECTION_SESSION_ITEMS,
     customPrompt: session.lastCustomPrompt,
     sessionReady: session.items.length > 0,

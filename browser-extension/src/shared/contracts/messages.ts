@@ -223,6 +223,19 @@ export interface RemoveSessionItemResponse {
   error?: string;
 }
 
+export interface ToggleSessionItemImageMessage {
+  type: 'phase2.toggleSessionItemImage';
+  payload: {
+    itemId: string;
+    includeImage: boolean;
+  };
+}
+
+export interface ToggleSessionItemImageResponse {
+  ok: boolean;
+  error?: string;
+}
+
 export interface ClearOverlaySessionMessage {
   type: 'phase2.clearOverlaySession';
 }
@@ -243,4 +256,5 @@ export type BackgroundRuntimeMessage =
   | CacheOverlaySessionMessage
   | AppendSessionItemMessage
   | RemoveSessionItemMessage
+  | ToggleSessionItemImageMessage
   | ClearOverlaySessionMessage;

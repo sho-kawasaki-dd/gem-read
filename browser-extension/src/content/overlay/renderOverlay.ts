@@ -9,7 +9,12 @@ import type {
   RunOverlayActionMessage,
   RunOverlayActionResponse,
   SelectionSessionItem,
+  ToggleSessionItemImageResponse,
 } from '../../shared/contracts/messages';
+import {
+  renderRichText,
+  RICH_TEXT_STYLE_BLOCK,
+} from './richTextRenderer';
 import {
   startRectangleSelection,
 } from '../selection/rectangleSelectionController';
@@ -28,6 +33,7 @@ let isOverlayMinimized = false;
 let draftModelName = '';
 let draftCustomPrompt = '';
 let isRectangleModeActive = false;
+let isRawResponseExpanded = false;
 
 /**
  * Overlay は content script 側で一元管理し、payload から都度 DOM を再構築する。
@@ -75,6 +81,7 @@ export function renderOverlay(payload: OverlayPayload): void {
   );
   const explanationBox = root.querySelector<HTMLElement>('.explanation-box');
   const rawSection = root.querySelector<HTMLElement>('.raw-section');
+  const rawDetails = root.querySelector<HTMLDetailsElement>('.raw-details');
   const rawBox = root.querySelector<HTMLElement>('.raw-box');
   const errorSection = root.querySelector<HTMLElement>('.error-section');
   const errorBox = root.querySelector<HTMLElement>('.error-box');
@@ -114,6 +121,7 @@ export function renderOverlay(payload: OverlayPayload): void {
     !explanationSection ||
     !explanationBox ||
     !rawSection ||
+    !rawDetails ||
     !rawBox ||
     !errorSection ||
     !errorBox ||
@@ -149,13 +157,14 @@ export function renderOverlay(payload: OverlayPayload): void {
 
   resultSection.hidden = !payload.translatedText;
   resultLabel.textContent = getResultLabel(payload.action);
-  resultBox.textContent = payload.translatedText || '';
+  renderRichText(resultBox, payload.translatedText || '');
 
   explanationSection.hidden = !payload.explanation;
-  explanationBox.textContent = payload.explanation || '';
+  renderRichText(explanationBox, payload.explanation || '');
 
   rawSection.hidden = !payload.rawResponse;
   rawBox.textContent = payload.rawResponse || '';
+  rawDetails.open = Boolean(payload.rawResponse) && isRawResponseExpanded;
 
   errorSection.hidden = !payload.error;
   errorBox.textContent = payload.error || '';
@@ -190,6 +199,9 @@ export function renderOverlay(payload: OverlayPayload): void {
 
   metaBox.textContent = buildMetaText(payload);
   metaBox.classList.toggle('loading', payload.status === 'loading');
+  rawDetails.addEventListener('toggle', () => {
+    isRawResponseExpanded = rawDetails.open;
+  });
 
   modelInput.addEventListener('input', () => {
     draftModelName = modelInput.value.trim();
@@ -246,6 +258,23 @@ export function renderOverlay(payload: OverlayPayload): void {
       void removeSelectionItem(itemId, errorBox, errorSection);
     });
   }
+  for (const imageToggle of root.querySelectorAll<HTMLInputElement>(
+    '.session-item-image-toggle'
+  )) {
+    imageToggle.addEventListener('change', () => {
+      const itemId = imageToggle.dataset.itemId;
+      if (!itemId) {
+        return;
+      }
+
+      void toggleSelectionItemImage(
+        itemId,
+        imageToggle.checked,
+        errorBox,
+        errorSection
+      );
+    });
+  }
 
   minimizeButton.addEventListener('click', () => {
     isOverlayMinimized = true;
@@ -266,6 +295,7 @@ function renderPanelMarkup(
       :host {
         all: initial;
       }
+      ${RICH_TEXT_STYLE_BLOCK}
       .panel {
         position: fixed;
         top: 16px;
@@ -483,6 +513,45 @@ function renderPanelMarkup(
         color: #cbd5e1;
         font-size: 12px;
       }
+      .rich-text-box {
+        white-space: normal;
+      }
+      .details {
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.45);
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        overflow: hidden;
+      }
+      .details > summary {
+        cursor: pointer;
+        list-style: none;
+        padding: 10px 12px;
+        color: #cbd5e1;
+        font-weight: 600;
+      }
+      .details > summary::-webkit-details-marker {
+        display: none;
+      }
+      .details-body {
+        padding: 0 12px 12px;
+      }
+      .session-item-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        color: #cbd5e1;
+        font-size: 11px;
+      }
+      .session-item-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #dbeafe;
+      }
+      .session-item-toggle input {
+        margin: 0;
+      }
     </style>
     <div class="panel">
       <div class="header">
@@ -538,15 +607,20 @@ function renderPanelMarkup(
       </div>
       <div class="section result-section" hidden>
         <div class="label result-label">Translation</div>
-        <div class="box result-box"></div>
+        <div class="box rich-text-box result-box"></div>
       </div>
       <div class="section explanation-section" hidden>
         <div class="label">Explanation</div>
-        <div class="box explanation-box"></div>
+        <div class="box rich-text-box explanation-box"></div>
       </div>
       <div class="section raw-section" hidden>
-        <div class="label">Raw Response</div>
-        <div class="box raw-box"></div>
+        <div class="label">Details</div>
+        <details class="details raw-details">
+          <summary>Raw Response</summary>
+          <div class="details-body">
+            <div class="box raw-box"></div>
+          </div>
+        </details>
       </div>
       <div class="section error-section" hidden>
         <div class="label">Error</div>
@@ -702,6 +776,7 @@ function renderSessionItemsMarkup(sessionItems: SelectionSessionItem[]): string 
     .map((item, index) => {
       const itemText = item.selection.text || '[Image region only]';
       const itemKind = item.source === 'free-rectangle' ? 'Rectangle' : 'Selection';
+      const toggleDisabled = !item.previewImageUrl;
       return `
         <div class="session-item">
           <div class="session-item-header">
@@ -709,10 +784,45 @@ function renderSessionItemsMarkup(sessionItems: SelectionSessionItem[]): string 
             <button class="session-item-remove" type="button" data-item-id="${escapeHtml(item.id)}">Remove</button>
           </div>
           <div class="session-item-text">${escapeHtml(itemText)}</div>
+          <div class="session-item-meta">
+            <span>${item.previewImageUrl ? 'Cached crop ready' : 'No cached crop'}</span>
+            <label class="session-item-toggle">
+              <input
+                class="session-item-image-toggle"
+                type="checkbox"
+                data-item-id="${escapeHtml(item.id)}"
+                ${item.includeImage ? 'checked' : ''}
+                ${toggleDisabled ? 'disabled' : ''}
+              />
+              Include image
+            </label>
+          </div>
         </div>
       `;
     })
     .join('');
+}
+
+async function toggleSelectionItemImage(
+  itemId: string,
+  includeImage: boolean,
+  errorBox: HTMLElement,
+  errorSection: HTMLElement
+): Promise<void> {
+  const response = (await chrome.runtime.sendMessage({
+    type: 'phase2.toggleSessionItemImage',
+    payload: { itemId, includeImage },
+  })) as ToggleSessionItemImageResponse | undefined;
+
+  if (response?.ok === false) {
+    errorBox.textContent =
+      response.error ?? 'Failed to update image inclusion for the selection item.';
+    errorSection.hidden = false;
+    return;
+  }
+
+  errorBox.textContent = '';
+  errorSection.hidden = true;
 }
 
 async function addCurrentSelection(
@@ -868,6 +978,7 @@ function disposeOverlay(): void {
   host?.remove();
   isOverlayMinimized = false;
   isRectangleModeActive = false;
+  isRawResponseExpanded = false;
   clearSelectionBatch();
 }
 

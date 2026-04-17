@@ -144,10 +144,14 @@ describe('renderOverlay', () => {
     expect(root.querySelector('.banner-box')?.textContent).toContain(
       'Mock mode is active'
     );
-    expect(root.querySelector('.result-box')?.textContent).toBe('翻訳結果');
-    expect(root.querySelector('.explanation-box')?.textContent).toBe(
+    expect(root.querySelector('.result-box')?.textContent?.trim()).toBe('翻訳結果');
+    expect(root.querySelector('.explanation-box')?.textContent?.trim()).toBe(
       '補足説明'
     );
+    expect(root.querySelector('.raw-details')).not.toBeNull();
+    expect(
+      (root.querySelector('.raw-details') as HTMLDetailsElement).open
+    ).toBe(false);
     expect(root.querySelector('.raw-box')?.textContent).toContain('---');
     expect((root.querySelector('.preview-section') as HTMLElement).hidden).toBe(
       false
@@ -167,6 +171,44 @@ describe('renderOverlay', () => {
     );
     expect(root.querySelector('.session-item-text')?.textContent).toContain(
       'Selected paragraph'
+    );
+  });
+
+  it('renders markdown safely and applies KaTeX outside code blocks', () => {
+    renderOverlay({
+      status: 'success',
+      action: 'translation_with_explanation',
+      sessionReady: true,
+      sessionItems: [
+        {
+          id: 'selection-1',
+          source: 'text-selection',
+          selection: {
+            text: 'Selected paragraph',
+            rect: { left: 1, top: 2, width: 3, height: 4 },
+            viewportWidth: 100,
+            viewportHeight: 100,
+            devicePixelRatio: 1,
+            url: 'https://example.com',
+            pageTitle: 'Example',
+          },
+          includeImage: false,
+          previewImageUrl: 'data:image/webp;base64,preview',
+        },
+      ],
+      translatedText:
+        '# Heading\n\nInline math $a^2+b^2=c^2$\n\n```txt\n$should_stay_literal$\n```\n\n<img src=x onerror="alert(1)">',
+      rawResponse: 'raw',
+    });
+
+    const root = getShadowRoot();
+    const resultBox = root.querySelector('.result-box') as HTMLElement;
+
+    expect(resultBox.querySelector('h1')?.textContent).toBe('Heading');
+    expect(resultBox.querySelector('.katex')).not.toBeNull();
+    expect(resultBox.innerHTML.includes('onerror')).toBe(false);
+    expect(resultBox.querySelector('code')?.textContent).toContain(
+      '$should_stay_literal$'
     );
   });
 
@@ -315,6 +357,50 @@ describe('renderOverlay', () => {
     expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({
       type: 'phase2.removeSessionItem',
       payload: { itemId: 'selection-1' },
+    });
+  });
+
+  it('sends include-image toggle messages from batch controls', async () => {
+    const chromeMock = getChromeMock();
+    (chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+
+    renderOverlay({
+      status: 'success',
+      action: 'translation',
+      sessionReady: true,
+      sessionItems: [
+        {
+          id: 'selection-1',
+          source: 'text-selection',
+          selection: {
+            text: 'Selected paragraph',
+            rect: { left: 1, top: 2, width: 3, height: 4 },
+            viewportWidth: 100,
+            viewportHeight: 100,
+            devicePixelRatio: 1,
+            url: 'https://example.com',
+            pageTitle: 'Example',
+          },
+          includeImage: false,
+          previewImageUrl: 'data:image/webp;base64,preview',
+          cropDurationMs: 12.3,
+        },
+      ],
+      maxSessionItems: 10,
+      selectedText: 'Selected paragraph',
+    });
+
+    const root = getShadowRoot();
+    const toggle = root.querySelector(
+      '.session-item-image-toggle'
+    ) as HTMLInputElement;
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    await Promise.resolve();
+
+    expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'phase2.toggleSessionItemImage',
+      payload: { itemId: 'selection-1', includeImage: true },
     });
   });
 });
