@@ -22,6 +22,10 @@ import {
   setAnalysisSession,
   type SelectionAnalysisSession,
 } from '../services/analysisSessionStore';
+import {
+  mergeCollectedArticleContext,
+  syncArticleCacheState,
+} from '../services/articleCacheService';
 import { cropSelectionImage } from '../services/cropSelectionImage';
 
 export interface RunSelectionAnalysisOptions {
@@ -69,6 +73,7 @@ export async function runSelectionAnalysis(
       selectedText: fallbackSelectionText,
       articleContext: reusableSession?.articleContext,
       articleContextError: reusableSession?.articleContextError,
+      articleCacheState: reusableSession?.articleCacheState,
     });
 
     const session = await resolveAnalysisSession(
@@ -76,7 +81,9 @@ export async function runSelectionAnalysis(
       tabId,
       fallbackSelectionText,
       modelOptions,
-      options.reuseCachedSession === true
+      options.reuseCachedSession === true,
+      resolvedRequestOptions.apiBaseUrl,
+      resolvedRequestOptions.modelName
     );
     const sessionItem = getRequiredSessionItem(session);
 
@@ -105,6 +112,7 @@ export async function runSelectionAnalysis(
       selectedText: buildSelectedText(sessionItem),
       articleContext: session.articleContext,
       articleContextError: session.articleContextError,
+      articleCacheState: session.articleCacheState,
       translatedText: apiResponse.translated_text,
       explanation: apiResponse.explanation,
       previewImageUrl: sessionItem.previewImageUrl,
@@ -131,6 +139,7 @@ export async function runSelectionAnalysis(
       selectedText: fallbackSelectionText,
       articleContext: availableSession?.articleContext,
       articleContextError: availableSession?.articleContextError,
+      articleCacheState: availableSession?.articleCacheState,
       error: message,
     });
   }
@@ -141,12 +150,32 @@ async function resolveAnalysisSession(
   tabId: number,
   fallbackSelectionText: string,
   modelOptions: ModelOption[],
-  reuseCachedSession: boolean
+  reuseCachedSession: boolean,
+  apiBaseUrl: string,
+  modelName: string | undefined
 ): Promise<SelectionAnalysisSession> {
   if (reuseCachedSession) {
     const session = await getCachedSession(tabId);
     if (session?.items.length) {
-      return session;
+      const articleContextResult = await collectArticleContext(tabId).catch(
+        (error) => ({
+          ok: false as const,
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Article context extraction failed.',
+        })
+      );
+      const refreshedSession = await syncArticleCacheState(
+        mergeCollectedArticleContext(session, articleContextResult),
+        {
+          apiBaseUrl,
+          modelName,
+          allowAutoCreate: true,
+        }
+      );
+      await setAnalysisSession(tabId, refreshedSession);
+      return refreshedSession;
     }
 
     throw new Error(
@@ -154,14 +183,23 @@ async function resolveAnalysisSession(
     );
   }
 
-  return createFreshSession(tab, tabId, fallbackSelectionText, modelOptions);
+  return createFreshSession(
+    tab,
+    tabId,
+    fallbackSelectionText,
+    modelOptions,
+    apiBaseUrl,
+    modelName
+  );
 }
 
 async function createFreshSession(
   tab: chrome.tabs.Tab,
   tabId: number,
   fallbackSelectionText: string,
-  modelOptions: ModelOption[]
+  modelOptions: ModelOption[],
+  apiBaseUrl: string,
+  modelName: string | undefined
 ): Promise<SelectionAnalysisSession> {
   const [selection, articleContextResult] = await Promise.all([
     collectSelection(tabId, fallbackSelectionText),
@@ -212,8 +250,13 @@ async function createFreshSession(
       ? undefined
       : articleContextResult.error,
   };
-  await setAnalysisSession(tabId, session);
-  return session;
+  const cacheAwareSession = await syncArticleCacheState(session, {
+    apiBaseUrl,
+    modelName,
+    allowAutoCreate: true,
+  });
+  await setAnalysisSession(tabId, cacheAwareSession);
+  return cacheAwareSession;
 }
 
 async function getCachedSession(
@@ -235,6 +278,16 @@ async function getCachedSession(
     })),
     // 呼び出し側が候補配列を書き換えても store 本体を汚染しないよう参照を切る。
     modelOptions: [...session.modelOptions],
+    articleContext: session.articleContext
+      ? {
+          ...session.articleContext,
+        }
+      : undefined,
+    articleCacheState: session.articleCacheState
+      ? {
+          ...session.articleCacheState,
+        }
+      : undefined,
   };
 }
 

@@ -9,6 +9,11 @@ const appendLiveSelectionSessionItemMock = vi.hoisted(() => vi.fn());
 const appendSelectionSessionItemMock = vi.hoisted(() => vi.fn());
 const removeSelectionSessionItemMock = vi.hoisted(() => vi.fn());
 const toggleSelectionSessionItemImageMock = vi.hoisted(() => vi.fn());
+const buildOverlayPayloadMock = vi.hoisted(() => vi.fn());
+const invalidateArticleCacheMock = vi.hoisted(() => vi.fn());
+const buildNavigatedSessionStateMock = vi.hoisted(() => vi.fn());
+const loadExtensionSettingsMock = vi.hoisted(() => vi.fn());
+const renderOverlayMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/background/menus/phase0ContextMenu', () => ({
   ensurePhase0ContextMenu: ensurePhase0ContextMenuMock,
@@ -27,12 +32,27 @@ vi.mock('../../../src/background/usecases/updateSelectionSession', () => ({
   appendSelectionSessionItem: appendSelectionSessionItemMock,
   removeSelectionSessionItem: removeSelectionSessionItemMock,
   toggleSelectionSessionItemImage: toggleSelectionSessionItemImageMock,
+  buildOverlayPayload: buildOverlayPayloadMock,
+}));
+
+vi.mock('../../../src/background/services/articleCacheService', () => ({
+  invalidateArticleCache: invalidateArticleCacheMock,
+  buildNavigatedSessionState: buildNavigatedSessionStateMock,
+}));
+
+vi.mock('../../../src/shared/storage/settingsStorage', () => ({
+  loadExtensionSettings: loadExtensionSettingsMock,
+}));
+
+vi.mock('../../../src/background/gateways/tabMessagingGateway', () => ({
+  renderOverlay: renderOverlayMock,
 }));
 
 import { registerBackgroundRuntime } from '../../../src/background/entry';
 import {
   clearAnalysisSession,
   getAnalysisSession,
+  setAnalysisSession,
 } from '../../../src/background/services/analysisSessionStore';
 import {
   PHASE0_MENU_ID,
@@ -46,6 +66,17 @@ describe('registerBackgroundRuntime', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     await clearAnalysisSession(7);
+    loadExtensionSettingsMock.mockResolvedValue({
+      apiBaseUrl: 'http://127.0.0.1:9000',
+      defaultModel: 'gemini-2.5-flash',
+      lastKnownModels: ['gemini-2.5-flash'],
+    });
+    invalidateArticleCacheMock.mockImplementation(async (session) => session);
+    buildNavigatedSessionStateMock.mockImplementation((session) => session);
+    buildOverlayPayloadMock.mockImplementation((session, options) => ({
+      ...session,
+      ...options,
+    }));
   });
 
   function getContextMenuHandler() {
@@ -72,6 +103,20 @@ describe('registerBackgroundRuntime', () => {
     ).mock.calls[0][0];
   }
 
+  function getTabUpdatedHandler() {
+    return (
+      getChromeMock().tabs.onUpdated.addListener as unknown as ReturnType<
+        typeof vi.fn
+      >
+    ).mock.calls[0][0];
+  }
+
+  async function flushAsyncWork(iterations = 8) {
+    for (let index = 0; index < iterations; index += 1) {
+      await Promise.resolve();
+    }
+  }
+
   it('registers startup hooks and the background listeners', () => {
     const chromeMock = getChromeMock();
 
@@ -83,6 +128,7 @@ describe('registerBackgroundRuntime', () => {
       1
     );
     expect(chromeMock.tabs.onRemoved.addListener).toHaveBeenCalledTimes(1);
+    expect(chromeMock.tabs.onUpdated.addListener).toHaveBeenCalledTimes(1);
     expect(chromeMock.runtime.onMessage.addListener).toHaveBeenCalledTimes(1);
     expect(chromeMock.commands.onCommand.addListener).toHaveBeenCalledTimes(1);
   });
@@ -201,10 +247,7 @@ describe('registerBackgroundRuntime', () => {
     );
 
     expect(keepChannelOpen).toBe(true);
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushAsyncWork();
     expect((await getAnalysisSession(7))?.items).toHaveLength(1);
     expect((await getAnalysisSession(7))?.items[0]?.id).toBe('selection-1');
   });
@@ -254,10 +297,7 @@ describe('registerBackgroundRuntime', () => {
     );
 
     expect(keepChannelOpen).toBe(true);
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushAsyncWork();
     expect(sendResponse).toHaveBeenCalledWith({ ok: true });
     expect(await getAnalysisSession(7)).toBeUndefined();
   });
@@ -289,7 +329,7 @@ describe('registerBackgroundRuntime', () => {
     );
 
     expect(keepChannelOpen).toBe(true);
-    await Promise.resolve();
+    await flushAsyncWork();
     expect(appendSelectionSessionItemMock).toHaveBeenCalledWith(
       { id: 7 },
       expect.objectContaining({ text: 'Selected text' }),
@@ -317,7 +357,7 @@ describe('registerBackgroundRuntime', () => {
     );
 
     expect(keepChannelOpen).toBe(true);
-    await Promise.resolve();
+    await flushAsyncWork();
     expect(removeSelectionSessionItemMock).toHaveBeenCalledWith(
       7,
       'selection-2'
@@ -344,7 +384,7 @@ describe('registerBackgroundRuntime', () => {
     );
 
     expect(keepChannelOpen).toBe(true);
-    await Promise.resolve();
+    await flushAsyncWork();
     expect(toggleSelectionSessionItemImageMock).toHaveBeenCalledWith(
       7,
       'selection-2',
@@ -371,10 +411,7 @@ describe('registerBackgroundRuntime', () => {
     );
 
     expect(keepChannelOpen).toBe(true);
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushAsyncWork();
     expect(getChromeMock().tabs.query).toHaveBeenCalledWith({
       active: true,
       lastFocusedWindow: true,
@@ -419,13 +456,99 @@ describe('registerBackgroundRuntime', () => {
       { tab: { id: 7 } },
       vi.fn()
     );
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushAsyncWork();
 
     onRemovedHandler(7);
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushAsyncWork();
 
     expect(await getAnalysisSession(7)).toBeUndefined();
+  });
+
+  it('invalidates the cached article state when the tab URL changes', async () => {
+    await setAnalysisSession(7, {
+      items: [],
+      modelOptions: [],
+      lastAction: 'translation',
+      articleCacheState: {
+        status: 'active',
+        cacheName: 'cachedContents/article-1',
+      },
+    });
+    invalidateArticleCacheMock.mockImplementationOnce(async (session) => ({
+      ...session,
+      articleCacheState: {
+        status: 'invalidated',
+        invalidationReason: 'url-changed',
+        notice: 'Article cache was cleared because the page URL changed.',
+      },
+    }));
+    buildNavigatedSessionStateMock.mockImplementationOnce((session, nextUrl) => ({
+      ...session,
+      items: [],
+      articleContextError: `Page changed to ${nextUrl}. Article context will be refreshed on the next run.`,
+    }));
+
+    registerBackgroundRuntime();
+
+    const handler = getTabUpdatedHandler();
+    handler(7, { url: 'https://example.com/updated' });
+    await flushAsyncWork();
+
+    expect(invalidateArticleCacheMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        articleCacheState: expect.objectContaining({ status: 'active' }),
+      }),
+      expect.objectContaining({ reason: 'url-changed' })
+    );
+    expect(buildNavigatedSessionStateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        articleCacheState: expect.objectContaining({ status: 'invalidated' }),
+      }),
+      'https://example.com/updated'
+    );
+  });
+
+  it('handles manual article cache deletion from runtime messages', async () => {
+    await setAnalysisSession(7, {
+      items: [],
+      modelOptions: [],
+      lastAction: 'translation',
+      articleCacheState: {
+        status: 'active',
+        cacheName: 'cachedContents/article-1',
+      },
+    });
+    invalidateArticleCacheMock.mockImplementationOnce(async (session) => ({
+      ...session,
+      articleCacheState: {
+        status: 'invalidated',
+        invalidationReason: 'manual-delete',
+        notice: 'Article cache was deleted manually for this tab.',
+      },
+    }));
+
+    registerBackgroundRuntime();
+
+    const handler = getRuntimeMessageHandler();
+    const sendResponse = vi.fn();
+    const keepChannelOpen = handler(
+      {
+        type: 'phase4.deleteActiveArticleCache',
+      },
+      { tab: { id: 7 } },
+      sendResponse
+    );
+
+    expect(keepChannelOpen).toBe(true);
+    await flushAsyncWork();
+
+    expect(invalidateArticleCacheMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        articleCacheState: expect.objectContaining({ status: 'active' }),
+      }),
+      expect.objectContaining({ reason: 'manual-delete' })
+    );
+    expect(renderOverlayMock).toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith({ ok: true });
   });
 });

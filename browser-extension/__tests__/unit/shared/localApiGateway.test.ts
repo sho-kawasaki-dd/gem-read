@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  countTokens,
+  createContextCache,
+  deleteContextCache,
+  fetchContextCacheStatus,
   fetchPopupBootstrap,
   sendAnalyzeTranslateRequest,
 } from '../../../src/shared/gateways/localApiGateway';
@@ -193,5 +197,91 @@ describe('localApiGateway', () => {
     expect(result.status.modelSource).toBe('storage_fallback');
     expect(result.status.detail).toContain('model endpoint unavailable');
     expect(result.models).toEqual([]);
+  });
+
+  it('counts tokens through the local API token endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createJsonResponse({
+        ok: true,
+        token_count: 321,
+        model_name: 'gemini-2.5-flash',
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await countTokens('Article body', {
+      apiBaseUrl: 'http://127.0.0.1:9000',
+      modelName: 'gemini-2.5-flash',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:9000/tokens/count',
+      expect.objectContaining({ method: 'POST' })
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+      text: 'Article body',
+      model_name: 'gemini-2.5-flash',
+    });
+    expect(result).toEqual({
+      ok: true,
+      tokenCount: 321,
+      modelName: 'gemini-2.5-flash',
+    });
+  });
+
+  it('creates, fetches, and deletes article caches through the local API cache endpoints', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          ok: true,
+          is_active: true,
+          cache_name: 'cachedContents/article-1',
+          display_name: 'browser-extension:Example article',
+          model_name: 'gemini-2.5-flash',
+          token_count: 2048,
+          ttl_seconds: 3600,
+          expire_time: '2026-04-17T10:00:00+00:00',
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          ok: true,
+          is_active: true,
+          cache_name: 'cachedContents/article-1',
+          display_name: 'browser-extension:Example article',
+          model_name: 'gemini-2.5-flash',
+          token_count: 2048,
+          ttl_seconds: 3600,
+          expire_time: '2026-04-17T10:00:00+00:00',
+        })
+      )
+      .mockResolvedValueOnce(createJsonResponse({ ok: true, cache_name: 'cachedContents/article-1' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const created = await createContextCache('Long article body', {
+      apiBaseUrl: 'http://127.0.0.1:9000',
+      modelName: 'gemini-2.5-flash',
+      displayName: 'browser-extension:Example article',
+    });
+    const status = await fetchContextCacheStatus('http://127.0.0.1:9000');
+    await deleteContextCache('cachedContents/article-1', 'http://127.0.0.1:9000');
+
+    expect(created).toEqual({
+      ok: true,
+      isActive: true,
+      cacheName: 'cachedContents/article-1',
+      displayName: 'browser-extension:Example article',
+      modelName: 'gemini-2.5-flash',
+      tokenCount: 2048,
+      ttlSeconds: 3600,
+      expireTime: '2026-04-17T10:00:00+00:00',
+    });
+    expect(status.cacheName).toBe('cachedContents/article-1');
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      'http://127.0.0.1:9000/cache/cachedContents%2Farticle-1',
+      { method: 'DELETE' }
+    );
   });
 });

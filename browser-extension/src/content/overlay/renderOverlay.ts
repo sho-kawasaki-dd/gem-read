@@ -4,6 +4,7 @@ import type {
   AppendSessionItemResponse,
   BeginRectangleSelectionResponse,
   ClearOverlaySessionMessage,
+  DeleteActiveArticleCacheResponse,
   OverlayPayload,
   RemoveSessionItemResponse,
   RunOverlayActionMessage,
@@ -115,6 +116,9 @@ export function renderOverlay(payload: OverlayPayload): void {
     '.custom-prompt-input'
   );
   const customButton = root.querySelector<HTMLButtonElement>('.action-custom');
+  const deleteArticleCacheButton = root.querySelector<HTMLButtonElement>(
+    '.action-delete-article-cache'
+  );
   const addSelectionButton = root.querySelector<HTMLButtonElement>(
     '.action-add-selection'
   );
@@ -273,6 +277,9 @@ export function renderOverlay(payload: OverlayPayload): void {
   addRectangleButton.addEventListener('click', () => {
     void addRectangleSelection(errorBox, errorSection, effectivePayload);
   });
+  deleteArticleCacheButton?.addEventListener('click', () => {
+    void deleteActiveArticleCache(errorBox, errorSection);
+  });
   for (const removeButton of root.querySelectorAll<HTMLButtonElement>(
     '.session-item-remove'
   )) {
@@ -406,6 +413,50 @@ function renderPanelMarkup(
         background: rgba(245, 158, 11, 0.14);
         border: 1px solid rgba(245, 158, 11, 0.26);
         color: #fde68a;
+      }
+      .article-card {
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.5);
+        border: 1px solid rgba(148, 163, 184, 0.16);
+      }
+      .article-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .article-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: #f8fafc;
+      }
+      .article-subtitle {
+        margin-top: 4px;
+        font-size: 11px;
+        color: #cbd5e1;
+      }
+      .article-summary {
+        color: #e2e8f0;
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+      .article-meta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .article-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: rgba(37, 99, 235, 0.16);
+        color: #dbeafe;
+        font-size: 11px;
       }
       .box {
         padding: 10px 12px;
@@ -598,6 +649,7 @@ function renderPanelMarkup(
         <div class="label">Runtime</div>
         <div class="banner-box"></div>
       </div>
+      ${renderArticleContextMarkup(payload)}
       <div class="section">
         <div class="label">Batch</div>
         <div class="action-grid">
@@ -728,6 +780,15 @@ function buildMetaText(payload: OverlayPayload): string {
   if (payload.action) {
     items.push(`action=${payload.action}`);
   }
+  if (payload.articleContext) {
+    items.push(`article=${payload.articleContext.textLength} chars`);
+  }
+  if (payload.articleCacheState?.status) {
+    items.push(`cache=${payload.articleCacheState.status}`);
+  }
+  if (payload.articleCacheState?.tokenEstimate !== undefined) {
+    items.push(`articleTokens=${payload.articleCacheState.tokenEstimate}`);
+  }
   return items.join(' | ');
 }
 
@@ -756,11 +817,21 @@ function getResultLabel(action: OverlayPayload['action']): string {
 
 function shouldShowBanner(payload: OverlayPayload): boolean {
   return (
-    !payload.sessionReady || payload.usedMock || Boolean(payload.degradedReason)
+    !payload.sessionReady ||
+    payload.usedMock ||
+    Boolean(payload.degradedReason) ||
+    Boolean(payload.articleContextError) ||
+    Boolean(payload.articleCacheState?.notice)
   );
 }
 
 function buildBannerText(payload: OverlayPayload): string {
+  if (payload.articleCacheState?.notice) {
+    return payload.articleCacheState.notice;
+  }
+  if (payload.articleContextError) {
+    return payload.articleContextError;
+  }
   if (!payload.sessionReady) {
     return 'No cached selection session is ready yet. Select text on the page and run Gem Read once before using overlay actions.';
   }
@@ -771,6 +842,79 @@ function buildBannerText(payload: OverlayPayload): string {
     return `Runtime is degraded: ${payload.degradedReason}.`;
   }
   return '';
+}
+
+function renderArticleContextMarkup(payload: OverlayPayload): string {
+  if (
+    !payload.articleContext &&
+    !payload.articleContextError &&
+    !payload.articleCacheState
+  ) {
+    return '';
+  }
+
+  const articleTitle = payload.articleContext?.title ?? 'Article context unavailable';
+  const articleSubtitle = payload.articleContext
+    ? `${payload.articleContext.source} | ${payload.articleContext.textLength} chars`
+    : payload.articleContextError ?? 'Article extraction is not available for this page.';
+  const summary = payload.articleContext?.excerpt
+    ? payload.articleContext.excerpt
+    : payload.articleContext
+      ? `Hash ${payload.articleContext.bodyHash}`
+      : payload.articleContextError ?? 'No extracted article context yet.';
+  const cacheState = payload.articleCacheState;
+  const cacheStatus = cacheState
+    ? formatArticleCacheStatus(cacheState)
+    : 'No article cache state yet.';
+
+  return `
+    <div class="section">
+      <div class="label">Article Context</div>
+      <div class="article-card">
+        <div class="article-header">
+          <div>
+            <div class="article-title">${escapeHtml(articleTitle)}</div>
+            <div class="article-subtitle">${escapeHtml(articleSubtitle)}</div>
+          </div>
+          ${cacheState?.cacheName ? '<button class="action-button action-button--secondary action-delete-article-cache" type="button">Delete Cache</button>' : ''}
+        </div>
+        <div class="article-summary">${escapeHtml(summary)}</div>
+        <div class="article-meta-row">
+          <span class="article-pill">${escapeHtml(cacheStatus)}</span>
+          ${cacheState?.tokenEstimate !== undefined ? `<span class="article-pill">Estimated ${escapeHtml(String(cacheState.tokenEstimate))} tokens</span>` : ''}
+          ${cacheState?.ttlSeconds !== undefined ? `<span class="article-pill">TTL ${escapeHtml(String(cacheState.ttlSeconds))}s</span>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function formatArticleCacheStatus(
+  cacheState: NonNullable<OverlayPayload['articleCacheState']>
+): string {
+  if (cacheState.status === 'active') {
+    return `Cache active${cacheState.modelName ? ` on ${cacheState.modelName}` : ''}`;
+  }
+  if (cacheState.status === 'candidate') {
+    return cacheState.autoCreateEligible
+      ? 'Cache eligible for auto-create'
+      : 'Cache below auto-create threshold';
+  }
+  if (cacheState.status === 'creating') {
+    return 'Creating article cache';
+  }
+  if (cacheState.status === 'invalidated') {
+    return cacheState.invalidationReason
+      ? `Cache invalidated: ${cacheState.invalidationReason}`
+      : 'Cache invalidated';
+  }
+  if (cacheState.status === 'unsupported') {
+    return 'Cache unsupported for this model';
+  }
+  if (cacheState.status === 'degraded') {
+    return 'Cache state degraded';
+  }
+  return 'Cache idle';
 }
 
 function buildSelectionText(sessionItems: SelectionSessionItem[]): string {
@@ -994,6 +1138,25 @@ async function runOverlayAction(
     | undefined;
   if (response && !response.ok) {
     errorBox.textContent = response.error ?? 'Overlay action failed.';
+    errorSection.hidden = false;
+    return;
+  }
+
+  errorBox.textContent = '';
+  errorSection.hidden = true;
+}
+
+async function deleteActiveArticleCache(
+  errorBox: HTMLElement,
+  errorSection: HTMLElement
+): Promise<void> {
+  const response = (await chrome.runtime.sendMessage({
+    type: 'phase4.deleteActiveArticleCache',
+  })) as DeleteActiveArticleCacheResponse | undefined;
+
+  if (response?.ok === false) {
+    errorBox.textContent =
+      response.error ?? 'Failed to delete the active article cache.';
     errorSection.hidden = false;
     return;
   }

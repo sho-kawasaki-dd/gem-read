@@ -275,6 +275,47 @@ describe('renderOverlay', () => {
     });
   });
 
+  it('renders article cache details and sends manual delete requests', async () => {
+    const chromeMock = getChromeMock();
+    (chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+
+    renderOverlay({
+      status: 'success',
+      action: 'translation',
+      sessionItems: [],
+      maxSessionItems: 10,
+      sessionReady: false,
+      articleContext: {
+        title: 'Example article',
+        url: 'https://example.com/article',
+        bodyText: 'Body',
+        bodyHash: 'abc123def4567890',
+        source: 'readability',
+        textLength: 1800,
+        excerpt: 'Short article summary',
+      },
+      articleCacheState: {
+        status: 'active',
+        cacheName: 'cachedContents/article-1',
+        modelName: 'gemini-2.5-flash',
+        tokenEstimate: 1400,
+        ttlSeconds: 3600,
+        notice: 'Article cache created automatically for the current tab.',
+      },
+    });
+
+    const root = getShadowRoot();
+    expect(root.querySelector('.article-title')?.textContent).toBe('Example article');
+    expect(root.querySelector('.article-pill')?.textContent).toContain('Cache active');
+
+    (root.querySelector('.action-delete-article-cache') as HTMLButtonElement).click();
+    await Promise.resolve();
+
+    expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'phase4.deleteActiveArticleCache',
+    });
+  });
+
   it('minimizes to a launcher and reopens from the launcher button', () => {
     renderOverlay({
       status: 'success',

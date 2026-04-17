@@ -2,6 +2,7 @@ import { PHASE0_API_BASE_URL } from '../config/phase0';
 import type {
   AnalysisAction,
   AnalyzeApiResponse,
+  CacheStatusApiResponse,
   DegradedReason,
   ModelCatalogSource,
   ModelListApiResponse,
@@ -11,6 +12,7 @@ import type {
   SelectionRect,
   SelectionSessionItem,
   SelectionSessionSource,
+  TokenCountApiResponse,
 } from '../contracts/messages';
 
 interface AnalyzeSelectionMetadataItem {
@@ -78,11 +80,45 @@ interface RawHealthApiResponse {
   status: string;
 }
 
+interface RawCacheStatusApiResponse {
+  ok: boolean;
+  is_active: boolean;
+  ttl_seconds?: number | null;
+  token_count?: number | null;
+  cache_name?: string | null;
+  display_name?: string | null;
+  model_name?: string | null;
+  expire_time?: string | null;
+}
+
+interface RawTokenCountApiResponse {
+  ok: boolean;
+  token_count: number;
+  model_name: string;
+}
+
+interface RawCreateCacheRequestBody {
+  full_text: string;
+  model_name?: string;
+  display_name?: string;
+}
+
 export interface SendAnalyzeRequestOptions {
   action?: AnalysisAction;
   apiBaseUrl?: string;
   modelName?: string;
   customPrompt?: string;
+}
+
+export interface TokenCountRequestOptions {
+  apiBaseUrl?: string;
+  modelName?: string;
+}
+
+export interface CreateCacheRequestOptions {
+  apiBaseUrl?: string;
+  modelName?: string;
+  displayName?: string;
 }
 
 export interface PopupBootstrapResult {
@@ -283,4 +319,116 @@ function getConnectionStatus(
   }
 
   return 'mock-mode';
+}
+
+export async function countTokens(
+  text: string,
+  options: TokenCountRequestOptions = {}
+): Promise<TokenCountApiResponse> {
+  const apiBaseUrl = options.apiBaseUrl ?? PHASE0_API_BASE_URL;
+  const response = await fetch(`${apiBaseUrl}/tokens/count`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text,
+      model_name: options.modelName,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Local API token request failed (${response.status}): ${errorText}`
+    );
+  }
+
+  const payload = (await response.json()) as RawTokenCountApiResponse;
+  return {
+    ok: payload.ok,
+    tokenCount: payload.token_count,
+    modelName: payload.model_name,
+  };
+}
+
+export async function createContextCache(
+  fullText: string,
+  options: CreateCacheRequestOptions = {}
+): Promise<CacheStatusApiResponse> {
+  const apiBaseUrl = options.apiBaseUrl ?? PHASE0_API_BASE_URL;
+  const requestBody: RawCreateCacheRequestBody = {
+    full_text: fullText,
+    model_name: options.modelName,
+    display_name: options.displayName,
+  };
+
+  const response = await fetch(`${apiBaseUrl}/cache/create`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Local API cache create failed (${response.status}): ${errorText}`
+    );
+  }
+
+  return mapCacheStatusResponse(
+    (await response.json()) as RawCacheStatusApiResponse
+  );
+}
+
+export async function fetchContextCacheStatus(
+  apiBaseUrl: string = PHASE0_API_BASE_URL
+): Promise<CacheStatusApiResponse> {
+  const response = await fetch(`${apiBaseUrl}/cache/status`);
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Local API cache status failed (${response.status}): ${errorText}`
+    );
+  }
+
+  return mapCacheStatusResponse(
+    (await response.json()) as RawCacheStatusApiResponse
+  );
+}
+
+export async function deleteContextCache(
+  cacheName: string,
+  apiBaseUrl: string = PHASE0_API_BASE_URL
+): Promise<void> {
+  const response = await fetch(
+    `${apiBaseUrl}/cache/${encodeURIComponent(cacheName)}`,
+    {
+      method: 'DELETE',
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Local API cache delete failed (${response.status}): ${errorText}`
+    );
+  }
+}
+
+function mapCacheStatusResponse(
+  payload: RawCacheStatusApiResponse
+): CacheStatusApiResponse {
+  return {
+    ok: payload.ok,
+    isActive: payload.is_active,
+    ttlSeconds: payload.ttl_seconds ?? undefined,
+    tokenCount: payload.token_count ?? undefined,
+    cacheName: payload.cache_name ?? undefined,
+    displayName: payload.display_name ?? undefined,
+    modelName: payload.model_name ?? undefined,
+    expireTime: payload.expire_time ?? undefined,
+  };
 }

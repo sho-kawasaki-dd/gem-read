@@ -1,14 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const loadExtensionSettingsMock = vi.hoisted(() => vi.fn());
+const collectArticleContextMock = vi.hoisted(() => vi.fn());
 const renderOverlayMock = vi.hoisted(() => vi.fn());
+const mergeCollectedArticleContextMock = vi.hoisted(() => vi.fn());
+const syncArticleCacheStateMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/shared/storage/settingsStorage', () => ({
 	loadExtensionSettings: loadExtensionSettingsMock,
 }));
 
 vi.mock('../../../src/background/gateways/tabMessagingGateway', () => ({
+	collectArticleContext: collectArticleContextMock,
 	renderOverlay: renderOverlayMock,
+}));
+
+vi.mock('../../../src/background/services/articleCacheService', () => ({
+	mergeCollectedArticleContext: mergeCollectedArticleContextMock,
+	syncArticleCacheState: syncArticleCacheStateMock,
 }));
 
 import {
@@ -26,6 +35,23 @@ describe('openOverlaySession', () => {
 			defaultModel: 'gemini-2.5-flash',
 			lastKnownModels: ['gemini-2.5-flash'],
 		});
+		collectArticleContextMock.mockResolvedValue({
+			ok: true,
+			payload: {
+				title: 'Example article',
+				url: 'https://example.com/article',
+				bodyText: 'Long article context',
+				bodyHash: 'abc123def4567890',
+				source: 'readability',
+				textLength: 2048,
+			},
+		});
+		mergeCollectedArticleContextMock.mockImplementation((session, result) => ({
+			...session,
+			articleContext: result.ok ? result.payload : session.articleContext,
+			articleContextError: result.ok ? undefined : result.error,
+		}));
+		syncArticleCacheStateMock.mockImplementation(async (session) => session);
 	});
 
 	it('renders the cached batch session when one exists', async () => {
@@ -61,7 +87,7 @@ describe('openOverlaySession', () => {
 
 		await openOverlaySession(7);
 
-		expect(loadExtensionSettingsMock).not.toHaveBeenCalled();
+		expect(loadExtensionSettingsMock).toHaveBeenCalledTimes(1);
 		expect(renderOverlayMock).toHaveBeenCalledWith(
 			7,
 			expect.objectContaining({
@@ -70,6 +96,36 @@ describe('openOverlaySession', () => {
 				preserveDrafts: true,
 				action: 'translation_with_explanation',
 				selectedText: 'Selected text',
+			})
+		);
+	});
+
+	it('renders the full overlay when only article cache state exists', async () => {
+		syncArticleCacheStateMock.mockImplementationOnce(async (session) => ({
+			...session,
+			articleCacheState: {
+				status: 'active',
+				cacheName: 'cachedContents/article-1',
+				modelName: 'gemini-2.5-flash',
+				notice: 'Article cache created automatically for the current tab.',
+			},
+		}));
+		await setAnalysisSession(7, {
+			items: [],
+			modelOptions: [],
+			lastAction: 'translation',
+		});
+
+		await openOverlaySession(7);
+
+		expect(renderOverlayMock).toHaveBeenCalledWith(
+			7,
+			expect.objectContaining({
+				launcherOnly: false,
+				sessionReady: false,
+				articleCacheState: expect.objectContaining({
+					status: 'active',
+				}),
 			})
 		);
 	});

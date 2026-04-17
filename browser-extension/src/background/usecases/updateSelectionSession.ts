@@ -133,6 +133,9 @@ export async function removeSelectionSessionItem(
       sessionItems: [],
       maxSessionItems: MAX_SELECTION_SESSION_ITEMS,
       selectedText: '',
+      articleContext: session.articleContext,
+      articleContextError: session.articleContextError,
+      articleCacheState: session.articleCacheState,
     });
     return;
   }
@@ -219,6 +222,7 @@ export function buildOverlayPayload(
     selectedText: buildSelectedText(latestItem),
     articleContext: session.articleContext,
     articleContextError: session.articleContextError,
+    articleCacheState: session.articleCacheState,
     previewImageUrl: latestItem?.previewImageUrl,
     timingMs: latestItem?.cropDurationMs,
     error: options.error,
@@ -247,6 +251,7 @@ export function buildEmptyOverlayPayload(
     launcherOnly: options.launcherOnly,
     preserveDrafts: options.preserveDrafts,
     selectedText: '',
+    articleCacheState: undefined,
     error: options.error,
   };
 }

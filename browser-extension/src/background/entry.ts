@@ -2,15 +2,22 @@ import { ensurePhase0ContextMenu } from './menus/phase0ContextMenu';
 import { openOverlaySession } from './usecases/openOverlaySession';
 import {
   clearAnalysisSession,
+  getAnalysisSession,
   setAnalysisSession,
 } from './services/analysisSessionStore';
+import {
+  buildNavigatedSessionState,
+  invalidateArticleCache,
+} from './services/articleCacheService';
 import { runSelectionAnalysis } from './usecases/runSelectionAnalysis';
 import {
   appendLiveSelectionSessionItem,
   appendSelectionSessionItem,
   removeSelectionSessionItem,
   toggleSelectionSessionItemImage,
+  buildOverlayPayload,
 } from './usecases/updateSelectionSession';
+import { loadExtensionSettings } from '../shared/storage/settingsStorage';
 import {
   PHASE0_MENU_ID,
   PHASE3_ADD_SELECTION_COMMAND_ID,
@@ -28,7 +35,9 @@ import type {
   OpenOverlayResponse,
   RunOverlayActionResponse,
   ToggleSessionItemImageResponse,
+  DeleteActiveArticleCacheResponse,
 } from '../shared/contracts/messages';
+import { renderOverlay } from './gateways/tabMessagingGateway';
 
 /**
  * Background runtime は権限が必要な処理の集約点であり、Local API 通信もここを通す。
@@ -47,6 +56,10 @@ export function registerBackgroundRuntime(): void {
 
   chrome.tabs.onRemoved?.addListener((tabId) => {
     void clearAnalysisSession(tabId);
+  });
+
+  chrome.tabs.onUpdated?.addListener((tabId, changeInfo) => {
+    void handleTabUpdated(tabId, changeInfo);
   });
 
   chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -122,6 +135,14 @@ export function registerBackgroundRuntime(): void {
         return true;
       }
 
+      if (
+        message.type === 'phase4.deleteActiveArticleCache' &&
+        sender.tab?.id !== undefined
+      ) {
+        void handleDeleteActiveArticleCache(sender.tab.id, sendResponse);
+        return true;
+      }
+
       if (message.type !== 'phase1.runOverlayAction' || !sender.tab) {
         return false;
       }
@@ -164,10 +185,16 @@ async function cacheOverlaySession(
   tabId: number,
   message: CacheOverlaySessionMessage
 ): Promise<void> {
+  const existingSession = await getAnalysisSession(tabId);
   await setAnalysisSession(tabId, {
     items: [message.payload.item],
     modelOptions: message.payload.modelOptions,
     lastAction: 'translation',
+    lastModelName: existingSession?.lastModelName,
+    lastCustomPrompt: existingSession?.lastCustomPrompt,
+    articleContext: existingSession?.articleContext,
+    articleContextError: existingSession?.articleContextError,
+    articleCacheState: existingSession?.articleCacheState,
   });
 }
 
@@ -175,6 +202,7 @@ async function cacheBatchOverlaySession(
   tabId: number,
   message: CacheBatchOverlaySessionMessage
 ): Promise<void> {
+  const existingSession = await getAnalysisSession(tabId);
   await setAnalysisSession(tabId, {
     items: message.payload.items.map((item) => ({
       ...item,
@@ -187,6 +215,9 @@ async function cacheBatchOverlaySession(
     lastAction: message.payload.lastAction ?? 'translation',
     lastModelName: message.payload.lastModelName,
     lastCustomPrompt: message.payload.lastCustomPrompt,
+    articleContext: existingSession?.articleContext,
+    articleContextError: existingSession?.articleContextError,
+    articleCacheState: existingSession?.articleCacheState,
   });
 }
 
@@ -400,4 +431,69 @@ async function handleToggleSessionItemImage(
           : 'Failed to update selection image inclusion.',
     });
   }
+}
+
+async function handleDeleteActiveArticleCache(
+  tabId: number,
+  sendResponse: (response: DeleteActiveArticleCacheResponse) => void
+): Promise<void> {
+  try {
+    const session = await getAnalysisSession(tabId);
+    if (!session) {
+      sendResponse({ ok: true });
+      return;
+    }
+
+    const settings = await loadExtensionSettings();
+    const nextSession = await invalidateArticleCache(session, {
+      apiBaseUrl: settings.apiBaseUrl,
+      reason: 'manual-delete',
+      notice: 'Article cache was deleted manually for this tab.',
+    });
+    await setAnalysisSession(tabId, nextSession);
+    await renderOverlay(
+      tabId,
+      buildOverlayPayload(nextSession, {
+        launcherOnly: false,
+        preserveDrafts: true,
+      })
+    );
+    sendResponse({ ok: true });
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Failed to delete the active article cache.',
+    });
+  }
+}
+
+async function handleTabUpdated(
+  tabId: number,
+  changeInfo: chrome.tabs.TabChangeInfo
+): Promise<void> {
+  if (!changeInfo.url) {
+    return;
+  }
+
+  const session = await getAnalysisSession(tabId);
+  if (!session) {
+    return;
+  }
+
+  const settings = await loadExtensionSettings();
+  const invalidatedSession = session.articleCacheState?.cacheName
+    ? await invalidateArticleCache(session, {
+        apiBaseUrl: settings.apiBaseUrl,
+        reason: 'url-changed',
+        notice: 'Article cache was cleared because the page URL changed.',
+      })
+    : session;
+
+  await setAnalysisSession(
+    tabId,
+    buildNavigatedSessionState(invalidatedSession, changeInfo.url)
+  );
 }

@@ -8,6 +8,8 @@ const renderOverlayMock = vi.hoisted(() => vi.fn());
 const sendAnalyzeTranslateRequestMock = vi.hoisted(() => vi.fn());
 const cropSelectionImageMock = vi.hoisted(() => vi.fn());
 const loadExtensionSettingsMock = vi.hoisted(() => vi.fn());
+const mergeCollectedArticleContextMock = vi.hoisted(() => vi.fn());
+const syncArticleCacheStateMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/background/gateways/tabMessagingGateway', () => ({
   collectArticleContext: collectArticleContextMock,
@@ -25,6 +27,11 @@ vi.mock('../../../src/background/services/cropSelectionImage', () => ({
 
 vi.mock('../../../src/shared/storage/settingsStorage', () => ({
   loadExtensionSettings: loadExtensionSettingsMock,
+}));
+
+vi.mock('../../../src/background/services/articleCacheService', () => ({
+  mergeCollectedArticleContext: mergeCollectedArticleContextMock,
+  syncArticleCacheState: syncArticleCacheStateMock,
 }));
 
 import { clearAnalysisSession } from '../../../src/background/services/analysisSessionStore';
@@ -53,6 +60,25 @@ describe('runSelectionAnalysis', () => {
         textLength: 104,
       },
     });
+    mergeCollectedArticleContextMock.mockImplementation((session, result) => ({
+      ...session,
+      articleContext: result.ok ? result.payload : session.articleContext,
+      articleContextError: result.ok ? undefined : result.error,
+    }));
+    syncArticleCacheStateMock.mockImplementation(async (session) => ({
+      ...session,
+      articleCacheState: {
+        status: 'active',
+        cacheName: 'cachedContents/article-1',
+        modelName: 'gemini-2.5-flash',
+        articleUrl: session.articleContext?.url,
+        articleHash: session.articleContext?.bodyHash,
+        tokenEstimate: 1400,
+        tokenCount: 1500,
+        ttlSeconds: 3600,
+        notice: 'Article cache created automatically for the current tab.',
+      },
+    }));
   });
 
   it('renders loading then success overlay using stored settings', async () => {
@@ -154,6 +180,10 @@ describe('runSelectionAnalysis', () => {
           title: 'Example article',
           bodyHash: 'abc123def4567890',
         }),
+        articleCacheState: expect.objectContaining({
+          status: 'active',
+          cacheName: 'cachedContents/article-1',
+        }),
         translatedText: '翻訳結果',
         previewImageUrl: 'data:image/webp;base64,crop',
         imageCount: 1,
@@ -171,6 +201,14 @@ describe('runSelectionAnalysis', () => {
       ok: false,
       error: 'Readable article context could not be extracted on this page.',
     });
+    syncArticleCacheStateMock.mockImplementationOnce(async (session) => ({
+      ...session,
+      articleCacheState: {
+        status: 'idle',
+        autoCreateEligible: false,
+        notice: 'Readable article context could not be extracted on this page.',
+      },
+    }));
     collectSelectionMock.mockResolvedValueOnce({
       ok: true,
       payload: {
@@ -212,6 +250,7 @@ describe('runSelectionAnalysis', () => {
         articleContext: undefined,
         articleContextError:
           'Readable article context could not be extracted on this page.',
+        articleCacheState: expect.objectContaining({ status: 'idle' }),
       })
     );
   });

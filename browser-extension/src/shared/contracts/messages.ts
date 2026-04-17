@@ -65,6 +65,40 @@ export interface ArticleContextResponse {
   error?: string;
 }
 
+export type ArticleCacheLifecycleStatus =
+  | 'idle'
+  | 'candidate'
+  | 'creating'
+  | 'active'
+  | 'invalidated'
+  | 'degraded'
+  | 'unsupported';
+
+export type ArticleCacheInvalidationReason =
+  | 'url-changed'
+  | 'model-changed'
+  | 'ttl-expired'
+  | 'body-changed'
+  | 'manual-delete'
+  | 'remote-missing';
+
+export interface ArticleCacheState {
+  status: ArticleCacheLifecycleStatus;
+  autoCreateEligible?: boolean;
+  cacheName?: string;
+  displayName?: string;
+  modelName?: string;
+  articleUrl?: string;
+  articleHash?: string;
+  tokenEstimate?: number;
+  tokenCount?: number;
+  ttlSeconds?: number;
+  expireTime?: string;
+  invalidationReason?: ArticleCacheInvalidationReason;
+  notice?: string;
+  lastValidatedAt?: string;
+}
+
 export interface AnalyzeApiResponse {
   ok: boolean;
   mode: AnalysisAction;
@@ -76,6 +110,23 @@ export interface AnalyzeApiResponse {
   availability?: RuntimeAvailability;
   degraded_reason?: DegradedReason | null;
   selection_metadata?: Record<string, unknown> | null;
+}
+
+export interface CacheStatusApiResponse {
+  ok: boolean;
+  isActive: boolean;
+  ttlSeconds?: number;
+  tokenCount?: number;
+  cacheName?: string;
+  displayName?: string;
+  modelName?: string;
+  expireTime?: string;
+}
+
+export interface TokenCountApiResponse {
+  ok: boolean;
+  tokenCount: number;
+  modelName: string;
 }
 
 export interface AnalyzeRequestOptions {
@@ -137,6 +188,7 @@ export interface OverlayPayload {
   selectedText?: string;
   articleContext?: ArticleContext;
   articleContextError?: string;
+  articleCacheState?: ArticleCacheState;
   translatedText?: string;
   explanation?: string | null;
   previewImageUrl?: string;
@@ -309,6 +361,15 @@ export interface OpenOverlayResponse {
   error?: string;
 }
 
+export interface DeleteActiveArticleCacheMessage {
+  type: 'phase4.deleteActiveArticleCache';
+}
+
+export interface DeleteActiveArticleCacheResponse {
+  ok: boolean;
+  error?: string;
+}
+
 export type ContentScriptMessage =
   | CollectSelectionMessage
   | CollectArticleContextMessage
@@ -326,4 +387,5 @@ export type BackgroundRuntimeMessage =
   | RemoveSessionItemMessage
   | ToggleSessionItemImageMessage
   | ClearOverlaySessionMessage
-  | OpenOverlayMessage;
+  | OpenOverlayMessage
+  | DeleteActiveArticleCacheMessage;
