@@ -63,10 +63,10 @@ Badge meanings:
 
 Available entry points:
 
-- Browser command `Ctrl+Shift+8`: reopen the overlay for the current tab
-- Browser command `Ctrl+Shift+9`: append the current live text selection to the batch
+- Browser command `Ctrl+Shift+8`: reopen the cached Gem Read session for the current tab. If no cached session exists yet, Gem Read shows a launcher-only overlay instead of a full panel.
+- Browser command `Ctrl+Shift+9`: append the current live text selection to the batch. If no live text selection exists, Gem Read opens the full overlay with an explicit error instead of failing silently.
 - Browser command `Ctrl+Shift+Y`: start free-rectangle capture
-- Popup button `Open Overlay On Active Tab`: helper entry point that uses the same reopen flow as `Ctrl+Shift+8`
+- Popup button `Open Overlay On Active Tab`: helper entry point that uses the same cached-session reopen flow as `Ctrl+Shift+8`
 
 1. In the overlay, inspect the crop preview, batch list, and latest result.
 1. If you want a different action without reselection, use one of the overlay actions:
@@ -91,7 +91,7 @@ Current Phase 3 scope:
 - Free-rectangle capture mode
 - Popup-managed local API URL and default model
 - Overlay reruns for translation, explanation, and custom prompt
-- Keyboard-first overlay reopen and rerun flow
+- Keyboard-first cached-session reopen and rerun flow
 
 Current limitations:
 
@@ -101,3 +101,5 @@ Current limitations:
 - Restricted pages such as browser internal pages, extension pages, and other URLs where content scripts cannot be injected
 
 For `Ctrl+Shift+9`, Gem Read uses only the current live text selection. It does not reuse the last rectangle capture or the previous batch item when no live selection is active.
+
+For `Ctrl+Shift+8`, Gem Read does not synthesize a new batch or reopen a purely minimized UI state on its own. It only restores the full overlay when the current tab already has a cached Gem Read session in the background store.

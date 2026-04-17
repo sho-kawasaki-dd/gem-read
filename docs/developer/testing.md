@@ -92,8 +92,8 @@ These workflows are intentionally split so branch protection can require each ga
 - `background/services/cropSelectionImage.ts`: crop coordinate scaling and output encoding
 - `shared/gateways/localApiGateway.ts`: popup bootstrap and analyze request shaping
 - `content/selection/snapshotStore.ts`: selection capture, fallback reuse, and guidance errors
-- `content/overlay/renderOverlay.ts`: DOM rendering, action controls, keyboard bindings, minimize/reopen flow, and background message dispatch
-- `popup/ui/renderPopup.ts`: popup status rendering, settings persistence, and background-driven overlay reopen flow
+- `content/overlay/renderOverlay.ts`: DOM rendering, action controls, keyboard bindings, minimize flow, and background-driven cached-session restore behavior
+- `popup/ui/renderPopup.ts`: popup status rendering, settings persistence, and background-driven cached-session reopen flow
 
 ## Smoke Launch Checks
 
@@ -106,11 +106,11 @@ These workflows are intentionally split so branch protection can require each ga
 - Start `uv run python -m browser_api` before opening the extension popup.
 - In the popup, confirm `Reachable`, `Mock Mode`, or `Unreachable` matches the local API state.
 - With `GEMINI_API_KEY` unset, confirm popup can still reach the API and the overlay shows explicit mock-mode text.
-- On a regular http or https page, select text and confirm `Ctrl+Shift+8` reopens the cached overlay panel.
+- On a regular http or https page, build a batch first and confirm `Ctrl+Shift+8` restores the cached full overlay panel for that tab.
 - With no cached session, confirm `Ctrl+Shift+8` shows the launcher-only overlay instead of a full panel.
-- With a live text selection active, confirm `Ctrl+Shift+9` appends only the current live selection to the batch.
-- With no live text selection active, confirm `Ctrl+Shift+9` renders an explicit overlay error instead of failing silently.
+- With a live text selection active, confirm `Ctrl+Shift+9` appends only the current live text selection to the batch.
+- With no live text selection active, confirm `Ctrl+Shift+9` renders an explicit full-overlay error instead of failing silently.
 - Confirm `Ctrl+Shift+Y` starts rectangle capture and `Esc` still cancels rectangle mode without minimizing the overlay.
 - Confirm `Esc` minimizes the overlay, `Shift+Esc` closes it and clears the tab session, `Alt+R` reruns the last action, and `Ctrl+Enter` submits the custom prompt only while the textarea is focused.
-- Confirm the popup `Open Overlay On Active Tab` button triggers the same reopen flow as the browser command.
+- Confirm the popup `Open Overlay On Active Tab` button triggers the same cached-session reopen flow as the browser command.
 - On restricted pages where content scripts cannot run, confirm commands do not inject the overlay and document that limitation instead of treating it as a regression.

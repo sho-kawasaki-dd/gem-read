@@ -29,9 +29,11 @@ This section explains how the application is structured and which diagrams shoul
 - Make runtime flows easier to reason about
 - Keep diagrams close to code so they can be updated with implementation changes
 
-## Browser Extension Phase 1 Notes
+## Browser Extension Browser Workflow Notes
 
 - The extension is local-first and only talks to `http://127.0.0.1:*` or `http://localhost:*`.
 - Popup settings own the API base URL, connection status, and default model.
 - The overlay can rerun translation, translation with explanation, and custom prompt actions after one selection session has been captured.
+- `Ctrl+Shift+8` and the popup helper restore a cached session for the current tab. If no cached session exists, they intentionally fall back to a launcher-only overlay.
+- `Ctrl+Shift+9` uses only the current live text selection. When no live text selection exists, it opens the full overlay with an explicit error instead of silently doing nothing.
 - If `GEMINI_API_KEY` is missing, the browser API intentionally returns mock-mode responses so popup and overlay flows remain testable.
