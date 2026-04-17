@@ -35,7 +35,8 @@ export async function appendSelectionSessionItem(
     );
   }
 
-  const screenshotDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+  const windowId = await resolveTabWindowId(tab);
+  const screenshotDataUrl = await chrome.tabs.captureVisibleTab(windowId, {
     format: 'png',
   });
   const cropResult = await cropSelectionImage(screenshotDataUrl, selection);
@@ -195,4 +196,21 @@ function resolveModelOptions(
 
 function createSessionItemId(source: SelectionSessionSource): string {
   return `${source}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function resolveTabWindowId(tab: chrome.tabs.Tab): Promise<number> {
+  if (tab.windowId !== undefined) {
+    return tab.windowId;
+  }
+
+  if (tab.id === undefined) {
+    throw new Error('Active tab window could not be resolved.');
+  }
+
+  const resolvedTab = await chrome.tabs.get(tab.id);
+  if (resolvedTab.windowId === undefined) {
+    throw new Error('Active tab window could not be resolved.');
+  }
+
+  return resolvedTab.windowId;
 }

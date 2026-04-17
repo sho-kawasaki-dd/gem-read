@@ -238,14 +238,14 @@ describe('registerBackgroundRuntime', () => {
           },
         },
       },
-      { tab: { id: 7, windowId: 3 } },
+      { tab: { id: 7 } },
       sendResponse
     );
 
     expect(keepChannelOpen).toBe(true);
     await Promise.resolve();
     expect(appendSelectionSessionItemMock).toHaveBeenCalledWith(
-      { id: 7, windowId: 3 },
+      { id: 7 },
       expect.objectContaining({ text: 'Selected text' }),
       'text-selection'
     );

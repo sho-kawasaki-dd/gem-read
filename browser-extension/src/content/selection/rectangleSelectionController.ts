@@ -30,7 +30,7 @@ export async function startRectangleSelection(
     host.id = RECTANGLE_OVERLAY_ID;
     host.style.position = 'fixed';
     host.style.inset = '0';
-    host.style.zIndex = '2147483646';
+    host.style.zIndex = '2147483647';
     host.style.cursor = 'crosshair';
     host.style.background = 'rgba(15, 23, 42, 0.12)';
     host.style.userSelect = 'none';

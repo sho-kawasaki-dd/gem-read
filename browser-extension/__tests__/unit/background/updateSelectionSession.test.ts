@@ -73,6 +73,36 @@ describe('updateSelectionSession', () => {
     );
   });
 
+  it('resolves the tab window id before capturing when the sender tab omits it', async () => {
+    const chromeMock = getChromeMock();
+    (chromeMock.tabs.get as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 7,
+      windowId: 3,
+    });
+    (chromeMock.tabs.captureVisibleTab as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      'data:image/png;base64,shot'
+    );
+
+    await appendSelectionSessionItem(
+      { id: 7 } as chrome.tabs.Tab,
+      {
+        text: 'Selected text',
+        rect: { left: 1, top: 2, width: 3, height: 4 },
+        viewportWidth: 100,
+        viewportHeight: 100,
+        devicePixelRatio: 1,
+        url: 'https://example.com',
+        pageTitle: 'Example',
+      },
+      'text-selection'
+    );
+
+    expect(chromeMock.tabs.get).toHaveBeenCalledWith(7);
+    expect(chromeMock.tabs.captureVisibleTab).toHaveBeenCalledWith(3, {
+      format: 'png',
+    });
+  });
+
   it('removes a session item and rerenders the overlay with an empty batch', async () => {
     const chromeMock = getChromeMock();
     (chromeMock.tabs.captureVisibleTab as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(

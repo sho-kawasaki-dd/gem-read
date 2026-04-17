@@ -15,6 +15,7 @@ export function createChromeMock(): typeof chrome {
   return {
     tabs: {
       captureVisibleTab: vi.fn(),
+      get: vi.fn(),
       query: vi.fn(),
       sendMessage: vi.fn(),
     },
