@@ -10,6 +10,7 @@ from browser_api.api.app import create_app
 from browser_api.api.dependencies import BrowserAPIServices, get_services
 from browser_api.application.dto import (
     AnalyzeTranslateResult,
+    AnalyzeUsageMetrics,
     CacheDeleteResult,
     CacheStatusResult,
     ModelCatalogResult,
@@ -100,6 +101,12 @@ def analyze_result() -> AnalyzeTranslateResult:
         availability="live",
         degraded_reason=None,
         selection_metadata={"url": "https://example.com"},
+        usage=AnalyzeUsageMetrics(
+            prompt_token_count=42,
+            cached_content_token_count=1600,
+            candidates_token_count=73,
+            total_token_count=1715,
+        ),
     )
 
 

@@ -27,6 +27,7 @@ import {
   syncArticleCacheState,
 } from '../services/articleCacheService';
 import { cropSelectionImage } from '../services/cropSelectionImage';
+import { syncPayloadTokenEstimate } from '../services/payloadTokenService';
 
 export interface RunSelectionAnalysisOptions {
   action?: AnalysisAction;
@@ -57,7 +58,9 @@ export async function runSelectionAnalysis(
   );
   const modelOptions = buildModelOptions(settings);
   const cachedSession = await getCachedSession(tabId);
-  const reusableSession = options.reuseCachedSession ? cachedSession : undefined;
+  const reusableSession = options.reuseCachedSession
+    ? cachedSession
+    : undefined;
 
   try {
     // loading を先に描画して、selection 取得や crop の待ち時間でも UI 上の文脈を保つ。
@@ -74,6 +77,9 @@ export async function runSelectionAnalysis(
       articleContext: reusableSession?.articleContext,
       articleContextError: reusableSession?.articleContextError,
       articleCacheState: reusableSession?.articleCacheState,
+      payloadTokenEstimate: reusableSession?.payloadTokenEstimate,
+      payloadTokenModelName: reusableSession?.payloadTokenModelName,
+      payloadTokenError: reusableSession?.payloadTokenError,
     });
 
     const session = await resolveAnalysisSession(
@@ -113,6 +119,9 @@ export async function runSelectionAnalysis(
       articleContext: session.articleContext,
       articleContextError: session.articleContextError,
       articleCacheState: session.articleCacheState,
+      payloadTokenEstimate: session.payloadTokenEstimate,
+      payloadTokenModelName: session.payloadTokenModelName,
+      payloadTokenError: session.payloadTokenError,
       translatedText: apiResponse.translated_text,
       explanation: apiResponse.explanation,
       previewImageUrl: sessionItem.previewImageUrl,
@@ -122,6 +131,7 @@ export async function runSelectionAnalysis(
       imageCount: apiResponse.image_count,
       timingMs: sessionItem.cropDurationMs,
       rawResponse: apiResponse.raw_response,
+      usage: apiResponse.usage ?? undefined,
     });
   } catch (error) {
     const message =
@@ -140,6 +150,9 @@ export async function runSelectionAnalysis(
       articleContext: availableSession?.articleContext,
       articleContextError: availableSession?.articleContextError,
       articleCacheState: availableSession?.articleCacheState,
+      payloadTokenEstimate: availableSession?.payloadTokenEstimate,
+      payloadTokenModelName: availableSession?.payloadTokenModelName,
+      payloadTokenError: availableSession?.payloadTokenError,
       error: message,
     });
   }
@@ -174,8 +187,15 @@ async function resolveAnalysisSession(
           allowAutoCreate: true,
         }
       );
-      await setAnalysisSession(tabId, refreshedSession);
-      return refreshedSession;
+      const tokenAwareSession = await syncPayloadTokenEstimate(
+        refreshedSession,
+        {
+          apiBaseUrl,
+          modelName,
+        }
+      );
+      await setAnalysisSession(tabId, tokenAwareSession);
+      return tokenAwareSession;
     }
 
     throw new Error(
@@ -243,9 +263,10 @@ async function createFreshSession(
     ],
     modelOptions,
     lastAction: 'translation',
-    articleContext: articleContextResult.ok
-      ? articleContextResult.payload
-      : undefined,
+    articleContext:
+      articleContextResult.ok && 'payload' in articleContextResult
+        ? articleContextResult.payload
+        : undefined,
     articleContextError: articleContextResult.ok
       ? undefined
       : articleContextResult.error,
@@ -255,8 +276,12 @@ async function createFreshSession(
     modelName,
     allowAutoCreate: true,
   });
-  await setAnalysisSession(tabId, cacheAwareSession);
-  return cacheAwareSession;
+  const tokenAwareSession = await syncPayloadTokenEstimate(cacheAwareSession, {
+    apiBaseUrl,
+    modelName,
+  });
+  await setAnalysisSession(tabId, tokenAwareSession);
+  return tokenAwareSession;
 }
 
 async function getCachedSession(
@@ -294,7 +319,9 @@ async function getCachedSession(
 function getRequiredSessionItem(session: SelectionAnalysisSession) {
   const item = getLatestSelectionItem(session);
   if (!item) {
-    throw new Error('解析セッションが見つかりません。選択し直してから再実行してください。');
+    throw new Error(
+      '解析セッションが見つかりません。選択し直してから再実行してください。'
+    );
   }
   return item;
 }

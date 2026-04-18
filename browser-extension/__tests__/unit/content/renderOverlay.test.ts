@@ -144,7 +144,9 @@ describe('renderOverlay', () => {
     expect(root.querySelector('.banner-box')?.textContent).toContain(
       'Mock mode is active'
     );
-    expect(root.querySelector('.result-box')?.textContent?.trim()).toBe('翻訳結果');
+    expect(root.querySelector('.result-box')?.textContent?.trim()).toBe(
+      '翻訳結果'
+    );
     expect(root.querySelector('.explanation-box')?.textContent?.trim()).toBe(
       '補足説明'
     );
@@ -214,7 +216,9 @@ describe('renderOverlay', () => {
 
   it('sends overlay action messages to the background runtime', async () => {
     const chromeMock = getChromeMock();
-    (chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+    (
+      chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({ ok: true });
 
     renderOverlay({
       status: 'success',
@@ -277,7 +281,9 @@ describe('renderOverlay', () => {
 
   it('renders article cache details and sends manual delete requests', async () => {
     const chromeMock = getChromeMock();
-    (chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+    (
+      chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({ ok: true });
 
     renderOverlay({
       status: 'success',
@@ -302,13 +308,31 @@ describe('renderOverlay', () => {
         ttlSeconds: 3600,
         notice: 'Article cache created automatically for the current tab.',
       },
+      payloadTokenEstimate: 42,
+      payloadTokenModelName: 'gemini-2.5-flash',
+      usage: {
+        promptTokenCount: 42,
+        cachedContentTokenCount: 1400,
+        candidatesTokenCount: 64,
+        totalTokenCount: 1506,
+      },
     });
 
     const root = getShadowRoot();
-    expect(root.querySelector('.article-title')?.textContent).toBe('Example article');
-    expect(root.querySelector('.article-pill')?.textContent).toContain('Cache active');
+    expect(root.querySelector('.article-title')?.textContent).toBe(
+      'Example article'
+    );
+    expect(root.querySelector('.article-pill')?.textContent).toContain(
+      'Cache active'
+    );
+    expect(root.textContent).toContain('Current Request');
+    expect(root.textContent).toContain('42 estimated');
+    expect(root.textContent).toContain('Last Response');
+    expect(root.textContent).toContain('1,506 total');
 
-    (root.querySelector('.action-delete-article-cache') as HTMLButtonElement).click();
+    (
+      root.querySelector('.action-delete-article-cache') as HTMLButtonElement
+    ).click();
     await Promise.resolve();
 
     expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({
@@ -390,7 +414,9 @@ describe('renderOverlay', () => {
 
   it('submits the custom prompt with Ctrl+Enter from the textarea', async () => {
     const chromeMock = getChromeMock();
-    (chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+    (
+      chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({ ok: true });
 
     renderOverlay({
       status: 'success',
@@ -454,7 +480,9 @@ describe('renderOverlay', () => {
 
   it('reruns the last action with Alt+R when focus is outside editable controls', async () => {
     const chromeMock = getChromeMock();
-    (chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+    (
+      chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({ ok: true });
 
     renderOverlay({
       status: 'success',
@@ -527,7 +555,9 @@ describe('renderOverlay', () => {
 
   it('sends remove-session-item messages from batch controls', async () => {
     const chromeMock = getChromeMock();
-    (chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+    (
+      chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({ ok: true });
 
     renderOverlay({
       status: 'success',
@@ -567,7 +597,9 @@ describe('renderOverlay', () => {
 
   it('sends include-image toggle messages from batch controls', async () => {
     const chromeMock = getChromeMock();
-    (chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+    (
+      chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({ ok: true });
 
     renderOverlay({
       status: 'success',

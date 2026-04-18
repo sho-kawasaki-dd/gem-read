@@ -12,10 +12,7 @@ import type {
   SelectionSessionItem,
   ToggleSessionItemImageResponse,
 } from '../../shared/contracts/messages';
-import {
-  renderRichText,
-  RICH_TEXT_STYLE_BLOCK,
-} from './richTextRenderer';
+import { renderRichText, RICH_TEXT_STYLE_BLOCK } from './richTextRenderer';
 import {
   isRectangleSelectionActive,
   startRectangleSelection,
@@ -49,7 +46,8 @@ export function renderOverlay(payload: OverlayPayload): void {
   }
 
   const sessionItems = syncSelectionBatch(payload.sessionItems);
-  const maxSessionItems = payload.maxSessionItems ?? MAX_SELECTION_SESSION_ITEMS;
+  const maxSessionItems =
+    payload.maxSessionItems ?? MAX_SELECTION_SESSION_ITEMS;
   const effectivePayload: OverlayPayload = {
     ...payload,
     launcherOnly: undefined,
@@ -191,7 +189,8 @@ export function renderOverlay(payload: OverlayPayload): void {
 
   rawSection.hidden = !effectivePayload.rawResponse;
   rawBox.textContent = effectivePayload.rawResponse || '';
-  rawDetails.open = Boolean(effectivePayload.rawResponse) && isRawResponseExpanded;
+  rawDetails.open =
+    Boolean(effectivePayload.rawResponse) && isRawResponseExpanded;
 
   errorSection.hidden = !effectivePayload.error;
   errorBox.textContent = effectivePayload.error || '';
@@ -210,7 +209,8 @@ export function renderOverlay(payload: OverlayPayload): void {
 
   // cached session がない段階で action を押しても再利用できる selection がないため、button を閉じておく。
   const actionsEnabled =
-    Boolean(effectivePayload.sessionReady) && effectivePayload.status !== 'loading';
+    Boolean(effectivePayload.sessionReady) &&
+    effectivePayload.status !== 'loading';
   translationButton.disabled = !actionsEnabled;
   explanationButton.disabled = !actionsEnabled;
   customButton.disabled =
@@ -223,7 +223,10 @@ export function renderOverlay(payload: OverlayPayload): void {
     effectivePayload.status === 'loading' ||
     !canAppendSelectionBatchItem() ||
     isRectangleModeActive;
-  batchHint.textContent = buildBatchHint(maxSessionItems, isRectangleModeActive);
+  batchHint.textContent = buildBatchHint(
+    maxSessionItems,
+    isRectangleModeActive
+  );
   actionHint.textContent = actionsEnabled
     ? 'Reuse the cached batch with a different action or model. Press Alt+R to rerun the last action or Ctrl+Enter in the custom prompt box to submit.'
     : 'Select text and run Gem Read once before action buttons become available.';
@@ -448,6 +451,39 @@ function renderPanelMarkup(
         flex-wrap: wrap;
         gap: 8px;
       }
+      .token-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px;
+      }
+      .token-card {
+        display: grid;
+        gap: 6px;
+        padding: 12px;
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.5);
+        border: 1px solid rgba(148, 163, 184, 0.16);
+      }
+      .token-title {
+        color: #93c5fd;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .token-value {
+        color: #f8fafc;
+        font-size: 16px;
+        font-weight: 700;
+      }
+      .token-note {
+        color: #cbd5e1;
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+      .token-note--warning {
+        color: #fde68a;
+      }
       .article-pill {
         display: inline-flex;
         align-items: center;
@@ -650,6 +686,7 @@ function renderPanelMarkup(
         <div class="banner-box"></div>
       </div>
       ${renderArticleContextMarkup(payload)}
+      ${renderTokenInsightsMarkup(payload)}
       <div class="section">
         <div class="label">Batch</div>
         <div class="action-grid">
@@ -780,6 +817,9 @@ function buildMetaText(payload: OverlayPayload): string {
   if (payload.action) {
     items.push(`action=${payload.action}`);
   }
+  if (payload.payloadTokenEstimate !== undefined) {
+    items.push(`requestTokens=${payload.payloadTokenEstimate}`);
+  }
   if (payload.articleContext) {
     items.push(`article=${payload.articleContext.textLength} chars`);
   }
@@ -788,6 +828,12 @@ function buildMetaText(payload: OverlayPayload): string {
   }
   if (payload.articleCacheState?.tokenEstimate !== undefined) {
     items.push(`articleTokens=${payload.articleCacheState.tokenEstimate}`);
+  }
+  if (payload.usage?.totalTokenCount !== undefined) {
+    items.push(`totalTokens=${payload.usage.totalTokenCount}`);
+  }
+  if (payload.usage?.cachedContentTokenCount !== undefined) {
+    items.push(`cachedTokens=${payload.usage.cachedContentTokenCount}`);
   }
   return items.join(' | ');
 }
@@ -853,15 +899,24 @@ function renderArticleContextMarkup(payload: OverlayPayload): string {
     return '';
   }
 
-  const articleTitle = payload.articleContext?.title ?? 'Article context unavailable';
+  const articleTitle =
+    payload.articleContext?.title ?? 'Article context unavailable';
   const articleSubtitle = payload.articleContext
-    ? `${payload.articleContext.source} | ${payload.articleContext.textLength} chars`
-    : payload.articleContextError ?? 'Article extraction is not available for this page.';
+    ? [
+        payload.articleContext.source,
+        payload.articleContext.siteName,
+        payload.articleContext.byline,
+        `${formatCount(payload.articleContext.textLength)} chars`,
+      ]
+        .filter((value) => Boolean(value))
+        .join(' | ')
+    : (payload.articleContextError ??
+      'Article extraction is not available for this page.');
   const summary = payload.articleContext?.excerpt
     ? payload.articleContext.excerpt
     : payload.articleContext
       ? `Hash ${payload.articleContext.bodyHash}`
-      : payload.articleContextError ?? 'No extracted article context yet.';
+      : (payload.articleContextError ?? 'No extracted article context yet.');
   const cacheState = payload.articleCacheState;
   const cacheStatus = cacheState
     ? formatArticleCacheStatus(cacheState)
@@ -881,10 +936,84 @@ function renderArticleContextMarkup(payload: OverlayPayload): string {
         <div class="article-summary">${escapeHtml(summary)}</div>
         <div class="article-meta-row">
           <span class="article-pill">${escapeHtml(cacheStatus)}</span>
-          ${cacheState?.tokenEstimate !== undefined ? `<span class="article-pill">Estimated ${escapeHtml(String(cacheState.tokenEstimate))} tokens</span>` : ''}
+          ${cacheState?.tokenEstimate !== undefined ? `<span class="article-pill">Article ${escapeHtml(formatCount(cacheState.tokenEstimate))} tokens</span>` : ''}
+          ${payload.payloadTokenEstimate !== undefined ? `<span class="article-pill">Request ${escapeHtml(formatCount(payload.payloadTokenEstimate))} tokens</span>` : ''}
           ${cacheState?.ttlSeconds !== undefined ? `<span class="article-pill">TTL ${escapeHtml(String(cacheState.ttlSeconds))}s</span>` : ''}
         </div>
       </div>
+    </div>
+  `;
+}
+
+function renderTokenInsightsMarkup(payload: OverlayPayload): string {
+  const cards: string[] = [];
+  const articleTokenCount =
+    payload.articleCacheState?.tokenEstimate ??
+    payload.articleCacheState?.tokenCount;
+
+  if (payload.payloadTokenEstimate !== undefined || payload.payloadTokenError) {
+    cards.push(
+      renderTokenCard(
+        'Current Request',
+        payload.payloadTokenEstimate !== undefined
+          ? `${formatCount(payload.payloadTokenEstimate)} estimated`
+          : 'Unavailable',
+        payload.payloadTokenEstimate !== undefined
+          ? `Counted against ${payload.payloadTokenModelName ?? payload.modelName ?? 'the selected model'}.`
+          : (payload.payloadTokenError ??
+              'Token counting is not available for the current request.'),
+        payload.payloadTokenEstimate === undefined
+      )
+    );
+  }
+
+  if (articleTokenCount !== undefined || payload.articleContext) {
+    cards.push(
+      renderTokenCard(
+        'Article Baseline',
+        articleTokenCount !== undefined
+          ? `${formatCount(articleTokenCount)} article tokens`
+          : 'Long article candidate',
+        articleTokenCount !== undefined
+          ? 'Used to decide whether automatic cache creation is worth it for this tab.'
+          : 'Article extraction succeeded, but token counting is not available yet.',
+        articleTokenCount === undefined
+      )
+    );
+  }
+
+  if (payload.articleCacheState) {
+    cards.push(
+      renderTokenCard(
+        'Cache Impact',
+        buildCacheImpactValue(payload),
+        buildCacheImpactNote(payload),
+        payload.articleCacheState.status === 'degraded'
+      )
+    );
+  }
+
+  if (payload.usage) {
+    cards.push(
+      renderTokenCard(
+        'Last Response',
+        payload.usage.totalTokenCount !== undefined
+          ? `${formatCount(payload.usage.totalTokenCount)} total`
+          : 'Usage recorded',
+        buildUsageNote(payload),
+        false
+      )
+    );
+  }
+
+  if (cards.length === 0) {
+    return '';
+  }
+
+  return `
+    <div class="section">
+      <div class="label">Tokens</div>
+      <div class="token-grid">${cards.join('')}</div>
     </div>
   `;
 }
@@ -917,6 +1046,119 @@ function formatArticleCacheStatus(
   return 'Cache idle';
 }
 
+function renderTokenCard(
+  title: string,
+  value: string,
+  note: string,
+  warning: boolean
+): string {
+  return `
+    <div class="token-card">
+      <div class="token-title">${escapeHtml(title)}</div>
+      <div class="token-value">${escapeHtml(value)}</div>
+      <div class="token-note ${warning ? 'token-note--warning' : ''}">${escapeHtml(note)}</div>
+    </div>
+  `;
+}
+
+function buildCacheImpactValue(payload: OverlayPayload): string {
+  const cacheState = payload.articleCacheState;
+  if (!cacheState) {
+    return 'No cache state';
+  }
+
+  if (cacheState.status === 'active') {
+    return cacheState.tokenCount !== undefined
+      ? `${formatCount(cacheState.tokenCount)} cached once`
+      : 'Cache active';
+  }
+
+  if (cacheState.status === 'candidate' && cacheState.autoCreateEligible) {
+    return 'Auto-create candidate';
+  }
+
+  if (cacheState.status === 'creating') {
+    return 'Creating cache';
+  }
+
+  if (cacheState.status === 'unsupported') {
+    return 'Model unsupported';
+  }
+
+  if (cacheState.status === 'degraded') {
+    return 'Degraded';
+  }
+
+  if (cacheState.status === 'invalidated') {
+    return 'Invalidated';
+  }
+
+  return 'Idle';
+}
+
+function buildCacheImpactNote(payload: OverlayPayload): string {
+  const cacheState = payload.articleCacheState;
+  if (!cacheState) {
+    return 'No article cache state has been resolved for this tab yet.';
+  }
+
+  if (cacheState.status === 'active') {
+    const cachedTokens = payload.usage?.cachedContentTokenCount;
+    if (cachedTokens !== undefined && cachedTokens > 0) {
+      return `The last response reused ${formatCount(cachedTokens)} cached tokens from the article context.`;
+    }
+    if (payload.payloadTokenEstimate !== undefined) {
+      return `Selection reruns stay near ${formatCount(payload.payloadTokenEstimate)} request tokens while Gemini reuses the cached article context.`;
+    }
+    return 'Article context is already cached for this tab and model.';
+  }
+
+  if (cacheState.status === 'candidate' && cacheState.autoCreateEligible) {
+    const articleTokens = cacheState.tokenEstimate ?? cacheState.tokenCount;
+    if (
+      articleTokens !== undefined &&
+      payload.payloadTokenEstimate !== undefined
+    ) {
+      return `Creating cache stores about ${formatCount(articleTokens)} article tokens once, then reruns stay near ${formatCount(payload.payloadTokenEstimate)} selection tokens.`;
+    }
+    return (
+      cacheState.notice ??
+      'This article is large enough to justify automatic cache creation.'
+    );
+  }
+
+  return (
+    cacheState.notice ??
+    'Cache state is available, but no token comparison is ready yet.'
+  );
+}
+
+function buildUsageNote(payload: OverlayPayload): string {
+  const usage = payload.usage;
+  if (!usage) {
+    return 'No response usage metadata is available.';
+  }
+
+  const parts: string[] = [];
+  if (usage.promptTokenCount !== undefined) {
+    parts.push(`prompt ${formatCount(usage.promptTokenCount)}`);
+  }
+  if (usage.cachedContentTokenCount !== undefined) {
+    parts.push(`cached ${formatCount(usage.cachedContentTokenCount)}`);
+  }
+  if (usage.candidatesTokenCount !== undefined) {
+    parts.push(`output ${formatCount(usage.candidatesTokenCount)}`);
+  }
+
+  return parts.length > 0
+    ? parts.join(' | ')
+    : 'The response completed, but Gemini did not return per-stage token counts.';
+}
+
+function formatCount(value: number): string {
+  return value.toLocaleString('en-US');
+}
+
 function buildSelectionText(sessionItems: SelectionSessionItem[]): string {
   const latestItem = sessionItems.at(-1);
   if (!latestItem) {
@@ -926,7 +1168,10 @@ function buildSelectionText(sessionItems: SelectionSessionItem[]): string {
   return latestItem.selection.text || '[Image region only]';
 }
 
-function buildBatchHint(maxSessionItems: number, rectangleActive: boolean): string {
+function buildBatchHint(
+  maxSessionItems: number,
+  rectangleActive: boolean
+): string {
   const { current } = getSelectionBatchCapacity();
   if (rectangleActive) {
     return 'Rectangle selection is active. Drag on the page to capture a region or press Esc to cancel.';
@@ -940,7 +1185,9 @@ function buildBatchHint(maxSessionItems: number, rectangleActive: boolean): stri
   return 'Batch items keep their own cached crop preview so later analysis does not depend on live page selection.';
 }
 
-function renderSessionItemsMarkup(sessionItems: SelectionSessionItem[]): string {
+function renderSessionItemsMarkup(
+  sessionItems: SelectionSessionItem[]
+): string {
   if (sessionItems.length === 0) {
     return '<div class="session-item"><div class="session-item-text">No items in the current batch.</div></div>';
   }
@@ -948,7 +1195,8 @@ function renderSessionItemsMarkup(sessionItems: SelectionSessionItem[]): string 
   return sessionItems
     .map((item, index) => {
       const itemText = item.selection.text || '[Image region only]';
-      const itemKind = item.source === 'free-rectangle' ? 'Rectangle' : 'Selection';
+      const itemKind =
+        item.source === 'free-rectangle' ? 'Rectangle' : 'Selection';
       const toggleDisabled = !item.previewImageUrl;
       return `
         <div class="session-item">
@@ -989,7 +1237,8 @@ async function toggleSelectionItemImage(
 
   if (response?.ok === false) {
     errorBox.textContent =
-      response.error ?? 'Failed to update image inclusion for the selection item.';
+      response.error ??
+      'Failed to update image inclusion for the selection item.';
     errorSection.hidden = false;
     return;
   }
@@ -1012,7 +1261,8 @@ async function addCurrentSelection(
   const selection = collectSelection();
   if (!selection.ok || !selection.payload) {
     errorBox.textContent =
-      selection.error ?? 'A page selection is required before adding it to the batch.';
+      selection.error ??
+      'A page selection is required before adding it to the batch.';
     errorSection.hidden = false;
     return;
   }
@@ -1026,7 +1276,8 @@ async function addCurrentSelection(
   })) as AppendSessionItemResponse | undefined;
 
   if (response?.ok === false) {
-    errorBox.textContent = response.error ?? 'Failed to add the current selection.';
+    errorBox.textContent =
+      response.error ?? 'Failed to add the current selection.';
     errorSection.hidden = false;
     return;
   }
@@ -1056,7 +1307,10 @@ async function addRectangleSelection(
   isRectangleModeActive = false;
 
   if (!selection.ok || !selection.payload) {
-    if (selection.error && selection.error !== 'Rectangle selection was cancelled.') {
+    if (
+      selection.error &&
+      selection.error !== 'Rectangle selection was cancelled.'
+    ) {
       errorBox.textContent = selection.error;
       errorSection.hidden = false;
     }
@@ -1073,10 +1327,14 @@ async function addRectangleSelection(
       selection: selection.payload,
       source: 'free-rectangle',
     },
-  })) as AppendSessionItemResponse | BeginRectangleSelectionResponse | undefined;
+  })) as
+    | AppendSessionItemResponse
+    | BeginRectangleSelectionResponse
+    | undefined;
 
   if (response?.ok === false) {
-    errorBox.textContent = response.error ?? 'Failed to add the rectangle selection.';
+    errorBox.textContent =
+      response.error ?? 'Failed to add the rectangle selection.';
     errorSection.hidden = false;
     renderOverlay({
       ...payload,
@@ -1100,7 +1358,8 @@ async function removeSelectionItem(
   })) as RemoveSessionItemResponse | undefined;
 
   if (response?.ok === false) {
-    errorBox.textContent = response.error ?? 'Failed to remove the selection item.';
+    errorBox.textContent =
+      response.error ?? 'Failed to remove the selection item.';
     errorSection.hidden = false;
     return;
   }
@@ -1261,7 +1520,8 @@ function handleOverlayKeyDown(event: KeyboardEvent): void {
     const customPromptInput = root.querySelector<HTMLTextAreaElement>(
       '.custom-prompt-input'
     );
-    const customButton = root.querySelector<HTMLButtonElement>('.action-custom');
+    const customButton =
+      root.querySelector<HTMLButtonElement>('.action-custom');
     const errorSection = root.querySelector<HTMLElement>('.error-section');
     const errorBox = root.querySelector<HTMLElement>('.error-box');
     if (

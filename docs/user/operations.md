@@ -93,12 +93,33 @@ Current Phase 3 scope:
 - Overlay reruns for translation, explanation, and custom prompt
 - Keyboard-first cached-session reopen and rerun flow
 
+## Use Article Context and Cache in the Browser Extension
+
+When Gem Read can extract a long article from the current page, the overlay shows an `Article Context` section and a `Tokens` section.
+
+What you can expect:
+
+- `Article Context` shows the extracted article title, extraction source, and cache status for the current tab.
+- `Tokens` shows the current selection request estimate, the extracted article token baseline, and the last response usage when Gemini reports it.
+- If the article is large enough and the current model supports caching, Gem Read may create one article cache automatically for the active tab.
+- If token counting is unavailable, Gem Read keeps the overlay usable and shows a degraded token message instead of hiding the rest of the workflow.
+
+The active article cache is scoped to the current tab and current model. Gem Read invalidates or recreates it when needed.
+
+Common invalidation reasons:
+
+- The page URL changed
+- The selected model changed
+- The extracted article body changed
+- The remote cache expired
+- You used `Delete Cache` in the overlay
+
 Current limitations:
 
-- Article-wide extraction
-- Context Cache integration from the extension UI
 - Reload or browser-restart session restore
 - Restricted pages such as browser internal pages, extension pages, and other URLs where content scripts cannot be injected
+
+Unsupported or extraction-failure pages fall back to the existing selection-based flow. In that case you can still build a batch, rerun actions, and use rectangle capture, but article-wide cache and article token display may be unavailable.
 
 For `Ctrl+Shift+9`, Gem Read uses only the current live text selection. It does not reuse the last rectangle capture or the previous batch item when no live selection is active.
 

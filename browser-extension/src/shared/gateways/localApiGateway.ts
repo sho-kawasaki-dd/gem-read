@@ -2,6 +2,7 @@ import { PHASE0_API_BASE_URL } from '../config/phase0';
 import type {
   AnalysisAction,
   AnalyzeApiResponse,
+  AnalyzeUsageMetrics,
   CacheStatusApiResponse,
   DegradedReason,
   ModelCatalogSource,
@@ -60,6 +61,14 @@ interface RawAnalyzeApiResponse {
   availability?: 'live' | 'mock';
   degraded_reason?: DegradedReason | null;
   selection_metadata?: Record<string, unknown> | null;
+  usage?: RawAnalyzeUsageApiResponse | null;
+}
+
+interface RawAnalyzeUsageApiResponse {
+  prompt_token_count?: number | null;
+  cached_content_token_count?: number | null;
+  candidates_token_count?: number | null;
+  total_token_count?: number | null;
 }
 
 interface RawModelApiResponse {
@@ -169,20 +178,37 @@ export async function sendAnalyzeTranslateRequest(
     availability: payload.availability,
     degraded_reason: payload.degraded_reason,
     selection_metadata: payload.selection_metadata,
+    usage: mapAnalyzeUsage(payload.usage),
   };
+}
+
+export function buildAnalyzeTextFromSessionItems(
+  sessionItems: SelectionSessionItem[]
+): string {
+  return sessionItems
+    .map((item) => item.selection.text.trim())
+    .filter((text) => text.length > 0)
+    .map((text, index) => `${index + 1}. ${text}`)
+    .join('\n\n');
 }
 
 function buildAnalyzeRequestBody(
   sessionItems: SelectionSessionItem[],
-  options: Pick<SendAnalyzeRequestOptions, 'action' | 'modelName' | 'customPrompt'>
+  options: Pick<
+    SendAnalyzeRequestOptions,
+    'action' | 'modelName' | 'customPrompt'
+  >
 ): AnalyzeTranslateRequestBody {
   if (sessionItems.length === 0) {
-    throw new Error('At least one session item is required before running analysis.');
+    throw new Error(
+      'At least one session item is required before running analysis.'
+    );
   }
 
   const images: string[] = [];
   const metadataItems = sessionItems.map((item, order) => {
-    const shouldIncludeImage = item.includeImage && Boolean(item.previewImageUrl);
+    const shouldIncludeImage =
+      item.includeImage && Boolean(item.previewImageUrl);
     const imageIndex = shouldIncludeImage
       ? images.push(item.previewImageUrl as string) - 1
       : null;
@@ -203,10 +229,7 @@ function buildAnalyzeRequestBody(
     } satisfies AnalyzeSelectionMetadataItem;
   });
 
-  const text = metadataItems
-    .filter((item) => item.text.length > 0)
-    .map((item, index) => `${index + 1}. ${item.text}`)
-    .join('\n\n');
+  const text = buildAnalyzeTextFromSessionItems(sessionItems);
   const primarySelection = sessionItems[0]?.selection;
 
   return {
@@ -430,5 +453,20 @@ function mapCacheStatusResponse(
     displayName: payload.display_name ?? undefined,
     modelName: payload.model_name ?? undefined,
     expireTime: payload.expire_time ?? undefined,
+  };
+}
+
+function mapAnalyzeUsage(
+  usage: RawAnalyzeUsageApiResponse | null | undefined
+): AnalyzeUsageMetrics | undefined {
+  if (!usage) {
+    return undefined;
+  }
+
+  return {
+    promptTokenCount: usage.prompt_token_count ?? undefined,
+    cachedContentTokenCount: usage.cached_content_token_count ?? undefined,
+    candidatesTokenCount: usage.candidates_token_count ?? undefined,
+    totalTokenCount: usage.total_token_count ?? undefined,
   };
 }

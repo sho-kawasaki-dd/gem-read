@@ -51,6 +51,16 @@ class AnalyzeTranslateCommand:
 
 
 @dataclass(frozen=True, slots=True)
+class AnalyzeUsageMetrics:
+    """Usage metadata exposed by browser_api for overlay token UX."""
+
+    prompt_token_count: int | None = None
+    cached_content_token_count: int | None = None
+    candidates_token_count: int | None = None
+    total_token_count: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class AnalyzeTranslateResult:
     """Normalized analyze result returned by the service before HTTP serialization."""
 
@@ -63,6 +73,7 @@ class AnalyzeTranslateResult:
     availability: Literal["live", "mock"] = "live"
     degraded_reason: str | None = None
     selection_metadata: AnalyzeSelectionMetadata | None = None
+    usage: AnalyzeUsageMetrics | None = None
 
 
 @dataclass(frozen=True, slots=True)

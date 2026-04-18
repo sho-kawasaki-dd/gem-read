@@ -43,6 +43,16 @@ class AnalysisRequest:
 
 
 @dataclass(frozen=True)
+class AnalysisUsage:
+    """Gemini usage metadata normalized for UI and API consumers."""
+
+    prompt_token_count: int | None = None
+    cached_content_token_count: int | None = None
+    candidates_token_count: int | None = None
+    total_token_count: int | None = None
+
+
+@dataclass(frozen=True)
 class AnalysisResult:
     """AI 解析の結果。
 
@@ -55,6 +65,7 @@ class AnalysisResult:
     translated_text: str | None = None
     explanation: str | None = None
     raw_response: str = ""
+    usage: AnalysisUsage | None = None
 
 
 @dataclass(frozen=True)

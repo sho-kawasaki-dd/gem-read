@@ -34,6 +34,8 @@ def test_translate_returns_response_payload(api_client, stub_analyze_service) ->
     assert payload["translated_text"] == "こんにちは"
     assert payload["availability"] == "live"
     assert payload["selection_metadata"]["url"] == "https://example.com"
+    assert payload["usage"]["prompt_token_count"] == 42
+    assert payload["usage"]["cached_content_token_count"] == 1600
     assert len(stub_analyze_service.calls) == 1
     command = stub_analyze_service.calls[0]
     assert command.text == "Hello"
@@ -175,6 +177,7 @@ def test_translate_rejects_empty_text(api_client, stub_analyze_service) -> None:
         availability="live",
         degraded_reason=None,
         selection_metadata=None,
+        usage=None,
     )
 
     response = api_client.post(

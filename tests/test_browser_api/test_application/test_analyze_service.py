@@ -13,7 +13,7 @@ from browser_api.application.errors import (
     UnsupportedCacheModelError,
 )
 from browser_api.application.services.analyze_service import AnalyzeService
-from pdf_epub_reader.dto import AnalysisResult, CacheStatus, ModelInfo
+from pdf_epub_reader.dto import AnalysisResult, AnalysisUsage, CacheStatus, ModelInfo
 from pdf_epub_reader.utils.config import AppConfig
 from pdf_epub_reader.utils.exceptions import AICacheError, AIAPIError, AIKeyMissingError
 
@@ -138,6 +138,7 @@ class TestAnalyzeService:
         assert result.translated_text == "翻訳結果"
         assert result.used_mock is False
         assert result.image_count == 1
+        assert result.usage is None
         request = gateway.requests[0]
         assert request.text == "Selected text"
         assert request.model_name == "gemini-2.5-flash"
@@ -151,6 +152,12 @@ class TestAnalyzeService:
                 translated_text="翻訳本文",
                 explanation="補足説明",
                 raw_response="翻訳本文\n\n---\n\n補足説明",
+                usage=AnalysisUsage(
+                    prompt_token_count=42,
+                    cached_content_token_count=1600,
+                    candidates_token_count=73,
+                    total_token_count=1715,
+                ),
             ),
             requests=[],
         )
@@ -167,6 +174,8 @@ class TestAnalyzeService:
         assert result.translated_text == "翻訳本文"
         assert result.explanation == "補足説明"
         assert result.raw_response == "翻訳本文\n\n---\n\n補足説明"
+        assert result.usage is not None
+        assert result.usage.cached_content_token_count == 1600
         assert gateway.requests[0].include_explanation is True
 
     @pytest.mark.asyncio

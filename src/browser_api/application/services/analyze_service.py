@@ -9,6 +9,7 @@ from browser_api.application.dto import (
     CacheCreateCommand,
     CacheDeleteResult,
     CacheStatusResult,
+    AnalyzeUsageMetrics,
     AnalyzeTranslateCommand,
     AnalyzeTranslateResult,
     ModelCatalogResult,
@@ -64,6 +65,7 @@ class AnalyzeService:
                 image_count=len(image_bytes),
                 availability="live",
                 selection_metadata=command.selection_metadata,
+                usage=self._to_usage_metrics(result.usage),
             )
         except AIKeyMissingError:
             # API key 未設定でも extension 側の結線確認は進めたいので、mock で degraded success を返す。
@@ -154,6 +156,18 @@ class AnalyzeService:
 
         await self.ai_gateway.delete_cache(cache_name)
         return CacheDeleteResult(cache_name=cache_name)
+
+    @staticmethod
+    def _to_usage_metrics(usage) -> AnalyzeUsageMetrics | None:
+        if usage is None:
+            return None
+
+        return AnalyzeUsageMetrics(
+            prompt_token_count=usage.prompt_token_count,
+            cached_content_token_count=usage.cached_content_token_count,
+            candidates_token_count=usage.candidates_token_count,
+            total_token_count=usage.total_token_count,
+        )
 
     def _build_ai_request(
         self,

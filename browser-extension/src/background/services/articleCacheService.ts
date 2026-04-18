@@ -40,9 +40,9 @@ export async function syncArticleCacheState(
   const existingState = session.articleCacheState;
   const shouldInvalidateCachedModel = Boolean(
     existingState?.cacheName &&
-      existingState.modelName &&
-      resolvedModelName &&
-      existingState.modelName !== resolvedModelName
+    existingState.modelName &&
+    resolvedModelName &&
+    existingState.modelName !== resolvedModelName
   );
 
   if (!articleContext) {
@@ -72,7 +72,12 @@ export async function syncArticleCacheState(
     };
   }
 
-  let nextState = buildSeedCacheState(existingState, articleContext, resolvedModelName, now);
+  let nextState = buildSeedCacheState(
+    existingState,
+    articleContext,
+    resolvedModelName,
+    now
+  );
 
   if (shouldInvalidateCachedModel) {
     nextState = await invalidateTrackedState(nextState, {
@@ -92,7 +97,9 @@ export async function syncArticleCacheState(
     nextState = await invalidateTrackedState(nextState, {
       apiBaseUrl: options.apiBaseUrl,
       reason:
-        nextState.articleUrl !== articleContext.url ? 'url-changed' : 'body-changed',
+        nextState.articleUrl !== articleContext.url
+          ? 'url-changed'
+          : 'body-changed',
       notice:
         nextState.articleUrl !== articleContext.url
           ? 'Article cache was cleared because the page URL changed.'
@@ -130,7 +137,8 @@ export async function syncArticleCacheState(
           ttlSeconds: undefined,
           expireTime: undefined,
           invalidationReason: 'remote-missing',
-          notice: 'The active article cache was replaced and will be recreated when needed.',
+          notice:
+            'The active article cache was replaced and will be recreated when needed.',
           lastValidatedAt: now,
         };
       } else {
@@ -181,7 +189,8 @@ export async function syncArticleCacheState(
         ...nextState,
         status: 'unsupported',
         autoCreateEligible: false,
-        notice: 'The current model is not expected to support context cache creation.',
+        notice:
+          'The current model is not expected to support context cache creation.',
         lastValidatedAt: now,
       },
     };
@@ -244,7 +253,8 @@ export async function syncArticleCacheState(
         ...nextState,
         status: 'active',
         cacheName: createdStatus.cacheName,
-        displayName: createdStatus.displayName ?? buildCacheDisplayName(articleContext),
+        displayName:
+          createdStatus.displayName ?? buildCacheDisplayName(articleContext),
         modelName: createdStatus.modelName ?? resolvedModelName,
         tokenCount: createdStatus.tokenCount,
         ttlSeconds: createdStatus.ttlSeconds,
@@ -327,8 +337,7 @@ export function buildNavigatedSessionState(
     ...session,
     items: [],
     articleContext: undefined,
-    articleContextError:
-      `Page changed to ${nextUrl}. Article context will be refreshed on the next run.`,
+    articleContextError: `Page changed to ${nextUrl}. Article context will be refreshed on the next run.`,
     articleCacheState: {
       ...session.articleCacheState,
       status: 'invalidated',
@@ -375,30 +384,26 @@ async function resolveTokenEstimate(
   apiBaseUrl: string,
   now: string
 ): Promise<{ state: ArticleCacheState }> {
-  if (articleContext.textLength >= AUTO_CACHE_MIN_TEXT_LENGTH) {
-    return {
-      state: {
-        ...state,
-        autoCreateEligible: true,
-        lastValidatedAt: now,
-      },
-    };
-  }
+  const eligibleByTextLength =
+    articleContext.textLength >= AUTO_CACHE_MIN_TEXT_LENGTH;
 
   try {
     const tokenResult = await countTokens(articleContext.bodyText, {
       apiBaseUrl,
       modelName,
     });
+    const autoCreateEligible =
+      eligibleByTextLength ||
+      tokenResult.tokenCount >= AUTO_CACHE_MIN_TOKEN_ESTIMATE;
+
     return {
       state: {
         ...state,
         tokenEstimate: tokenResult.tokenCount,
-        autoCreateEligible: tokenResult.tokenCount >= AUTO_CACHE_MIN_TOKEN_ESTIMATE,
-        notice:
-          tokenResult.tokenCount >= AUTO_CACHE_MIN_TOKEN_ESTIMATE
-            ? state.notice
-            : 'Article context is below the automatic cache creation threshold.',
+        autoCreateEligible,
+        notice: autoCreateEligible
+          ? state.notice
+          : 'Article context is below the automatic cache creation threshold.',
         lastValidatedAt: now,
       },
     };
@@ -406,8 +411,10 @@ async function resolveTokenEstimate(
     return {
       state: {
         ...state,
-        autoCreateEligible: false,
-        notice: `Token estimate is unavailable: ${toErrorMessage(error)}`,
+        autoCreateEligible: eligibleByTextLength,
+        notice: eligibleByTextLength
+          ? state.notice
+          : `Token estimate is unavailable: ${toErrorMessage(error)}`,
         lastValidatedAt: now,
       },
     };
@@ -461,8 +468,8 @@ function shouldInvalidateForArticleChange(
 ): boolean {
   return Boolean(
     state.cacheName &&
-      ((state.articleUrl && state.articleUrl !== articleContext.url) ||
-        (state.articleHash && state.articleHash !== articleContext.bodyHash))
+    ((state.articleUrl && state.articleUrl !== articleContext.url) ||
+      (state.articleHash && state.articleHash !== articleContext.bodyHash))
   );
 }
 
@@ -494,5 +501,7 @@ function normalizeModelName(modelName: string | undefined): string | undefined {
 }
 
 function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unexpected article cache error.';
+  return error instanceof Error
+    ? error.message
+    : 'Unexpected article cache error.';
 }

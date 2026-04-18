@@ -15,6 +15,9 @@ export interface SelectionAnalysisSession {
   articleContext?: ArticleContext;
   articleContextError?: string;
   articleCacheState?: ArticleCacheState;
+  payloadTokenEstimate?: number;
+  payloadTokenModelName?: string;
+  payloadTokenError?: string;
 }
 
 const SESSION_STORAGE_KEY_PREFIX = 'gem-read.analysis-session.';
@@ -66,7 +69,9 @@ function getSessionStorageKey(tabId: number): string {
   return `${SESSION_STORAGE_KEY_PREFIX}${tabId}`;
 }
 
-function cloneSession(session: SelectionAnalysisSession): SelectionAnalysisSession {
+function cloneSession(
+  session: SelectionAnalysisSession
+): SelectionAnalysisSession {
   return {
     ...session,
     items: session.items.map((item) => ({
@@ -108,7 +113,9 @@ async function storageSessionGet<T>(key: string): Promise<T | undefined> {
   });
 }
 
-async function storageSessionSet(items: Record<string, unknown>): Promise<void> {
+async function storageSessionSet(
+  items: Record<string, unknown>
+): Promise<void> {
   const storageArea = getStorageSessionArea();
 
   return new Promise<void>((resolve, reject) => {

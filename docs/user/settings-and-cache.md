@@ -39,6 +39,8 @@ These are separate settings.
 
 Context cache stores the full extracted document text on the Gemini side for repeated analysis requests.
 
+In the browser extension, this is managed as one active article cache per tab.
+
 You can:
 
 - Create a cache
@@ -53,3 +55,29 @@ You can:
 - Opening a different document invalidates the previous cache.
 - Changing to a different model may require cache invalidation.
 - The application also invalidates cache during shutdown cleanup.
+
+## Browser Extension Cache Behavior
+
+For article pages in the browser extension:
+
+- Gem Read first tries Readability-based extraction, then falls back to a lighter DOM-based extraction.
+- Automatic cache creation is conditional. It only happens when article extraction succeeds, the article is large enough, and the selected model is expected to support caching.
+- The overlay shows whether the cache is active, invalidated, unsupported, or degraded.
+- `Delete Cache` removes the active cache for the current tab only.
+
+The cache can disappear without direct user action when:
+
+- You navigate to a new URL in the same tab
+- You switch to a different model
+- Gemini expires the cache TTL
+- Gem Read detects that the extracted article body hash changed
+
+## Token Display in the Browser Extension
+
+The overlay can show three token-related views:
+
+- Current request estimate: the current selection batch before sending
+- Article baseline: the extracted article size used for cache decisions
+- Last response usage: prompt, cached-content, output, and total tokens from Gemini when available
+
+If the local API cannot return token counts, the overlay keeps working and shows a degraded token message instead of failing closed.

@@ -73,6 +73,27 @@ The browser_api tests stub the AI gateway or FastAPI dependency wiring so they d
 
 The Playwright smoke test loads the unpacked extension from `dist/`, saves popup settings against a stub local API, reopens the overlay through the background runtime, and exercises keyboard-first overlay flows such as `Esc`, `Alt+R`, and `Ctrl+Enter`. Native browser context menus are not automated in this smoke path; the unit test suite covers the background usecase that normally sits behind the context-menu click.
 
+## Phase 4D Focus Checks
+
+- Browser extension unit coverage should include article token estimation, article cache state rendering, and result usage rendering.
+- Browser API tests should verify that analyze responses preserve Gemini usage metadata when it is available.
+- Playwright smoke should cover one article-like page where overlay reopen triggers article extraction, token estimation, automatic cache creation, and a rerun against the cached session.
+
+Phase 4D regression commands:
+
+- `npm run test`
+- `npm run test:e2e`
+- `npm run build`
+- `uv run pytest tests/test_browser_api/ -q`
+
+When running the Playwright smoke manually, verify these points in addition to the existing Phase 3 keyboard checks:
+
+- The overlay shows an `Article Context` card on pages where Readability or the DOM fallback can extract a long article body.
+- The overlay shows a `Tokens` section with current request estimate, article baseline, cache impact, and last response usage when available.
+- Automatic cache creation only happens when the extracted article is large enough and the active model supports caching.
+- Manual cache deletion updates the overlay state without breaking rerun support for the current selection batch.
+- If `/tokens/count` fails, the overlay still renders and falls back to degraded token messaging instead of becoming unusable.
+
 ## CI Checks
 
 - `.github/workflows/browser-api-tests.yml`: runs `uv sync --dev` and `uv run pytest tests/test_browser_api/ -q`

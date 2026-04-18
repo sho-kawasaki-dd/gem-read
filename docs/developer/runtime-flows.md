@@ -50,6 +50,16 @@
 8. Non-empty text items are concatenated as numbered blocks, enabled preview images are sent sparsely, and ordered per-item metadata is attached for diagnostics.
 9. The overlay first renders a loading state, then renders translated Markdown, explanations, raw-response details, or an error state.
 
+## Browser Extension Phase 4 Flow
+
+1. The current tab keeps its ordered selection batch, extracted article context, and one active article cache state in the same tab-scoped session.
+2. When the overlay is opened or an analysis rerun starts, background refreshes article extraction through the content script.
+3. Background evaluates cache invalidation rules for URL change, model change, body hash mismatch, remote expiration, and manual delete.
+4. Background asks `/tokens/count` for two separate estimates when possible: the current selection batch request and the extracted article body.
+5. If the article is large enough and the selected model is cache-capable, background creates one active remote cache through `/cache/create`.
+6. The overlay renders article status, token comparison, and degraded notices without blocking normal selection-based actions.
+7. After `/analyze/translate` returns, the overlay also shows Gemini usage metadata such as prompt tokens, cached-content tokens, output tokens, and total tokens when the backend provides them.
+
 ## Overlay Rerun Flow
 
 1. After at least one item has been appended, background stores a tab-scoped analysis session.

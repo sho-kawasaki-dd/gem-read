@@ -99,6 +99,13 @@ export interface ArticleCacheState {
   lastValidatedAt?: string;
 }
 
+export interface AnalyzeUsageMetrics {
+  promptTokenCount?: number;
+  cachedContentTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
+}
+
 export interface AnalyzeApiResponse {
   ok: boolean;
   mode: AnalysisAction;
@@ -110,6 +117,7 @@ export interface AnalyzeApiResponse {
   availability?: RuntimeAvailability;
   degraded_reason?: DegradedReason | null;
   selection_metadata?: Record<string, unknown> | null;
+  usage?: AnalyzeUsageMetrics | null;
 }
 
 export interface CacheStatusApiResponse {
@@ -189,6 +197,9 @@ export interface OverlayPayload {
   articleContext?: ArticleContext;
   articleContextError?: string;
   articleCacheState?: ArticleCacheState;
+  payloadTokenEstimate?: number;
+  payloadTokenModelName?: string;
+  payloadTokenError?: string;
   translatedText?: string;
   explanation?: string | null;
   previewImageUrl?: string;
@@ -199,6 +210,7 @@ export interface OverlayPayload {
   imageCount?: number;
   timingMs?: number;
   rawResponse?: string;
+  usage?: AnalyzeUsageMetrics;
 }
 
 /**

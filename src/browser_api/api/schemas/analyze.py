@@ -8,6 +8,7 @@ from browser_api.application.dto import (
     AnalyzeSelectionMetadata,
     AnalyzeTranslateCommand,
     AnalyzeTranslateResult,
+    AnalyzeUsageMetrics,
     ModelCatalogResult,
 )
 
@@ -90,6 +91,25 @@ class AnalyzeTranslateRequest(BaseModel):
         )
 
 
+class AnalyzeUsagePayload(BaseModel):
+    prompt_token_count: int | None = None
+    cached_content_token_count: int | None = None
+    candidates_token_count: int | None = None
+    total_token_count: int | None = None
+
+    @classmethod
+    def from_result(
+        cls,
+        result: AnalyzeUsageMetrics,
+    ) -> "AnalyzeUsagePayload":
+        return cls(
+            prompt_token_count=result.prompt_token_count,
+            cached_content_token_count=result.cached_content_token_count,
+            candidates_token_count=result.candidates_token_count,
+            total_token_count=result.total_token_count,
+        )
+
+
 class AnalyzeTranslateResponse(BaseModel):
     """HTTP response schema returned to the browser extension."""
 
@@ -103,6 +123,7 @@ class AnalyzeTranslateResponse(BaseModel):
     availability: Literal["live", "mock"] = "live"
     degraded_reason: str | None = None
     selection_metadata: dict[str, Any] | None = None
+    usage: AnalyzeUsagePayload | None = None
 
     @classmethod
     def from_result(
@@ -121,6 +142,11 @@ class AnalyzeTranslateResponse(BaseModel):
             availability=result.availability,
             degraded_reason=result.degraded_reason,
             selection_metadata=result.selection_metadata,
+            usage=(
+                AnalyzeUsagePayload.from_result(result.usage)
+                if result.usage is not None
+                else None
+            ),
         )
 
 

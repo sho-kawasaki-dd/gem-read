@@ -9,6 +9,7 @@ from pdf_epub_reader.dto.ai_dto import (
     AnalysisMode,
     AnalysisRequest,
     AnalysisResult,
+    AnalysisUsage,
     CacheStatus,
     ModelInfo,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "AnalysisMode",
     "AnalysisRequest",
     "AnalysisResult",
+    "AnalysisUsage",
     "BookmarkPanelTexts",
     "CacheStatus",
     "CacheDialogTexts",

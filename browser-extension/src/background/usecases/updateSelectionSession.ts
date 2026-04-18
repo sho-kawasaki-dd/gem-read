@@ -20,6 +20,7 @@ import {
   type SelectionAnalysisSession,
 } from '../services/analysisSessionStore';
 import { cropSelectionImage } from '../services/cropSelectionImage';
+import { syncPayloadTokenEstimate } from '../services/payloadTokenService';
 
 export async function appendSelectionSessionItem(
   tab: chrome.tabs.Tab,
@@ -65,8 +66,13 @@ export async function appendSelectionSessionItem(
     articleContextError: existingSession?.articleContextError,
   };
 
-  await setAnalysisSession(tabId, nextSession);
-  await renderOverlay(tabId, buildOverlayPayload(nextSession));
+  const tokenAwareSession = await syncPayloadTokenEstimate(nextSession, {
+    apiBaseUrl: settings.apiBaseUrl,
+    modelName: nextSession.lastModelName || settings.defaultModel || undefined,
+  });
+
+  await setAnalysisSession(tabId, tokenAwareSession);
+  await renderOverlay(tabId, buildOverlayPayload(tokenAwareSession));
   return nextItem;
 }
 
@@ -146,8 +152,14 @@ export async function removeSelectionSessionItem(
     modelOptions: [...session.modelOptions],
   };
 
-  await setAnalysisSession(tabId, nextSession);
-  await renderOverlay(tabId, buildOverlayPayload(nextSession));
+  const settings = await loadExtensionSettings();
+  const tokenAwareSession = await syncPayloadTokenEstimate(nextSession, {
+    apiBaseUrl: settings.apiBaseUrl,
+    modelName: nextSession.lastModelName || settings.defaultModel || undefined,
+  });
+
+  await setAnalysisSession(tabId, tokenAwareSession);
+  await renderOverlay(tabId, buildOverlayPayload(tokenAwareSession));
 }
 
 export async function toggleSelectionSessionItemImage(
@@ -168,7 +180,9 @@ export async function toggleSelectionSessionItemImage(
 
     foundItem = true;
     if (includeImage && !item.previewImageUrl) {
-      throw new Error('A cached crop preview is required before enabling image inclusion.');
+      throw new Error(
+        'A cached crop preview is required before enabling image inclusion.'
+      );
     }
 
     return {
@@ -187,8 +201,14 @@ export async function toggleSelectionSessionItemImage(
     modelOptions: [...session.modelOptions],
   };
 
-  await setAnalysisSession(tabId, nextSession);
-  await renderOverlay(tabId, buildOverlayPayload(nextSession));
+  const settings = await loadExtensionSettings();
+  const tokenAwareSession = await syncPayloadTokenEstimate(nextSession, {
+    apiBaseUrl: settings.apiBaseUrl,
+    modelName: nextSession.lastModelName || settings.defaultModel || undefined,
+  });
+
+  await setAnalysisSession(tabId, tokenAwareSession);
+  await renderOverlay(tabId, buildOverlayPayload(tokenAwareSession));
 }
 
 export function buildOverlayPayload(
@@ -223,6 +243,9 @@ export function buildOverlayPayload(
     articleContext: session.articleContext,
     articleContextError: session.articleContextError,
     articleCacheState: session.articleCacheState,
+    payloadTokenEstimate: session.payloadTokenEstimate,
+    payloadTokenModelName: session.payloadTokenModelName,
+    payloadTokenError: session.payloadTokenError,
     previewImageUrl: latestItem?.previewImageUrl,
     timingMs: latestItem?.cropDurationMs,
     error: options.error,

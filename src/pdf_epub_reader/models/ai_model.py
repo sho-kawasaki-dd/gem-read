@@ -23,6 +23,7 @@ from pdf_epub_reader.dto import (
     AnalysisMode,
     AnalysisRequest,
     AnalysisResult,
+    AnalysisUsage,
     CacheStatus,
     ModelInfo,
 )
@@ -606,6 +607,7 @@ class AIModel:
         区切りが見つからない場合は全体を翻訳テキストとして扱う。
         """
         raw_text = response.text or ""
+        usage = AIModel._extract_usage_metadata(response)
 
         if request.mode == AnalysisMode.TRANSLATION:
             translated_text = raw_text
@@ -618,6 +620,24 @@ class AIModel:
                 translated_text=translated_text,
                 explanation=explanation,
                 raw_response=raw_text,
+                usage=usage,
             )
         # カスタムプロンプトモード
-        return AnalysisResult(raw_response=raw_text)
+        return AnalysisResult(raw_response=raw_text, usage=usage)
+
+    @staticmethod
+    def _extract_usage_metadata(
+        response: genai_types.GenerateContentResponse,
+    ) -> AnalysisUsage | None:
+        meta = getattr(response, "usage_metadata", None)
+        if meta is None:
+            return None
+
+        return AnalysisUsage(
+            prompt_token_count=getattr(meta, "prompt_token_count", None),
+            cached_content_token_count=getattr(
+                meta, "cached_content_token_count", None
+            ),
+            candidates_token_count=getattr(meta, "candidates_token_count", None),
+            total_token_count=getattr(meta, "total_token_count", None),
+        )

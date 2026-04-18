@@ -35,6 +35,12 @@ describe('localApiGateway', () => {
         selection_metadata: {
           url: 'https://example.com/article',
         },
+        usage: {
+          prompt_token_count: 42,
+          cached_content_token_count: 1600,
+          candidates_token_count: 73,
+          total_token_count: 1715,
+        },
       })
     );
     vi.stubGlobal('fetch', fetchMock);
@@ -148,6 +154,12 @@ describe('localApiGateway', () => {
       mode: 'custom_prompt',
       translated_text: 'custom answer',
       availability: 'live',
+      usage: {
+        promptTokenCount: 42,
+        cachedContentTokenCount: 1600,
+        candidatesTokenCount: 73,
+        totalTokenCount: 1715,
+      },
     });
   });
 
@@ -256,7 +268,9 @@ describe('localApiGateway', () => {
           expire_time: '2026-04-17T10:00:00+00:00',
         })
       )
-      .mockResolvedValueOnce(createJsonResponse({ ok: true, cache_name: 'cachedContents/article-1' }));
+      .mockResolvedValueOnce(
+        createJsonResponse({ ok: true, cache_name: 'cachedContents/article-1' })
+      );
     vi.stubGlobal('fetch', fetchMock);
 
     const created = await createContextCache('Long article body', {
@@ -265,7 +279,10 @@ describe('localApiGateway', () => {
       displayName: 'browser-extension:Example article',
     });
     const status = await fetchContextCacheStatus('http://127.0.0.1:9000');
-    await deleteContextCache('cachedContents/article-1', 'http://127.0.0.1:9000');
+    await deleteContextCache(
+      'cachedContents/article-1',
+      'http://127.0.0.1:9000'
+    );
 
     expect(created).toEqual({
       ok: true,
