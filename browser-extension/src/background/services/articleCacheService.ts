@@ -34,14 +34,16 @@ export async function syncArticleCacheState(
   const resolvedModelName = normalizeModelName(
     options.modelName ?? session.lastModelName
   );
+  const resolvedModelKey = normalizeModelKey(resolvedModelName);
   const articleContext = session.articleContext;
   const now = new Date().toISOString();
   const existingState = session.articleCacheState;
+  const existingModelKey = normalizeModelKey(existingState?.modelName);
   const shouldInvalidateCachedModel = Boolean(
     existingState?.cacheName &&
-    existingState.modelName &&
-    resolvedModelName &&
-    existingState.modelName !== resolvedModelName
+    existingModelKey &&
+    resolvedModelKey &&
+    existingModelKey !== resolvedModelKey
   );
 
   if (!articleContext) {
@@ -246,7 +248,9 @@ export async function syncArticleCacheState(
         cacheName: createdStatus.cacheName,
         displayName:
           createdStatus.displayName ?? buildCacheDisplayName(articleContext),
-        modelName: createdStatus.modelName ?? resolvedModelName,
+        modelName: normalizeModelName(
+          createdStatus.modelName ?? resolvedModelName
+        ),
         articleUrl: articleContext.url,
         articleIdentity: buildArticleIdentity(articleContext),
         articleHash: articleContext.bodyHash,
@@ -593,6 +597,15 @@ function isUnsupportedCacheError(message: string): boolean {
 function normalizeModelName(modelName: string | undefined): string | undefined {
   const normalized = modelName?.trim();
   return normalized ? normalized : undefined;
+}
+
+function normalizeModelKey(modelName: string | undefined): string | undefined {
+  const normalized = normalizeModelName(modelName);
+  if (!normalized) {
+    return undefined;
+  }
+
+  return normalized.replace(/^models\//i, '');
 }
 
 function toErrorMessage(error: unknown): string {

@@ -604,4 +604,67 @@ describe('runSelectionAnalysis', () => {
       expect.objectContaining({ action: 'translation' })
     );
   });
+
+  it('sends cacheName when the stored cache model uses a models prefix', async () => {
+    const chromeMock = getChromeMock();
+    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
+      'data:image/png;base64,shot'
+    );
+    syncArticleCacheStateMock.mockImplementationOnce(async (session) => ({
+      ...session,
+      articleCacheState: {
+        status: 'active',
+        cacheName: 'cachedContents/article-1',
+        modelName: 'models/gemini-2.5-flash',
+        articleUrl: session.articleContext?.url,
+        articleIdentity: 'example article',
+        articleHash: session.articleContext?.bodyHash,
+        tokenEstimate: 1400,
+        tokenCount: 1500,
+        ttlSeconds: 3600,
+        notice: 'Article cache created automatically for the current tab.',
+      },
+    }));
+    collectSelectionMock.mockResolvedValueOnce({
+      ok: true,
+      payload: {
+        text: 'selection from content script',
+        rect: { left: 10, top: 20, width: 30, height: 40 },
+        viewportWidth: 1440,
+        viewportHeight: 900,
+        devicePixelRatio: 2,
+        url: 'https://example.com/article',
+        pageTitle: 'Example page',
+      },
+    });
+    cropSelectionImageMock.mockResolvedValueOnce({
+      imageDataUrl: 'data:image/webp;base64,crop',
+      durationMs: 12.5,
+    });
+    sendAnalyzeTranslateRequestMock.mockResolvedValueOnce({
+      ok: true,
+      mode: 'translation',
+      translated_text: '翻訳結果',
+      explanation: null,
+      raw_response: '翻訳結果',
+      used_mock: false,
+      availability: 'live',
+      degraded_reason: null,
+      image_count: 1,
+    });
+
+    await runSelectionAnalysis(
+      { id: 7, windowId: 9 } as chrome.tabs.Tab,
+      'fallback'
+    );
+
+    expect(sendAnalyzeTranslateRequestMock).toHaveBeenCalledWith(
+      [expect.any(Object)],
+      expect.objectContaining({
+        action: 'translation',
+        modelName: 'gemini-2.5-flash',
+        cacheName: 'cachedContents/article-1',
+      })
+    );
+  });
 });

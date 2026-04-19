@@ -123,6 +123,53 @@ describe('articleCacheService', () => {
     );
   });
 
+  it('keeps the tracked cache when the backend model name adds a models prefix', async () => {
+    countTokensMock.mockResolvedValue({
+      ok: true,
+      tokenCount: 200,
+      modelName: 'gemini-2.5-flash',
+    });
+
+    const session = await syncArticleCacheState(
+      {
+        items: [],
+        modelOptions: [],
+        lastAction: 'translation',
+        lastModelName: 'gemini-2.5-flash',
+        articleContext: {
+          title: 'Example article',
+          url: 'https://example.com/article',
+          bodyText: 'Body',
+          bodyHash: 'abc123def4567890',
+          source: 'readability',
+          textLength: 100,
+        },
+        articleCacheState: {
+          status: 'active',
+          cacheName: 'cachedContents/article-1',
+          modelName: 'models/gemini-2.5-flash',
+          articleUrl: 'https://example.com/article',
+          articleIdentity: 'example.com/article::example article',
+          articleHash: 'abc123def4567890',
+        },
+      },
+      {
+        apiBaseUrl: 'http://127.0.0.1:9000',
+        modelName: 'gemini-2.5-flash',
+        allowAutoCreate: false,
+      }
+    );
+
+    expect(deleteContextCacheMock).not.toHaveBeenCalled();
+    expect(session.articleCacheState).toEqual(
+      expect.objectContaining({
+        status: 'active',
+        cacheName: 'cachedContents/article-1',
+        modelName: 'gemini-2.5-flash',
+      })
+    );
+  });
+
   it('reuses the tracked cache across section changes when article identity is stable', async () => {
     countTokensMock.mockResolvedValue({
       ok: true,

@@ -370,9 +370,19 @@ function resolveExplicitCacheName(
     return undefined;
   }
 
-  return articleCacheState.modelName === modelName
+  return normalizeModelKey(articleCacheState.modelName) ===
+    normalizeModelKey(modelName)
     ? articleCacheState.cacheName
     : undefined;
+}
+
+function normalizeModelKey(modelName: string | undefined): string | undefined {
+  const normalized = modelName?.trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  return normalized.replace(/^models\//i, '');
 }
 
 function resolveAnalyzeRequestOptions(
