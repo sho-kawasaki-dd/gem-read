@@ -80,6 +80,10 @@ export async function syncArticleCacheState(
   );
 
   if (shouldInvalidateCachedModel) {
+    console.warn(
+      '[GemRead] articleCache: model changed → invalidating',
+      { cachedModel: existingState?.modelName, resolvedModel: resolvedModelName }
+    );
     nextState = await invalidateTrackedState(nextState, {
       apiBaseUrl: options.apiBaseUrl,
       reason: 'model-changed',
@@ -94,16 +98,19 @@ export async function syncArticleCacheState(
   }
 
   if (shouldInvalidateForArticleChange(nextState, articleContext)) {
+    const urlChanged = nextState.articleUrl !== articleContext.url;
+    console.warn(
+      '[GemRead] articleCache: article changed → invalidating',
+      urlChanged
+        ? { reason: 'url-changed', cachedUrl: nextState.articleUrl, currentUrl: articleContext.url }
+        : { reason: 'body-changed', cachedHash: nextState.articleHash, currentHash: articleContext.bodyHash }
+    );
     nextState = await invalidateTrackedState(nextState, {
       apiBaseUrl: options.apiBaseUrl,
-      reason:
-        nextState.articleUrl !== articleContext.url
-          ? 'url-changed'
-          : 'body-changed',
-      notice:
-        nextState.articleUrl !== articleContext.url
-          ? 'Article cache was cleared because the page URL changed.'
-          : 'Article cache was cleared because the extracted article body changed.',
+      reason: urlChanged ? 'url-changed' : 'body-changed',
+      notice: urlChanged
+        ? 'Article cache was cleared because the page URL changed.'
+        : 'Article cache was cleared because the extracted article body changed.',
     });
     if (nextState.status === 'degraded') {
       return {
@@ -111,6 +118,17 @@ export async function syncArticleCacheState(
         articleCacheState: nextState,
       };
     }
+  } else {
+    console.debug(
+      '[GemRead] articleCache: no article change detected',
+      {
+        cacheName: nextState.cacheName,
+        cachedUrl: nextState.articleUrl,
+        currentUrl: articleContext.url,
+        cachedHash: nextState.articleHash,
+        currentHash: articleContext.bodyHash,
+      }
+    );
   }
 
   if (nextState.cacheName) {
@@ -240,6 +258,13 @@ export async function syncArticleCacheState(
       },
     };
   }
+
+  console.info('[GemRead] articleCache: auto-creating cache', {
+    url: articleContext.url,
+    textLength: articleContext.textLength,
+    tokenEstimate: nextState.tokenEstimate,
+    model: resolvedModelName,
+  });
 
   try {
     const createdStatus = await createContextCache(articleContext.bodyText, {
