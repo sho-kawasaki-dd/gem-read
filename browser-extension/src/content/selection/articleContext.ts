@@ -82,7 +82,7 @@ function extractWithReadability(
   }
 
   return finalizeArticleContext({
-    title: normalizeInlineText(parsed.title) || normalizeInlineText(documentRef.title),
+    title: normalizeInlineText(parsed.title ?? '') || normalizeInlineText(documentRef.title),
     url,
     bodyText,
     source: 'readability',
