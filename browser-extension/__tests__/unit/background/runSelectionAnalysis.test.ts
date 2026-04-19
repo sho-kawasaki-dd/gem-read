@@ -72,6 +72,7 @@ describe('runSelectionAnalysis', () => {
         cacheName: 'cachedContents/article-1',
         modelName: 'gemini-2.5-flash',
         articleUrl: session.articleContext?.url,
+        articleIdentity: 'example article',
         articleHash: session.articleContext?.bodyHash,
         tokenEstimate: 1400,
         tokenCount: 1500,

@@ -107,6 +107,7 @@ describe('articleCacheService', () => {
           cacheName: 'cachedContents/article-1',
           modelName: 'gemini-2.5-pro',
           articleUrl: 'https://example.com/article',
+          articleIdentity: 'example.com/article::example article',
           articleHash: 'abc123def4567890',
         },
       },
@@ -125,6 +126,118 @@ describe('articleCacheService', () => {
       expect.objectContaining({
         status: 'candidate',
         invalidationReason: 'model-changed',
+        articleIdentity: 'example.com/article::example article',
+      })
+    );
+  });
+
+  it('reuses the tracked cache across section changes when article identity is stable', async () => {
+    fetchContextCacheStatusMock.mockResolvedValue({
+      ok: true,
+      isActive: true,
+      cacheName: 'cachedContents/article-1',
+      modelName: 'gemini-2.5-flash',
+      tokenCount: 2048,
+      ttlSeconds: 3600,
+      expireTime: '2026-04-17T10:00:00+00:00',
+    });
+    countTokensMock.mockResolvedValue({
+      ok: true,
+      tokenCount: 1400,
+      modelName: 'gemini-2.5-flash',
+    });
+
+    const session = await syncArticleCacheState(
+      {
+        items: [],
+        modelOptions: [],
+        lastAction: 'translation',
+        lastModelName: 'gemini-2.5-flash',
+        articleContext: {
+          title: 'Example article',
+          url: 'https://example.com/article/section-2',
+          bodyText: 'Section two body',
+          bodyHash: 'differenthash1234',
+          source: 'readability',
+          siteName: 'Example',
+          textLength: 1700,
+        },
+        articleCacheState: {
+          status: 'active',
+          cacheName: 'cachedContents/article-1',
+          modelName: 'gemini-2.5-flash',
+          articleUrl: 'https://example.com/article/section-1',
+          articleIdentity: 'example::example article',
+          articleHash: 'abc123def4567890',
+        },
+      },
+      {
+        apiBaseUrl: 'http://127.0.0.1:9000',
+        modelName: 'gemini-2.5-flash',
+        allowAutoCreate: false,
+      }
+    );
+
+    expect(deleteContextCacheMock).not.toHaveBeenCalled();
+    expect(session.articleCacheState).toEqual(
+      expect.objectContaining({
+        status: 'active',
+        cacheName: 'cachedContents/article-1',
+        articleIdentity: 'example::example article',
+        articleUrl: 'https://example.com/article/section-1',
+      })
+    );
+  });
+
+  it('invalidates the tracked cache when article identity changes', async () => {
+    deleteContextCacheMock.mockResolvedValue(undefined);
+    countTokensMock.mockResolvedValue({
+      ok: true,
+      tokenCount: 200,
+      modelName: 'gemini-2.5-flash',
+    });
+
+    const session = await syncArticleCacheState(
+      {
+        items: [],
+        modelOptions: [],
+        lastAction: 'translation',
+        lastModelName: 'gemini-2.5-flash',
+        articleContext: {
+          title: 'Different article',
+          url: 'https://example.com/different-article',
+          bodyText: 'Different body',
+          bodyHash: 'differenthash1234',
+          source: 'readability',
+          siteName: 'Example',
+          textLength: 100,
+        },
+        articleCacheState: {
+          status: 'active',
+          cacheName: 'cachedContents/article-1',
+          modelName: 'gemini-2.5-flash',
+          articleUrl: 'https://example.com/article',
+          articleIdentity: 'example::example article',
+          articleHash: 'abc123def4567890',
+        },
+      },
+      {
+        apiBaseUrl: 'http://127.0.0.1:9000',
+        modelName: 'gemini-2.5-flash',
+        allowAutoCreate: false,
+      }
+    );
+
+    expect(deleteContextCacheMock).toHaveBeenCalledWith(
+      'cachedContents/article-1',
+      'http://127.0.0.1:9000'
+    );
+    expect(session.articleCacheState).toEqual(
+      expect.objectContaining({
+        status: 'candidate',
+        invalidationReason: 'article-identity-changed',
+        articleIdentity: 'example::different article',
+        articleUrl: 'https://example.com/different-article',
       })
     );
   });
@@ -209,8 +322,8 @@ describe('articleCacheService', () => {
     expect(navigated.articleContext).toBeUndefined();
     expect(navigated.articleCacheState).toEqual(
       expect.objectContaining({
-        status: 'invalidated',
-        invalidationReason: 'url-changed',
+        status: 'active',
+        cacheName: 'cachedContents/article-1',
       })
     );
   });

@@ -76,6 +76,7 @@ export type ArticleCacheLifecycleStatus =
 
 export type ArticleCacheInvalidationReason =
   | 'url-changed'
+  | 'article-identity-changed'
   | 'model-changed'
   | 'ttl-expired'
   | 'body-changed'
@@ -89,6 +90,7 @@ export interface ArticleCacheState {
   displayName?: string;
   modelName?: string;
   articleUrl?: string;
+  articleIdentity?: string;
   articleHash?: string;
   tokenEstimate?: number;
   tokenCount?: number;

@@ -95,22 +95,27 @@ export async function syncArticleCacheState(
         articleCacheState: nextState,
       };
     }
+
+    nextState = bindTrackedArticleState(nextState, articleContext);
   }
 
   if (shouldInvalidateForArticleChange(nextState, articleContext)) {
-    const urlChanged = nextState.articleUrl !== articleContext.url;
     console.warn(
       '[GemRead] articleCache: article changed → invalidating',
-      urlChanged
-        ? { reason: 'url-changed', cachedUrl: nextState.articleUrl, currentUrl: articleContext.url }
-        : { reason: 'body-changed', cachedHash: nextState.articleHash, currentHash: articleContext.bodyHash }
+      {
+        reason: 'article-identity-changed',
+        cachedIdentity: nextState.articleIdentity,
+        currentIdentity: buildArticleIdentity(articleContext),
+        cachedUrl: nextState.articleUrl,
+        currentUrl: articleContext.url,
+        cachedHash: nextState.articleHash,
+        currentHash: articleContext.bodyHash,
+      }
     );
     nextState = await invalidateTrackedState(nextState, {
       apiBaseUrl: options.apiBaseUrl,
-      reason: urlChanged ? 'url-changed' : 'body-changed',
-      notice: urlChanged
-        ? 'Article cache was cleared because the page URL changed.'
-        : 'Article cache was cleared because the extracted article body changed.',
+      reason: 'article-identity-changed',
+      notice: 'Article cache was cleared because the extracted article changed.',
     });
     if (nextState.status === 'degraded') {
       return {
@@ -118,11 +123,15 @@ export async function syncArticleCacheState(
         articleCacheState: nextState,
       };
     }
+
+    nextState = bindTrackedArticleState(nextState, articleContext);
   } else {
     console.debug(
       '[GemRead] articleCache: no article change detected',
       {
         cacheName: nextState.cacheName,
+        cachedIdentity: nextState.articleIdentity,
+        currentIdentity: buildArticleIdentity(articleContext),
         cachedUrl: nextState.articleUrl,
         currentUrl: articleContext.url,
         cachedHash: nextState.articleHash,
@@ -146,6 +155,7 @@ export async function syncArticleCacheState(
           notice: 'Article cache expired and will be recreated when needed.',
           lastValidatedAt: now,
         };
+        nextState = bindTrackedArticleState(nextState, articleContext);
       } else if (remoteStatus.cacheName !== nextState.cacheName) {
         nextState = {
           ...nextState,
@@ -159,6 +169,7 @@ export async function syncArticleCacheState(
             'The active article cache was replaced and will be recreated when needed.',
           lastValidatedAt: now,
         };
+        nextState = bindTrackedArticleState(nextState, articleContext);
       } else {
         nextState = {
           ...nextState,
@@ -281,6 +292,9 @@ export async function syncArticleCacheState(
         displayName:
           createdStatus.displayName ?? buildCacheDisplayName(articleContext),
         modelName: createdStatus.modelName ?? resolvedModelName,
+        articleUrl: articleContext.url,
+        articleIdentity: buildArticleIdentity(articleContext),
+        articleHash: articleContext.bodyHash,
         tokenCount: createdStatus.tokenCount,
         ttlSeconds: createdStatus.ttlSeconds,
         expireTime: createdStatus.expireTime,
@@ -360,7 +374,7 @@ export function buildNavigatedSessionState(
 ): SelectionAnalysisSession {
   // 選択内容とページコンテキストはクリアするが、キャッシュ状態はそのまま保持する。
   // SPA ではセクション切り替えで URL が変わるため、ここでキャッシュを削除すると
-  // セクション移動のたびに再作成が走る。本文ハッシュによる有効性確認は
+  // セクション移動のたびに再作成が走る。次回の同期で article identity を比較し、
   // 次回の syncArticleCacheState に委ねる。
   return {
     ...session,
@@ -376,14 +390,24 @@ function buildSeedCacheState(
   resolvedModelName: string | undefined,
   now: string
 ): ArticleCacheState {
+  const currentArticleIdentity = buildArticleIdentity(articleContext);
+  const tracksActiveCache = Boolean(existingState?.cacheName);
+
   return {
     status: existingState?.status ?? 'idle',
     autoCreateEligible: existingState?.autoCreateEligible,
     cacheName: existingState?.cacheName,
     displayName: existingState?.displayName,
     modelName: resolvedModelName ?? existingState?.modelName,
-    articleUrl: existingState?.articleUrl ?? articleContext.url,
-    articleHash: existingState?.articleHash ?? articleContext.bodyHash,
+    articleUrl: tracksActiveCache
+      ? existingState?.articleUrl ?? articleContext.url
+      : articleContext.url,
+    articleIdentity: tracksActiveCache
+      ? existingState?.articleIdentity
+      : currentArticleIdentity,
+    articleHash: tracksActiveCache
+      ? existingState?.articleHash ?? articleContext.bodyHash
+      : articleContext.bodyHash,
     tokenEstimate: existingState?.tokenEstimate,
     tokenCount: existingState?.tokenCount,
     ttlSeconds: existingState?.ttlSeconds,
@@ -483,14 +507,71 @@ function shouldInvalidateForArticleChange(
   state: ArticleCacheState,
   articleContext: ArticleContext
 ): boolean {
-  // URL の変化だけでは無効化しない。SPA ではセクション切り替えのたびに URL が変わるが
-  // 本文ハッシュが一致していれば同じコンテンツとみなしてキャッシュを再利用する。
-  // ハッシュが変わった場合（=実際に別コンテンツ）だけ無効化する。
+  if (!state.cacheName) {
+    return false;
+  }
+
+  const currentIdentity = buildArticleIdentity(articleContext);
+  if (state.articleIdentity) {
+    return state.articleIdentity !== currentIdentity;
+  }
+
   return Boolean(
-    state.cacheName &&
     state.articleHash &&
     state.articleHash !== articleContext.bodyHash
   );
+}
+
+function bindTrackedArticleState(
+  state: ArticleCacheState,
+  articleContext: ArticleContext
+): ArticleCacheState {
+  return {
+    ...state,
+    articleUrl: articleContext.url,
+    articleIdentity: buildArticleIdentity(articleContext),
+    articleHash: articleContext.bodyHash,
+  };
+}
+
+function buildArticleIdentity(articleContext: ArticleContext): string {
+  const normalizedSiteName = normalizeIdentityPart(articleContext.siteName);
+  const normalizedTitle = normalizeIdentityPart(articleContext.title);
+  const normalizedByline = normalizeIdentityPart(articleContext.byline);
+
+  if (normalizedSiteName && normalizedTitle) {
+    return normalizedByline
+      ? `${normalizedSiteName}::${normalizedTitle}::${normalizedByline}`
+      : `${normalizedSiteName}::${normalizedTitle}`;
+  }
+
+  const normalizedUrl = normalizeArticleUrl(articleContext.url);
+  if (normalizedUrl) {
+    return normalizedTitle
+      ? `${normalizedUrl}::${normalizedTitle}`
+      : normalizedUrl;
+  }
+
+  return normalizedTitle || articleContext.bodyHash;
+}
+
+function normalizeIdentityPart(value: string | undefined): string | undefined {
+  const normalized = value?.trim().toLowerCase().replace(/\s+/g, ' ');
+  return normalized || undefined;
+}
+
+function normalizeArticleUrl(url: string | undefined): string | undefined {
+  if (!url) {
+    return undefined;
+  }
+
+  try {
+    const parsedUrl = new URL(url);
+    const normalizedPath = parsedUrl.pathname.replace(/\/+$/, '') || '/';
+    return `${parsedUrl.host.toLowerCase()}${normalizedPath}`;
+  } catch {
+    return undefined;
+  }
 }
 
 function buildCacheDisplayName(articleContext: ArticleContext): string {

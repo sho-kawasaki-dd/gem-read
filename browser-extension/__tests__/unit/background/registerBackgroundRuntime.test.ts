@@ -464,7 +464,7 @@ describe('registerBackgroundRuntime', () => {
     expect(await getAnalysisSession(7)).toBeUndefined();
   });
 
-  it('invalidates the cached article state when the tab URL changes', async () => {
+  it('preserves the cached article state when the tab URL changes', async () => {
     await setAnalysisSession(7, {
       items: [],
       modelOptions: [],
@@ -474,14 +474,6 @@ describe('registerBackgroundRuntime', () => {
         cacheName: 'cachedContents/article-1',
       },
     });
-    invalidateArticleCacheMock.mockImplementationOnce(async (session) => ({
-      ...session,
-      articleCacheState: {
-        status: 'invalidated',
-        invalidationReason: 'url-changed',
-        notice: 'Article cache was cleared because the page URL changed.',
-      },
-    }));
     buildNavigatedSessionStateMock.mockImplementationOnce((session, nextUrl) => ({
       ...session,
       items: [],
@@ -494,15 +486,10 @@ describe('registerBackgroundRuntime', () => {
     handler(7, { url: 'https://example.com/updated' });
     await flushAsyncWork();
 
-    expect(invalidateArticleCacheMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        articleCacheState: expect.objectContaining({ status: 'active' }),
-      }),
-      expect.objectContaining({ reason: 'url-changed' })
-    );
+    expect(invalidateArticleCacheMock).not.toHaveBeenCalled();
     expect(buildNavigatedSessionStateMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        articleCacheState: expect.objectContaining({ status: 'invalidated' }),
+        articleCacheState: expect.objectContaining({ status: 'active' }),
       }),
       'https://example.com/updated'
     );

@@ -484,8 +484,8 @@ async function handleTabUpdated(
   }
 
   // URL 変化時にキャッシュを即削除しない。SPA ではセクション切り替えで URL が
-  // 変わるが本文が同じ場合があるため、次回翻訳時の syncArticleCacheState で
-  // 本文ハッシュを比較してから判断する。
+  // 変わるため、ここでキャッシュを削除するとセクション移動のたびに再作成が走る。
+  // 次回翻訳時の syncArticleCacheState で article identity を比較して判断する。
   await setAnalysisSession(
     tabId,
     buildNavigatedSessionState(session, changeInfo.url)
