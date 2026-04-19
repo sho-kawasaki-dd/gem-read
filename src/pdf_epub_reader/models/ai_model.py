@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from google import genai
@@ -330,11 +331,7 @@ class AIModel:
                 cache_name=cache.name,
                 display_name=cache.display_name,
                 model_name=cache.model,
-                expire_time=(
-                    cache.expire_time.isoformat()
-                    if cache.expire_time
-                    else None
-                ),
+                expire_time=self._format_expire_time(cache.expire_time),
             )
         except Exception as exc:
             msg = str(exc)
@@ -367,19 +364,18 @@ class AIModel:
                 name=self._cache_name
             )
             # expire 済みチェック
-            if cache.expire_time:
-                from datetime import datetime, timezone
+            normalized_expire_time = self._normalize_expire_time(cache.expire_time)
+            if normalized_expire_time:
                 now = datetime.now(timezone.utc)
-                if cache.expire_time <= now:
+                if normalized_expire_time <= now:
                     self._cache_name = None
                     self._cache_model = None
                     return CacheStatus(is_active=False)
 
             ttl_seconds = None
-            if cache.expire_time:
-                from datetime import datetime, timezone
+            if normalized_expire_time:
                 remaining = (
-                    cache.expire_time - datetime.now(timezone.utc)
+                    normalized_expire_time - datetime.now(timezone.utc)
                 ).total_seconds()
                 ttl_seconds = max(0, int(remaining))
 
@@ -392,11 +388,7 @@ class AIModel:
                 cache_name=cache.name,
                 display_name=cache.display_name,
                 model_name=cache.model,
-                expire_time=(
-                    cache.expire_time.isoformat()
-                    if cache.expire_time
-                    else None
-                ),
+                expire_time=self._format_expire_time(cache.expire_time),
             )
         except Exception:
             # キャッシュ取得失敗（既に削除済み等）→ 内部状態クリア
@@ -469,11 +461,7 @@ class AIModel:
                 cache_name=cache.name,
                 display_name=cache.display_name,
                 model_name=cache.model,
-                expire_time=(
-                    cache.expire_time.isoformat()
-                    if cache.expire_time
-                    else None
-                ),
+                expire_time=self._format_expire_time(cache.expire_time),
             )
         except Exception as exc:
             raise AICacheError(str(exc)) from exc
@@ -509,11 +497,7 @@ class AIModel:
                     cache_name=cache.name,
                     display_name=cache.display_name,
                     model_name=cache.model,
-                    expire_time=(
-                        cache.expire_time.isoformat()
-                        if cache.expire_time
-                        else None
-                    ),
+                    expire_time=self._format_expire_time(cache.expire_time),
                 ))
             return result
         except genai_errors.APIError as exc:
@@ -529,6 +513,23 @@ class AIModel:
         """クライアントが初期化済みであることを確認する。"""
         if self._client is None:
             raise AIKeyMissingError("API キーが設定されていません")
+
+    @staticmethod
+    def _normalize_expire_time(expire_time: datetime | None) -> datetime | None:
+        """Expire time を UTC aware datetime に正規化する。"""
+        if expire_time is None:
+            return None
+
+        if expire_time.tzinfo is None or expire_time.utcoffset() is None:
+            return expire_time.replace(tzinfo=timezone.utc)
+
+        return expire_time.astimezone(timezone.utc)
+
+    @classmethod
+    def _format_expire_time(cls, expire_time: datetime | None) -> str | None:
+        """Expire time を UTC offset 付き ISO 8601 文字列に整形する。"""
+        normalized = cls._normalize_expire_time(expire_time)
+        return normalized.isoformat() if normalized else None
 
     @staticmethod
     def _log_usage_metadata(

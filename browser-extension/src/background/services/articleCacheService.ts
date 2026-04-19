@@ -502,10 +502,12 @@ function refreshTrackedCacheTtl(
     return state;
   }
 
-  const remainingMs = new Date(state.expireTime).getTime() - new Date(now).getTime();
-  if (Number.isNaN(remainingMs)) {
+  const expireTimeMs = parseCacheExpireTimeMs(state.expireTime);
+  if (expireTimeMs === undefined) {
     return state;
   }
+
+  const remainingMs = expireTimeMs - new Date(now).getTime();
 
   if (remainingMs <= 0) {
     return bindTrackedArticleState(
@@ -530,6 +532,24 @@ function refreshTrackedCacheTtl(
     ttlSeconds: Math.max(0, Math.floor(remainingMs / 1000)),
     lastValidatedAt: now,
   };
+}
+
+const ISO_TIMEZONE_SUFFIX_PATTERN = /(z|[+-]\d{2}:\d{2})$/i;
+
+export function parseCacheExpireTimeMs(
+  expireTime: string | undefined
+): number | undefined {
+  const normalized = expireTime?.trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  const utcCandidate = ISO_TIMEZONE_SUFFIX_PATTERN.test(normalized)
+    ? normalized
+    : `${normalized}Z`;
+  const parsedMs = Date.parse(utcCandidate);
+
+  return Number.isNaN(parsedMs) ? undefined : parsedMs;
 }
 
 function buildArticleIdentity(articleContext: ArticleContext): string {

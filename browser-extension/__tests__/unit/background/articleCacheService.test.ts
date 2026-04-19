@@ -14,6 +14,7 @@ import {
   buildNavigatedSessionState,
   invalidateArticleCache,
   mergeCollectedArticleContext,
+  parseCacheExpireTimeMs,
   syncArticleCacheState,
 } from '../../../src/background/services/articleCacheService';
 
@@ -264,6 +265,15 @@ describe('articleCacheService', () => {
         invalidationReason: 'ttl-expired',
         cacheName: undefined,
       })
+    );
+  });
+
+  it('parses timezone-free expireTime values as UTC', () => {
+    expect(parseCacheExpireTimeMs('2026-04-17T10:00:00')).toBe(
+      Date.parse('2026-04-17T10:00:00Z')
+    );
+    expect(parseCacheExpireTimeMs('2026-04-17T10:00:00+00:00')).toBe(
+      Date.parse('2026-04-17T10:00:00Z')
     );
   });
 

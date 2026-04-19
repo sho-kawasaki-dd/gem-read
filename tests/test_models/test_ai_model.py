@@ -764,6 +764,19 @@ class TestCreateCache:
         with pytest.raises(AICacheError, match="Token count too low"):
             await model.create_cache("short text")
 
+    @pytest.mark.asyncio
+    async def test_create_cache_normalizes_naive_expire_time_to_utc(self) -> None:
+        """naive な expire_time も UTC offset 付きで返すこと。"""
+        from datetime import datetime
+
+        model = _build_model()
+        mock_cache = _make_mock_cache(expire_time=datetime(2026, 4, 17, 10, 0, 0))
+        model._client.aio.caches.create = AsyncMock(return_value=mock_cache)
+
+        status = await model.create_cache("full text")
+
+        assert status.expire_time == "2026-04-17T10:00:00+00:00"
+
 
 class TestGetCacheStatus:
     """get_cache_status() の動作を検証する。"""
@@ -792,6 +805,27 @@ class TestGetCacheStatus:
         assert status.is_active is True
         assert status.display_name == "pdf-reader: test.pdf"
         assert status.token_count == 5000
+
+    @pytest.mark.asyncio
+    async def test_active_cache_accepts_naive_expire_time_as_utc(self) -> None:
+        """naive な expire_time でも UTC として扱い active を維持すること。"""
+        from datetime import datetime, timedelta, timezone
+
+        model = _build_model()
+        model._cache_name = "caches/test-123"
+        model._cache_model = "models/gemini-test"
+
+        future = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(
+            tzinfo=None
+        )
+        mock_cache = _make_mock_cache(expire_time=future)
+        model._client.aio.caches.get = AsyncMock(return_value=mock_cache)
+
+        status = await model.get_cache_status()
+
+        assert status.is_active is True
+        assert status.expire_time is not None
+        assert status.expire_time.endswith('+00:00')
 
     @pytest.mark.asyncio
     async def test_expired_cache_clears_state(self) -> None:
