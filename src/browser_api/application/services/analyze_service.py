@@ -155,12 +155,6 @@ class AnalyzeService:
 
         return self._to_cache_status_result(status)
 
-    async def get_cache_status(self) -> CacheStatusResult:
-        """Return the currently active cache status from the AI gateway."""
-
-        status = await self.ai_gateway.get_cache_status()
-        return self._to_cache_status_result(status)
-
     async def delete_cache(self, cache_name: str) -> CacheDeleteResult:
         """Delete a named cache and return a stable acknowledgement payload."""
 
@@ -205,6 +199,7 @@ class AnalyzeService:
                 custom_prompt=command.custom_prompt,
                 images=image_bytes,
                 model_name=resolved_model_name,
+                cache_name=command.cache_name,
             )
 
         return AnalysisRequest(
@@ -213,6 +208,7 @@ class AnalyzeService:
             include_explanation=command.mode == "translation_with_explanation",
             images=image_bytes,
             model_name=resolved_model_name,
+            cache_name=command.cache_name,
         )
 
     def _resolve_model_name(self, requested_model_name: str | None) -> str:

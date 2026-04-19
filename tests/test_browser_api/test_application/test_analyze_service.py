@@ -100,6 +100,7 @@ def _build_command(
     *,
     mode: str = "translation",
     model_name: str | None = None,
+    cache_name: str | None = None,
     images: list[str] | None = None,
     custom_prompt: str | None = None,
     text: str = "Selected text",
@@ -109,6 +110,7 @@ def _build_command(
         model_name=model_name,
         images=images or [],
         mode=mode,
+        cache_name=cache_name,
         custom_prompt=custom_prompt,
         selection_metadata={"url": "https://example.com/article"},
     )
@@ -199,6 +201,28 @@ class TestAnalyzeService:
         request = gateway.requests[0]
         assert request.mode.value == "custom_prompt"
         assert request.custom_prompt == "Summarize this"
+
+    @pytest.mark.asyncio
+    async def test_forwards_explicit_cache_name_to_ai_request(self) -> None:
+        gateway = StubAIGateway(
+            result=AnalysisResult(raw_response="cached answer"),
+            requests=[],
+        )
+        service = AnalyzeService(
+            ai_gateway=gateway,
+            config=AppConfig(gemini_model_name="default-model"),
+        )
+
+        await service.analyze_translate(
+            _build_command(
+                model_name="gemini-2.5-flash",
+                cache_name="cachedContents/article-1",
+            )
+        )
+
+        request = gateway.requests[0]
+        assert request.model_name == "gemini-2.5-flash"
+        assert request.cache_name == "cachedContents/article-1"
 
     @pytest.mark.asyncio
     async def test_accepts_image_only_requests_without_mutating_empty_text(self) -> None:
@@ -405,19 +429,6 @@ class TestAnalyzeService:
                 "display_name": "example-article",
             }
         ]
-
-    @pytest.mark.asyncio
-    async def test_get_cache_status_returns_inactive_when_no_cache_exists(self) -> None:
-        gateway = StubAIGateway(cache_result=CacheStatus(is_active=False))
-        service = AnalyzeService(
-            ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
-        )
-
-        result = await service.get_cache_status()
-
-        assert result.is_active is False
-        assert gateway.cache_status_calls == 1
 
     @pytest.mark.asyncio
     async def test_delete_cache_returns_acknowledgement(self) -> None:

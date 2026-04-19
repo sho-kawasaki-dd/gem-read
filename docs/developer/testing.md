@@ -94,6 +94,14 @@ When running the Playwright smoke manually, verify these points in addition to t
 - Manual cache deletion updates the overlay state without breaking rerun support for the current selection batch.
 - If `/tokens/count` fails, the overlay still renders and falls back to degraded token messaging instead of becoming unusable.
 
+## Explicit Cache Ownership Checks
+
+- browser-extension analyze requests should include `cache_name` only when the current tab session has an active article cache whose model matches the selected analyze model.
+- browser-extension should not poll `GET /cache/status`; cache reuse now relies on local `expireTime` countdown plus backend lazy validation during analyze.
+- tab close and overlay clear should attempt remote cache deletion before the local session is dropped.
+- article extraction failure with an active cache should attempt remote deletion and surface `invalidated` or `degraded` state locally.
+- navigation alone should preserve the cached article state until the next sync decides whether the article identity still matches.
+
 ## CI Checks
 
 - `.github/workflows/browser-api-tests.yml`: runs `uv sync --dev` and `uv run pytest tests/test_browser_api/ -q`

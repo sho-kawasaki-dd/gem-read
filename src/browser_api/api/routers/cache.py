@@ -16,20 +16,6 @@ router = APIRouter(prefix="/cache", tags=["cache"])
 logger = logging.getLogger(__name__)
 
 
-@router.get("/status", response_model=CacheStatusResponse)
-async def get_cache_status(
-    services: BrowserAPIServices = Depends(get_services),
-) -> CacheStatusResponse:
-    """Return the current active cache status for the browser extension."""
-
-    try:
-        result = await services.analyze_service.get_cache_status()
-        return CacheStatusResponse.from_result(result)
-    except Exception as exc:
-        logger.exception("Unexpected browser API cache status error")
-        raise to_http_exception(exc) from exc
-
-
 @router.post("/create", response_model=CacheStatusResponse)
 async def create_cache(
     request: CacheCreateRequest,

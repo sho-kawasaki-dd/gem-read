@@ -253,39 +253,18 @@ describe('registerBackgroundRuntime', () => {
   });
 
   it('clears the cached session when the overlay closes', async () => {
+    await setAnalysisSession(7, {
+      items: [],
+      modelOptions: [],
+      lastAction: 'translation',
+      articleCacheState: {
+        status: 'active',
+        cacheName: 'cachedContents/article-1',
+      },
+    });
     registerBackgroundRuntime();
 
     const handler = getRuntimeMessageHandler();
-    handler(
-      {
-        type: 'phase1.cacheOverlaySession',
-        payload: {
-          item: {
-            id: 'selection-1',
-            source: 'text-selection',
-            selection: {
-              text: 'Selected text',
-              rect: { left: 1, top: 2, width: 3, height: 4 },
-              viewportWidth: 100,
-              viewportHeight: 100,
-              devicePixelRatio: 1,
-              url: 'https://example.com',
-              pageTitle: 'Example',
-            },
-            includeImage: true,
-            previewImageUrl: 'data:image/webp;base64,crop',
-            cropDurationMs: 12,
-          },
-          modelOptions: [],
-        },
-      },
-      { tab: { id: 7 } },
-      vi.fn()
-    );
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
 
     const sendResponse = vi.fn();
     const keepChannelOpen = handler(
@@ -299,6 +278,14 @@ describe('registerBackgroundRuntime', () => {
     expect(keepChannelOpen).toBe(true);
     await flushAsyncWork();
     expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+    expect(invalidateArticleCacheMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        articleCacheState: expect.objectContaining({
+          cacheName: 'cachedContents/article-1',
+        }),
+      }),
+      expect.objectContaining({ reason: 'manual-delete' })
+    );
     expect(await getAnalysisSession(7)).toBeUndefined();
   });
 
@@ -421,6 +408,15 @@ describe('registerBackgroundRuntime', () => {
   });
 
   it('clears the cached session when the tab is removed', async () => {
+    await setAnalysisSession(7, {
+      items: [],
+      modelOptions: [],
+      lastAction: 'translation',
+      articleCacheState: {
+        status: 'active',
+        cacheName: 'cachedContents/article-1',
+      },
+    });
     registerBackgroundRuntime();
 
     const onRemovedHandler = (
@@ -429,38 +425,17 @@ describe('registerBackgroundRuntime', () => {
       >
     ).mock.calls[0][0] as (tabId: number) => void;
 
-    const handler = getRuntimeMessageHandler();
-    handler(
-      {
-        type: 'phase1.cacheOverlaySession',
-        payload: {
-          item: {
-            id: 'selection-1',
-            source: 'text-selection',
-            selection: {
-              text: 'Selected text',
-              rect: { left: 1, top: 2, width: 3, height: 4 },
-              viewportWidth: 100,
-              viewportHeight: 100,
-              devicePixelRatio: 1,
-              url: 'https://example.com',
-              pageTitle: 'Example',
-            },
-            includeImage: true,
-            previewImageUrl: 'data:image/webp;base64,crop',
-            cropDurationMs: 12,
-          },
-          modelOptions: [],
-        },
-      },
-      { tab: { id: 7 } },
-      vi.fn()
-    );
-    await flushAsyncWork();
-
     onRemovedHandler(7);
     await flushAsyncWork();
 
+    expect(invalidateArticleCacheMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        articleCacheState: expect.objectContaining({
+          cacheName: 'cachedContents/article-1',
+        }),
+      }),
+      expect.objectContaining({ reason: 'manual-delete' })
+    );
     expect(await getAnalysisSession(7)).toBeUndefined();
   });
 

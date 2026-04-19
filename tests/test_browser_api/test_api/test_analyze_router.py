@@ -41,6 +41,23 @@ def test_translate_returns_response_payload(api_client, stub_analyze_service) ->
     assert command.text == "Hello"
     assert command.images == ["data:image/png;base64,QUJD"]
     assert command.selection_metadata["page_title"] == "Example"
+    assert command.cache_name is None
+
+
+def test_translate_accepts_explicit_cache_name(api_client, stub_analyze_service) -> None:
+    response = api_client.post(
+        "/analyze/translate",
+        json={
+            "text": "Hello",
+            "images": [],
+            "mode": "translation",
+            "cache_name": "cachedContents/article-1",
+        },
+    )
+
+    assert response.status_code == 200
+    command = stub_analyze_service.calls[0]
+    assert command.cache_name == "cachedContents/article-1"
 
 
 def test_translate_accepts_custom_prompt_mode(api_client, stub_analyze_service) -> None:

@@ -96,7 +96,13 @@ export async function runSelectionAnalysis(
 
     const apiResponse = await sendAnalyzeTranslateRequest(
       session.items,
-      resolvedRequestOptions
+      {
+        ...resolvedRequestOptions,
+        cacheName: resolveExplicitCacheName(
+          session.articleCacheState,
+          resolvedRequestOptions.modelName
+        ),
+      }
     );
 
     await setAnalysisSession(tabId, {
@@ -349,6 +355,24 @@ function buildModelOptions(settings: ExtensionSettings): ModelOption[] {
     modelId,
     displayName: modelId,
   }));
+}
+
+function resolveExplicitCacheName(
+  articleCacheState: SelectionAnalysisSession['articleCacheState'],
+  modelName: string | undefined
+): string | undefined {
+  if (
+    articleCacheState?.status !== 'active' ||
+    !articleCacheState.cacheName ||
+    !articleCacheState.modelName ||
+    !modelName
+  ) {
+    return undefined;
+  }
+
+  return articleCacheState.modelName === modelName
+    ? articleCacheState.cacheName
+    : undefined;
 }
 
 function resolveAnalyzeRequestOptions(

@@ -4,7 +4,6 @@ import {
   countTokens,
   createContextCache,
   deleteContextCache,
-  fetchContextCacheStatus,
   fetchPopupBootstrap,
   sendAnalyzeTranslateRequest,
 } from '../../../src/shared/gateways/localApiGateway';
@@ -38,6 +37,7 @@ describe('localApiGateway', () => {
         usage: {
           prompt_token_count: 42,
           cached_content_token_count: 1600,
+          cacheName: 'cachedContents/article-1',
           candidates_token_count: 73,
           total_token_count: 1715,
         },
@@ -97,6 +97,7 @@ describe('localApiGateway', () => {
         action: 'custom_prompt',
         apiBaseUrl: 'http://127.0.0.1:9000',
         modelName: 'gemini-2.5-pro',
+        cacheName: 'cachedContents/article-1',
         customPrompt: 'Summarize this',
       }
     );
@@ -113,6 +114,7 @@ describe('localApiGateway', () => {
         text: '1. Selected paragraph\n\n2. Second paragraph',
         mode: 'custom_prompt',
         model_name: 'gemini-2.5-pro',
+        cache_name: 'cachedContents/article-1',
         custom_prompt: 'Summarize this',
         images: [
           'data:image/webp;base64,preview-2',
@@ -241,21 +243,9 @@ describe('localApiGateway', () => {
     });
   });
 
-  it('creates, fetches, and deletes article caches through the local API cache endpoints', async () => {
+  it('creates and deletes article caches through the local API cache endpoints', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(
-        createJsonResponse({
-          ok: true,
-          is_active: true,
-          cache_name: 'cachedContents/article-1',
-          display_name: 'browser-extension:Example article',
-          model_name: 'gemini-2.5-flash',
-          token_count: 2048,
-          ttl_seconds: 3600,
-          expire_time: '2026-04-17T10:00:00+00:00',
-        })
-      )
       .mockResolvedValueOnce(
         createJsonResponse({
           ok: true,
@@ -278,7 +268,6 @@ describe('localApiGateway', () => {
       modelName: 'gemini-2.5-flash',
       displayName: 'browser-extension:Example article',
     });
-    const status = await fetchContextCacheStatus('http://127.0.0.1:9000');
     await deleteContextCache(
       'cachedContents/article-1',
       'http://127.0.0.1:9000'
@@ -294,9 +283,8 @@ describe('localApiGateway', () => {
       ttlSeconds: 3600,
       expireTime: '2026-04-17T10:00:00+00:00',
     });
-    expect(status.cacheName).toBe('cachedContents/article-1');
     expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
+      2,
       'http://127.0.0.1:9000/cache/cachedContents%2Farticle-1',
       { method: 'DELETE' }
     );

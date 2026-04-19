@@ -1,26 +1,7 @@
 from __future__ import annotations
 
-from browser_api.application.dto import CacheStatusResult
 from browser_api.application.errors import MissingModelError, UnsupportedCacheModelError
 from pdf_epub_reader.utils.exceptions import AICacheError, AIKeyMissingError
-
-
-def test_cache_status_returns_active_cache_payload(api_client, stub_analyze_service) -> None:
-    response = api_client.get("/cache/status")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload == {
-        "ok": True,
-        "is_active": True,
-        "ttl_seconds": 3600,
-        "token_count": 2048,
-        "cache_name": "cachedContents/abc123",
-        "display_name": "example-article",
-        "model_name": "gemini-2.5-flash",
-        "expire_time": "2026-04-17T10:00:00+00:00",
-    }
-    assert stub_analyze_service.cache_status_calls == 1
 
 
 def test_cache_create_returns_created_cache_payload(api_client, stub_analyze_service) -> None:
@@ -53,24 +34,6 @@ def test_cache_delete_returns_acknowledgement(api_client, stub_analyze_service) 
         "cache_name": "cachedContents/abc123",
     }
     assert stub_analyze_service.cache_delete_calls == ["cachedContents/abc123"]
-
-
-def test_cache_status_returns_inactive_payload(api_client, stub_analyze_service) -> None:
-    stub_analyze_service.cache_status_result = CacheStatusResult(is_active=False)
-
-    response = api_client.get("/cache/status")
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "ok": True,
-        "is_active": False,
-        "ttl_seconds": None,
-        "token_count": None,
-        "cache_name": None,
-        "display_name": None,
-        "model_name": None,
-        "expire_time": None,
-    }
 
 
 def test_cache_create_returns_400_for_missing_model(api_client, stub_analyze_service) -> None:

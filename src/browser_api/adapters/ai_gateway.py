@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pdf_epub_reader.dto import AnalysisRequest, AnalysisResult, CacheStatus, ModelInfo
+from pdf_epub_reader.dto import AnalysisRequest, AnalysisResult, ModelInfo
 from pdf_epub_reader.models.ai_model import AIModel
 
 
@@ -34,9 +34,6 @@ class GemReadAIGateway:
             model_name=model_name,
             display_name=display_name,
         )
-
-    async def get_cache_status(self) -> CacheStatus:
-        return await self._ai_model.get_cache_status()
 
     async def delete_cache(self, cache_name: str) -> None:
         await self._ai_model.delete_cache(cache_name)

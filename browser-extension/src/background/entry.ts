@@ -55,7 +55,11 @@ export function registerBackgroundRuntime(): void {
   });
 
   chrome.tabs.onRemoved?.addListener((tabId) => {
-    void clearAnalysisSession(tabId);
+    void cleanupAnalysisSession(tabId, {
+      shouldDeleteRemoteCache: true,
+      invalidationReason: 'manual-delete',
+      notice: 'Article cache was cleared because the tab was closed.',
+    });
   });
 
   chrome.tabs.onUpdated?.addListener((tabId, changeInfo) => {
@@ -262,7 +266,11 @@ async function handleClearOverlaySession(
   sendResponse: (response: { ok: boolean }) => void
 ): Promise<void> {
   try {
-    await clearAnalysisSession(tabId);
+    await cleanupAnalysisSession(tabId, {
+      shouldDeleteRemoteCache: true,
+      invalidationReason: 'manual-delete',
+      notice: 'Article cache was cleared because the overlay session ended.',
+    });
     sendResponse({ ok: true });
   } catch {
     sendResponse({ ok: false });
@@ -490,4 +498,25 @@ async function handleTabUpdated(
     tabId,
     buildNavigatedSessionState(session, changeInfo.url)
   );
+}
+
+async function cleanupAnalysisSession(
+  tabId: number,
+  options: {
+    shouldDeleteRemoteCache: boolean;
+    invalidationReason: 'manual-delete';
+    notice: string;
+  }
+): Promise<void> {
+  const session = await getAnalysisSession(tabId);
+  if (session?.articleCacheState?.cacheName && options.shouldDeleteRemoteCache) {
+    const settings = await loadExtensionSettings();
+    await invalidateArticleCache(session, {
+      apiBaseUrl: settings.apiBaseUrl,
+      reason: options.invalidationReason,
+      notice: options.notice,
+    });
+  }
+
+  await clearAnalysisSession(tabId);
 }

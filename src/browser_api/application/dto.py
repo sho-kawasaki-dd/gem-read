@@ -46,6 +46,7 @@ class AnalyzeTranslateCommand:
     model_name: str | None
     images: list[str]
     mode: Literal["translation", "translation_with_explanation", "custom_prompt"]
+    cache_name: str | None = None
     custom_prompt: str | None = None
     selection_metadata: AnalyzeSelectionMetadata | None = None
 

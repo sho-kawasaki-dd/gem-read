@@ -6,6 +6,8 @@ This is intentionally a deferred follow-up, not an active bugfix track.
 
 The browser extension now preserves article cache state across tab navigation and fresh selection runs, but Packt section changes can still trigger cache recreation.
 
+The explicit cache ownership rollout is complete: browser-extension reruns now opt into a specific `cache_name`, and session teardown or extraction failure attempts remote cache deletion. The remaining Packt issue is about article identity drift, not stale implicit cache reuse.
+
 ## Why It Still Recreates
 
 - Packt changes the section slug in the page URL, for example `.../ch04lvl1sec23/...` to `.../ch04lvl1sec25/...`.

@@ -81,6 +81,7 @@ export type ArticleCacheInvalidationReason =
   | 'ttl-expired'
   | 'body-changed'
   | 'manual-delete'
+  | 'extraction-failed'
   | 'remote-missing';
 
 export interface ArticleCacheState {

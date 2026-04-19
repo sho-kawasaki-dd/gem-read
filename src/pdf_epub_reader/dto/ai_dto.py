@@ -40,6 +40,7 @@ class AnalysisRequest:
     custom_prompt: str | None = None
     images: list[bytes] = field(default_factory=list)
     model_name: str | None = None
+    cache_name: str | None = None
 
 
 @dataclass(frozen=True)

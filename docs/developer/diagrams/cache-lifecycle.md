@@ -11,10 +11,11 @@ stateDiagram-v2
     Creating --> NoCache: creation failed
 
     Active --> Active: update TTL
-    Active --> Active: analyze with matching model
+    Active --> Active: analyze with explicit cache_name
     Active --> NoCache: invalidate cache
     Active --> NoCache: open another document
-    Active --> NoCache: shutdown cleanup
+    Active --> NoCache: tab close or overlay clear cleanup
+    Active --> NoCache: article extraction failure cleanup
     Active --> NoCache: cache expires
     Active --> NoCache: model mismatch and user confirms invalidation
     Active --> FallbackRetry: cache-backed analyze fails
@@ -25,5 +26,7 @@ stateDiagram-v2
 ## Notes
 
 - Cache is tied to a model name.
-- `AIModel.analyze()` uses cached content only when the active cache model matches the current request model.
+- browser-extension sends `cache_name` only for active, model-matched article caches.
+- `AIModel.analyze()` uses the explicit `cache_name` when provided; otherwise it falls back to the desktop app's internal active cache state.
+- Explicit cache failures retry without cache but do not overwrite the desktop app's internal cache linkage.
 - The UI countdown is driven by cache expiration time from `CacheStatus`.

@@ -977,6 +977,59 @@ class TestAnalyzeWithCache:
         assert model._cache_model is None
 
     @pytest.mark.asyncio
+    async def test_explicit_cache_name_uses_requested_cache_without_internal_match(self) -> None:
+        model = _build_model(gemini_model_name="models/gemini-test")
+        model._cache_name = "caches/internal-cache"
+        model._cache_model = "models/gemini-test"
+
+        mock_resp = _make_mock_response("explicit cache result")
+        mock_resp.usage_metadata = None
+        model._client.aio.models.generate_content = AsyncMock(
+            return_value=mock_resp
+        )
+
+        await model.analyze(
+            AnalysisRequest(
+                text="Hello",
+                mode=AnalysisMode.TRANSLATION,
+                cache_name="caches/explicit-cache",
+            )
+        )
+
+        config = model._client.aio.models.generate_content.call_args.kwargs["config"]
+        assert config.cached_content == "caches/explicit-cache"
+
+    @pytest.mark.asyncio
+    async def test_explicit_cache_failure_preserves_internal_cache_state(self) -> None:
+        model = _build_model(gemini_model_name="models/gemini-test")
+        model._cache_name = "caches/internal-cache"
+        model._cache_model = "models/gemini-test"
+
+        exc = _make_api_error(code=400, message="Cache expired")
+        mock_resp = _make_mock_response("fallback result")
+        mock_resp.usage_metadata = None
+
+        with patch(
+            "pdf_epub_reader.models.ai_model.genai_errors.APIError",
+            type(exc),
+        ):
+            model._client.aio.models.generate_content = AsyncMock(
+                side_effect=[exc, mock_resp]
+            )
+
+            result = await model.analyze(
+                AnalysisRequest(
+                    text="Hello",
+                    mode=AnalysisMode.TRANSLATION,
+                    cache_name="caches/explicit-cache",
+                )
+            )
+
+        assert result.translated_text == "fallback result"
+        assert model._cache_name == "caches/internal-cache"
+        assert model._cache_model == "models/gemini-test"
+
+    @pytest.mark.asyncio
     async def test_analyze_cache_rate_limit_not_retried(self) -> None:
         """キャッシュ付き 429 エラーはフォールバックせず AIRateLimitError になること。"""
         model = _build_model(gemini_model_name="models/gemini-test")

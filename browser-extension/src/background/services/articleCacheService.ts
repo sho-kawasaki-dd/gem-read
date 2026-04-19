@@ -8,7 +8,6 @@ import {
   countTokens,
   createContextCache,
   deleteContextCache,
-  fetchContextCacheStatus,
 } from '../../shared/gateways/localApiGateway';
 import type { SelectionAnalysisSession } from './analysisSessionStore';
 
@@ -60,6 +59,19 @@ export async function syncArticleCacheState(
         : session;
     }
 
+    if (existingState.cacheName) {
+      return {
+        ...session,
+        articleCacheState: await invalidateTrackedState(existingState, {
+          apiBaseUrl: options.apiBaseUrl,
+          reason: 'extraction-failed',
+          notice:
+            session.articleContextError ??
+            'Article cache was cleared because article extraction failed.',
+        }),
+      };
+    }
+
     return {
       ...session,
       articleCacheState: {
@@ -78,6 +90,7 @@ export async function syncArticleCacheState(
     resolvedModelName,
     now
   );
+  nextState = refreshTrackedCacheTtl(nextState, articleContext, now);
 
   if (shouldInvalidateCachedModel) {
     console.warn(
@@ -138,64 +151,6 @@ export async function syncArticleCacheState(
         currentHash: articleContext.bodyHash,
       }
     );
-  }
-
-  if (nextState.cacheName) {
-    try {
-      const remoteStatus = await fetchContextCacheStatus(options.apiBaseUrl);
-      if (!remoteStatus.isActive) {
-        nextState = {
-          ...nextState,
-          status: 'invalidated',
-          cacheName: undefined,
-          tokenCount: undefined,
-          ttlSeconds: undefined,
-          expireTime: undefined,
-          invalidationReason: 'ttl-expired',
-          notice: 'Article cache expired and will be recreated when needed.',
-          lastValidatedAt: now,
-        };
-        nextState = bindTrackedArticleState(nextState, articleContext);
-      } else if (remoteStatus.cacheName !== nextState.cacheName) {
-        nextState = {
-          ...nextState,
-          status: 'invalidated',
-          cacheName: undefined,
-          tokenCount: undefined,
-          ttlSeconds: undefined,
-          expireTime: undefined,
-          invalidationReason: 'remote-missing',
-          notice:
-            'The active article cache was replaced and will be recreated when needed.',
-          lastValidatedAt: now,
-        };
-        nextState = bindTrackedArticleState(nextState, articleContext);
-      } else {
-        nextState = {
-          ...nextState,
-          status: 'active',
-          cacheName: remoteStatus.cacheName,
-          displayName: remoteStatus.displayName ?? nextState.displayName,
-          modelName: remoteStatus.modelName ?? resolvedModelName,
-          tokenCount: remoteStatus.tokenCount,
-          ttlSeconds: remoteStatus.ttlSeconds,
-          expireTime: remoteStatus.expireTime,
-          invalidationReason: undefined,
-          notice: nextState.notice,
-          lastValidatedAt: now,
-        };
-      }
-    } catch (error) {
-      return {
-        ...session,
-        articleCacheState: {
-          ...nextState,
-          status: 'degraded',
-          notice: `Article cache status could not be refreshed: ${toErrorMessage(error)}`,
-          lastValidatedAt: now,
-        },
-      };
-    }
   }
 
   if (!resolvedModelName) {
@@ -531,6 +486,45 @@ function bindTrackedArticleState(
     articleUrl: articleContext.url,
     articleIdentity: buildArticleIdentity(articleContext),
     articleHash: articleContext.bodyHash,
+  };
+}
+
+function refreshTrackedCacheTtl(
+  state: ArticleCacheState,
+  articleContext: ArticleContext,
+  now: string
+): ArticleCacheState {
+  if (!state.cacheName || !state.expireTime) {
+    return state;
+  }
+
+  const remainingMs = new Date(state.expireTime).getTime() - new Date(now).getTime();
+  if (Number.isNaN(remainingMs)) {
+    return state;
+  }
+
+  if (remainingMs <= 0) {
+    return bindTrackedArticleState(
+      {
+        ...state,
+        status: 'invalidated',
+        autoCreateEligible: false,
+        cacheName: undefined,
+        tokenCount: undefined,
+        ttlSeconds: undefined,
+        expireTime: undefined,
+        invalidationReason: 'ttl-expired',
+        notice: 'Article cache expired and will be recreated when needed.',
+        lastValidatedAt: now,
+      },
+      articleContext
+    );
+  }
+
+  return {
+    ...state,
+    ttlSeconds: Math.max(0, Math.floor(remainingMs / 1000)),
+    lastValidatedAt: now,
   };
 }
 

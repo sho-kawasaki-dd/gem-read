@@ -46,6 +46,7 @@ interface AnalyzeTranslateRequestBody {
   images: string[];
   mode: AnalysisAction;
   model_name?: string;
+  cache_name?: string;
   custom_prompt?: string;
   selection_metadata?: AnalyzeSelectionMetadataPayload;
 }
@@ -116,6 +117,7 @@ export interface SendAnalyzeRequestOptions {
   action?: AnalysisAction;
   apiBaseUrl?: string;
   modelName?: string;
+  cacheName?: string;
   customPrompt?: string;
 }
 
@@ -148,6 +150,7 @@ export async function sendAnalyzeTranslateRequest(
   const requestBody = buildAnalyzeRequestBody(sessionItems, {
     action,
     modelName: options.modelName,
+    cacheName: options.cacheName,
     customPrompt: options.customPrompt,
   });
 
@@ -196,7 +199,7 @@ function buildAnalyzeRequestBody(
   sessionItems: SelectionSessionItem[],
   options: Pick<
     SendAnalyzeRequestOptions,
-    'action' | 'modelName' | 'customPrompt'
+    'action' | 'modelName' | 'cacheName' | 'customPrompt'
   >
 ): AnalyzeTranslateRequestBody {
   if (sessionItems.length === 0) {
@@ -237,6 +240,7 @@ function buildAnalyzeRequestBody(
     images,
     mode: options.action ?? 'translation',
     model_name: options.modelName,
+    cache_name: options.cacheName,
     custom_prompt: options.customPrompt,
     selection_metadata: primarySelection
       ? {
@@ -398,22 +402,6 @@ export async function createContextCache(
     const errorText = await response.text();
     throw new Error(
       `Local API cache create failed (${response.status}): ${errorText}`
-    );
-  }
-
-  return mapCacheStatusResponse(
-    (await response.json()) as RawCacheStatusApiResponse
-  );
-}
-
-export async function fetchContextCacheStatus(
-  apiBaseUrl: string = PHASE0_API_BASE_URL
-): Promise<CacheStatusApiResponse> {
-  const response = await fetch(`${apiBaseUrl}/cache/status`);
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Local API cache status failed (${response.status}): ${errorText}`
     );
   }
 

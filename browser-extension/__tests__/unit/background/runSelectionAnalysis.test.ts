@@ -161,6 +161,7 @@ describe('runSelectionAnalysis', () => {
         action: 'translation',
         apiBaseUrl: 'http://127.0.0.1:9000',
         modelName: 'gemini-2.5-flash',
+        cacheName: 'cachedContents/article-1',
         customPrompt: undefined,
       }
     );
@@ -245,6 +246,10 @@ describe('runSelectionAnalysis', () => {
     );
 
     expect(sendAnalyzeTranslateRequestMock).toHaveBeenCalledTimes(1);
+    expect(sendAnalyzeTranslateRequestMock).toHaveBeenCalledWith(
+      [expect.any(Object)],
+      expect.objectContaining({ cacheName: undefined })
+    );
     expect(renderOverlayMock).toHaveBeenLastCalledWith(
       7,
       expect.objectContaining({
@@ -297,6 +302,7 @@ describe('runSelectionAnalysis', () => {
         action: 'custom_prompt',
         apiBaseUrl: 'http://localhost:9010',
         modelName: 'gemini-2.5-pro',
+        cacheName: undefined,
         customPrompt: 'Summarize this',
       }
     );
@@ -529,7 +535,10 @@ describe('runSelectionAnalysis', () => {
           previewImageUrl: 'data:image/webp;base64,crop',
         }),
       ],
-      expect.objectContaining({ action: 'translation_with_explanation' })
+      expect.objectContaining({
+        action: 'translation_with_explanation',
+        cacheName: 'cachedContents/article-1',
+      })
     );
   });
 

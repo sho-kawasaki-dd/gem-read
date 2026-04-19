@@ -55,6 +55,7 @@ class AnalyzeTranslateRequest(BaseModel):
 
     text: str = ''
     model_name: str | None = None
+    cache_name: str | None = None
     images: list[str] = Field(default_factory=list)
     mode: Literal["translation", "translation_with_explanation", "custom_prompt"] = "translation"
     custom_prompt: str | None = None
@@ -84,6 +85,7 @@ class AnalyzeTranslateRequest(BaseModel):
         return AnalyzeTranslateCommand(
             text=self.text,
             model_name=self.model_name,
+            cache_name=self.cache_name.strip() if self.cache_name else None,
             images=self.images,
             mode=self.mode,
             custom_prompt=self.custom_prompt.strip() if self.custom_prompt else None,

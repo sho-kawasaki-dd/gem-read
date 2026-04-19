@@ -135,18 +135,22 @@ class AIModel:
         model_name = request.model_name or self._config.gemini_model_name
         contents = self._build_contents(request)
 
-        # キャッシュ統合: active かつモデル一致時に cached_content を付与
-        use_cache = (
-            self._cache_name is not None
-            and self._cache_model == model_name
+        explicit_cache_name = request.cache_name.strip() if request.cache_name else None
+        active_internal_cache_name = (
+            self._cache_name
+            if self._cache_name is not None and self._cache_model == model_name
+            else None
         )
+        cache_name = explicit_cache_name or active_internal_cache_name
+        use_explicit_cache = explicit_cache_name is not None
+        use_cache = cache_name is not None
 
         if use_cache:
             # system_instruction はキャッシュ作成時に埋め込み済み。
             # Gemini API はキャッシュ付きリクエストに system_instruction を
             # 同時に指定することを禁じるため、config には含めない。
             config = genai_types.GenerateContentConfig(
-                cached_content=self._cache_name,
+                cached_content=cache_name,
             )
             try:
                 response = await self._call_with_retry(
@@ -161,13 +165,14 @@ class AIModel:
                     "キャッシュ付きリクエスト失敗、キャッシュなしでリトライ: "
                     "status_code=%s cache_name=%s cache_model=%s request_model=%s message=%s",
                     exc.status_code,
-                    self._cache_name,
+                    cache_name,
                     self._cache_model,
                     model_name,
                     exc.message,
                 )
-                self._cache_name = None
-                self._cache_model = None
+                if not use_explicit_cache:
+                    self._cache_name = None
+                    self._cache_model = None
                 config = genai_types.GenerateContentConfig(
                     system_instruction=self._build_system_instruction(),
                 )

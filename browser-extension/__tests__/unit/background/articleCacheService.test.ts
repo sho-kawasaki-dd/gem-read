@@ -3,13 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const countTokensMock = vi.hoisted(() => vi.fn());
 const createContextCacheMock = vi.hoisted(() => vi.fn());
 const deleteContextCacheMock = vi.hoisted(() => vi.fn());
-const fetchContextCacheStatusMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/shared/gateways/localApiGateway', () => ({
   countTokens: countTokensMock,
   createContextCache: createContextCacheMock,
   deleteContextCache: deleteContextCacheMock,
-  fetchContextCacheStatus: fetchContextCacheStatusMock,
 }));
 
 import {
@@ -75,12 +73,6 @@ describe('articleCacheService', () => {
   });
 
   it('invalidates the tracked cache when the model changes', async () => {
-    fetchContextCacheStatusMock.mockResolvedValue({
-      ok: true,
-      isActive: true,
-      cacheName: 'cachedContents/article-1',
-      modelName: 'gemini-2.5-pro',
-    });
     deleteContextCacheMock.mockResolvedValue(undefined);
     countTokensMock.mockResolvedValue({
       ok: true,
@@ -132,15 +124,6 @@ describe('articleCacheService', () => {
   });
 
   it('reuses the tracked cache across section changes when article identity is stable', async () => {
-    fetchContextCacheStatusMock.mockResolvedValue({
-      ok: true,
-      isActive: true,
-      cacheName: 'cachedContents/article-1',
-      modelName: 'gemini-2.5-flash',
-      tokenCount: 2048,
-      ttlSeconds: 3600,
-      expireTime: '2026-04-17T10:00:00+00:00',
-    });
     countTokensMock.mockResolvedValue({
       ok: true,
       tokenCount: 1400,
@@ -185,6 +168,54 @@ describe('articleCacheService', () => {
         cacheName: 'cachedContents/article-1',
         articleIdentity: 'example::example article',
         articleUrl: 'https://example.com/article/section-1',
+      })
+    );
+  });
+
+  it('invalidates an expired cache locally using expireTime without polling backend status', async () => {
+    countTokensMock.mockResolvedValue({
+      ok: true,
+      tokenCount: 200,
+      modelName: 'gemini-2.5-flash',
+    });
+
+    const session = await syncArticleCacheState(
+      {
+        items: [],
+        modelOptions: [],
+        lastAction: 'translation',
+        lastModelName: 'gemini-2.5-flash',
+        articleContext: {
+          title: 'Example article',
+          url: 'https://example.com/article',
+          bodyText: 'Body',
+          bodyHash: 'abc123def4567890',
+          source: 'readability',
+          textLength: 100,
+        },
+        articleCacheState: {
+          status: 'active',
+          cacheName: 'cachedContents/article-1',
+          modelName: 'gemini-2.5-flash',
+          articleUrl: 'https://example.com/article',
+          articleIdentity: 'example.com/article::example article',
+          articleHash: 'abc123def4567890',
+          expireTime: '2000-01-01T00:00:00.000Z',
+        },
+      },
+      {
+        apiBaseUrl: 'http://127.0.0.1:9000',
+        modelName: 'gemini-2.5-flash',
+        allowAutoCreate: false,
+      }
+    );
+
+    expect(deleteContextCacheMock).not.toHaveBeenCalled();
+    expect(session.articleCacheState).toEqual(
+      expect.objectContaining({
+        status: 'candidate',
+        invalidationReason: 'ttl-expired',
+        cacheName: undefined,
       })
     );
   });
@@ -266,6 +297,43 @@ describe('articleCacheService', () => {
       expect.objectContaining({
         status: 'degraded',
         invalidationReason: 'manual-delete',
+      })
+    );
+  });
+
+  it('deletes the remote cache when article extraction fails for an active cache', async () => {
+    deleteContextCacheMock.mockResolvedValue(undefined);
+
+    const session = await syncArticleCacheState(
+      {
+        items: [],
+        modelOptions: [],
+        lastAction: 'translation',
+        lastModelName: 'gemini-2.5-flash',
+        articleContext: undefined,
+        articleContextError: 'Readable article context could not be extracted on this page.',
+        articleCacheState: {
+          status: 'active',
+          cacheName: 'cachedContents/article-1',
+          modelName: 'gemini-2.5-flash',
+        },
+      },
+      {
+        apiBaseUrl: 'http://127.0.0.1:9000',
+        modelName: 'gemini-2.5-flash',
+        allowAutoCreate: true,
+      }
+    );
+
+    expect(deleteContextCacheMock).toHaveBeenCalledWith(
+      'cachedContents/article-1',
+      'http://127.0.0.1:9000'
+    );
+    expect(session.articleCacheState).toEqual(
+      expect.objectContaining({
+        status: 'invalidated',
+        invalidationReason: 'extraction-failed',
+        cacheName: undefined,
       })
     );
   });
