@@ -11,7 +11,11 @@ import type {
   OpenOverlayResponse,
   PopupStatusPayload,
 } from '../../shared/contracts/messages';
-import { fetchPopupBootstrap, listBrowserExtensionCaches, deleteContextCache } from '../../shared/gateways/localApiGateway';
+import {
+  fetchPopupBootstrap,
+  listBrowserExtensionCaches,
+  deleteContextCache,
+} from '../../shared/gateways/localApiGateway';
 import {
   loadExtensionSettings,
   patchExtensionSettings,
@@ -503,7 +507,9 @@ export async function renderPopup(documentRef: Document): Promise<void> {
   refs.debugLoadButton.addEventListener('click', async () => {
     refs.debugLoadButton.disabled = true;
     try {
-      const result = await listBrowserExtensionCaches(state.settings.apiBaseUrl);
+      const result = await listBrowserExtensionCaches(
+        state.settings.apiBaseUrl
+      );
       renderDebugCacheList(refs, result.items, state, refs);
     } catch (error) {
       setMessage(
@@ -526,18 +532,24 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
   const apiInput = appRoot.querySelector<HTMLInputElement>('#api-base-url');
   const defaultModelInput =
     appRoot.querySelector<HTMLInputElement>('#default-model');
-  const includeExplanationInput =
-    appRoot.querySelector<HTMLInputElement>('[data-role="include-explanation"]');
-  const includeSelectionsInput =
-    appRoot.querySelector<HTMLInputElement>('[data-role="include-selections"]');
-  const includeRawResponseInput =
-    appRoot.querySelector<HTMLInputElement>('[data-role="include-raw-response"]');
-  const includeArticleMetadataInput =
-    appRoot.querySelector<HTMLInputElement>('[data-role="include-article-metadata"]');
-  const includeUsageMetricsInput =
-    appRoot.querySelector<HTMLInputElement>('[data-role="include-usage-metrics"]');
-  const includeYamlFrontmatterInput =
-    appRoot.querySelector<HTMLInputElement>('[data-role="include-yaml-frontmatter"]');
+  const includeExplanationInput = appRoot.querySelector<HTMLInputElement>(
+    '[data-role="include-explanation"]'
+  );
+  const includeSelectionsInput = appRoot.querySelector<HTMLInputElement>(
+    '[data-role="include-selections"]'
+  );
+  const includeRawResponseInput = appRoot.querySelector<HTMLInputElement>(
+    '[data-role="include-raw-response"]'
+  );
+  const includeArticleMetadataInput = appRoot.querySelector<HTMLInputElement>(
+    '[data-role="include-article-metadata"]'
+  );
+  const includeUsageMetricsInput = appRoot.querySelector<HTMLInputElement>(
+    '[data-role="include-usage-metrics"]'
+  );
+  const includeYamlFrontmatterInput = appRoot.querySelector<HTMLInputElement>(
+    '[data-role="include-yaml-frontmatter"]'
+  );
   const statusBadge = appRoot.querySelector<HTMLElement>(
     '[data-role="status-badge"]'
   );
@@ -836,7 +848,9 @@ function renderDebugCacheList(
       btn.disabled = true;
       try {
         await deleteContextCache(cacheName, state.settings.apiBaseUrl);
-        const result = await listBrowserExtensionCaches(state.settings.apiBaseUrl);
+        const result = await listBrowserExtensionCaches(
+          state.settings.apiBaseUrl
+        );
         renderDebugCacheList(outerRefs, result.items, state, outerRefs);
         setMessage(outerRefs, `Deleted cache: ${cacheName}`, false);
       } catch (error) {
