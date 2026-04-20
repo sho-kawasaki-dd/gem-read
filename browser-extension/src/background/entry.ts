@@ -13,6 +13,7 @@ import { runSelectionAnalysis } from './usecases/runSelectionAnalysis';
 import {
   appendLiveSelectionSessionItem,
   appendSelectionSessionItem,
+  clearSelectionBatch,
   removeSelectionSessionItem,
   toggleSelectionSessionItemImage,
   buildOverlayPayload,
@@ -22,6 +23,7 @@ import {
   PHASE0_MENU_ID,
   PHASE3_ADD_SELECTION_COMMAND_ID,
   PHASE3_OPEN_OVERLAY_COMMAND_ID,
+  PHASE3_CLEAR_SELECTION_BATCH_COMMAND_ID,
   PHASE2_RECTANGLE_COMMAND_ID,
   PHASE2_RECTANGLE_MENU_ID,
 } from '../shared/config/phase0';
@@ -31,6 +33,7 @@ import type {
   BackgroundRuntimeMessage,
   CacheBatchOverlaySessionMessage,
   CacheOverlaySessionMessage,
+  ClearSelectionBatchResponse,
   RemoveSessionItemResponse,
   OpenOverlayResponse,
   RunOverlayActionResponse,
@@ -147,6 +150,14 @@ export function registerBackgroundRuntime(): void {
         return true;
       }
 
+      if (
+        message.type === 'phase3.clearSelectionBatch' &&
+        sender.tab?.id !== undefined
+      ) {
+        void handleClearSelectionBatch(sender.tab.id, sendResponse);
+        return true;
+      }
+
       if (message.type !== 'phase1.runOverlayAction' || !sender.tab) {
         return false;
       }
@@ -182,6 +193,10 @@ async function handleBrowserCommand(
 
   if (command === PHASE2_RECTANGLE_COMMAND_ID) {
     await handleRectangleSelectionStart(targetTab, 'command');
+  }
+
+  if (command === PHASE3_CLEAR_SELECTION_BATCH_COMMAND_ID) {
+    await clearSelectionBatch(targetTab.id);
   }
 }
 
@@ -444,8 +459,7 @@ async function handleToggleSessionItemImage(
 async function handleDeleteActiveArticleCache(
   tabId: number,
   sendResponse: (response: DeleteActiveArticleCacheResponse) => void
-): Promise<void> {
-  try {
+): Promise<void> {  try {
     const session = await getAnalysisSession(tabId);
     if (!session) {
       sendResponse({ ok: true });
@@ -474,6 +488,24 @@ async function handleDeleteActiveArticleCache(
         error instanceof Error
           ? error.message
           : 'Failed to delete the active article cache.',
+    });
+  }
+}
+
+async function handleClearSelectionBatch(
+  tabId: number,
+  sendResponse: (response: ClearSelectionBatchResponse) => void
+): Promise<void> {
+  try {
+    await clearSelectionBatch(tabId);
+    sendResponse({ ok: true });
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Failed to clear the selection batch.',
     });
   }
 }

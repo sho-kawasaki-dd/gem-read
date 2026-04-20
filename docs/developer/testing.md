@@ -73,6 +73,14 @@ The browser_api tests stub the AI gateway or FastAPI dependency wiring so they d
 
 The Playwright smoke test loads the unpacked extension from `dist/`, saves popup settings against a stub local API, reopens the overlay through the background runtime, and exercises keyboard-first overlay flows such as `Esc`, `Alt+R`, and `Ctrl+Enter`. Native browser context menus are not automated in this smoke path; the unit test suite covers the background usecase that normally sits behind the context-menu click.
 
+## Empty Batch Cache Guard Checks
+
+- `openOverlaySession` must pass `allowAutoCreate: false` to `syncArticleCacheState` when the current batch has zero items. Unit test in `openOverlaySession.test.ts` covers both the zero-item and non-zero-item branches.
+- `removeSelectionSessionItem` must preserve `articleContext` and `articleCacheState` (via `setAnalysisSession` with empty items) rather than clearing the session when the last item is removed. Unit test in `updateSelectionSession.test.ts` covers this.
+- `clearSelectionBatch` must clear all items while preserving full session context. Unit test in `updateSelectionSession.test.ts` covers this.
+- `Alt+Backspace` must send `{ type: 'phase3.clearSelectionBatch' }` when focus is outside editable targets. Unit test in `renderOverlay.test.ts` covers both the happy path and the "inside textarea" guard.
+- `GET /cache/list` must return only caches with `display_name` prefixed `browser-extension:`. Python tests in `test_cache_router.py` cover list, empty list, and error propagation.
+
 ## Phase 4D Focus Checks
 
 - Browser extension unit coverage should include article token estimation, article cache state rendering, and result usage rendering.

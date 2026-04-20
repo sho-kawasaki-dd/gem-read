@@ -913,4 +913,104 @@ describe('renderOverlay', () => {
       (root.querySelector('.custom-prompt-input') as HTMLTextAreaElement).value
     ).toBe('Draft prompt');
   });
+
+  it('sends phase3.clearSelectionBatch message when Alt+Backspace is pressed outside editable targets', async () => {
+    const chromeMock = getChromeMock();
+    (
+      chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({ ok: true });
+
+    renderOverlay({
+      status: 'success',
+      action: 'translation',
+      sessionReady: false,
+      sessionItems: [
+        {
+          id: 'selection-1',
+          source: 'text-selection',
+          selection: {
+            text: 'Selected paragraph',
+            rect: { left: 1, top: 2, width: 3, height: 4 },
+            viewportWidth: 100,
+            viewportHeight: 100,
+            devicePixelRatio: 1,
+            url: 'https://example.com',
+            pageTitle: 'Example',
+          },
+          includeImage: false,
+          previewImageUrl: 'data:image/webp;base64,preview',
+          cropDurationMs: 12.3,
+        },
+      ],
+      maxSessionItems: 10,
+      modelName: 'gemini-2.5-flash',
+      selectedText: 'Selected paragraph',
+    });
+
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Backspace',
+        altKey: true,
+        bubbles: true,
+      })
+    );
+    await Promise.resolve();
+
+    expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'phase3.clearSelectionBatch',
+    });
+  });
+
+  it('does NOT send clearSelectionBatch when Alt+Backspace is pressed inside a textarea', async () => {
+    const chromeMock = getChromeMock();
+    (
+      chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({ ok: true });
+
+    renderOverlay({
+      status: 'success',
+      action: 'custom_prompt',
+      sessionReady: true,
+      sessionItems: [
+        {
+          id: 'selection-1',
+          source: 'text-selection',
+          selection: {
+            text: 'Selected paragraph',
+            rect: { left: 1, top: 2, width: 3, height: 4 },
+            viewportWidth: 100,
+            viewportHeight: 100,
+            devicePixelRatio: 1,
+            url: 'https://example.com',
+            pageTitle: 'Example',
+          },
+          includeImage: false,
+          previewImageUrl: 'data:image/webp;base64,preview',
+          cropDurationMs: 12.3,
+        },
+      ],
+      maxSessionItems: 10,
+      modelName: 'gemini-2.5-flash',
+      customPrompt: 'Enter here',
+      selectedText: 'Selected paragraph',
+    });
+
+    const root = getShadowRoot();
+    const textarea = root.querySelector('.custom-prompt-input') as HTMLTextAreaElement;
+
+    // Dispatch the event from inside the shadow DOM so composedPath() includes the textarea.
+    textarea.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Backspace',
+        altKey: true,
+        bubbles: true,
+        composed: true,
+      })
+    );
+    await Promise.resolve();
+
+    expect(chromeMock.runtime.sendMessage).not.toHaveBeenCalledWith({
+      type: 'phase3.clearSelectionBatch',
+    });
+  });
 });

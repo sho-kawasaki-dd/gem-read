@@ -9,11 +9,26 @@ from browser_api.api.error_handlers import to_http_exception
 from browser_api.api.schemas.cache import (
     CacheCreateRequest,
     CacheDeleteResponse,
+    CacheListResponse,
     CacheStatusResponse,
 )
 
 router = APIRouter(prefix="/cache", tags=["cache"])
 logger = logging.getLogger(__name__)
+
+
+@router.get("/list", response_model=CacheListResponse)
+async def list_caches(
+    services: BrowserAPIServices = Depends(get_services),
+) -> CacheListResponse:
+    """List all browser-extension-owned caches for the popup debug section."""
+
+    try:
+        result = await services.analyze_service.list_browser_extension_caches()
+        return CacheListResponse.from_result(result)
+    except Exception as exc:
+        logger.exception("Unexpected browser API cache list error")
+        raise to_http_exception(exc) from exc
 
 
 @router.post("/create", response_model=CacheStatusResponse)

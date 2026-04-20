@@ -12,6 +12,8 @@ from browser_api.application.dto import (
     AnalyzeTranslateResult,
     AnalyzeUsageMetrics,
     CacheDeleteResult,
+    CacheListItem,
+    CacheListResult,
     CacheStatusResult,
     ModelCatalogResult,
     TokenCountResult,
@@ -30,10 +32,12 @@ class StubAnalyzeService:
     cache_create_result: CacheStatusResult | None = None
     cache_status_result: CacheStatusResult | None = None
     cache_delete_result: CacheDeleteResult | None = None
+    cache_list_result: CacheListResult | None = None
     token_result: TokenCountResult | None = None
     cache_create_error: Exception | None = None
     cache_status_error: Exception | None = None
     cache_delete_error: Exception | None = None
+    cache_list_error: Exception | None = None
     token_error: Exception | None = None
     calls: list[Any] | None = None
     model_calls: int = 0
@@ -79,6 +83,13 @@ class StubAnalyzeService:
             raise self.cache_delete_error
         assert self.cache_delete_result is not None
         return self.cache_delete_result
+
+    async def list_browser_extension_caches(self):
+        if self.cache_list_error is not None:
+            raise self.cache_list_error
+        if self.cache_list_result is not None:
+            return self.cache_list_result
+        return CacheListResult(items=[])
 
     async def count_tokens(self, command):
         if self.token_calls is not None:

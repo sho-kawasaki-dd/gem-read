@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field, model_validator
 from browser_api.application.dto import (
     CacheCreateCommand,
     CacheDeleteResult,
+    CacheListItem,
+    CacheListResult,
     CacheStatusResult,
 )
 
@@ -64,3 +66,34 @@ class CacheDeleteResponse(BaseModel):
     @classmethod
     def from_result(cls, result: CacheDeleteResult) -> "CacheDeleteResponse":
         return cls(cache_name=result.cache_name)
+
+
+class CacheListItemResponse(BaseModel):
+    """Single entry in the browser-extension cache list."""
+
+    cache_name: str
+    display_name: str
+    model_name: str
+    expire_time: str | None = None
+    token_count: int | None = None
+
+    @classmethod
+    def from_item(cls, item: CacheListItem) -> "CacheListItemResponse":
+        return cls(
+            cache_name=item.cache_name,
+            display_name=item.display_name,
+            model_name=item.model_name,
+            expire_time=item.expire_time,
+            token_count=item.token_count,
+        )
+
+
+class CacheListResponse(BaseModel):
+    """Ordered list of browser-extension caches for the popup debug section."""
+
+    ok: bool = True
+    items: list[CacheListItemResponse]
+
+    @classmethod
+    def from_result(cls, result: CacheListResult) -> "CacheListResponse":
+        return cls(items=[CacheListItemResponse.from_item(item) for item in result.items])

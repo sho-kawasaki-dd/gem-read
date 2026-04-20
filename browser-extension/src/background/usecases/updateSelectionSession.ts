@@ -13,7 +13,6 @@ import {
   renderOverlay,
 } from '../gateways/tabMessagingGateway';
 import {
-  clearAnalysisSession,
   getAnalysisSession,
   getLatestSelectionItem,
   setAnalysisSession,
@@ -132,21 +131,13 @@ export async function removeSelectionSessionItem(
   }
 
   if (nextItems.length === 0) {
-    await clearAnalysisSession(tabId);
-    await renderOverlay(tabId, {
-      status: 'success',
-      action: session.lastAction,
-      modelName: session.lastModelName,
+    const emptyBatchSession: SelectionAnalysisSession = {
+      ...session,
+      items: [],
       modelOptions: [...session.modelOptions],
-      customPrompt: session.lastCustomPrompt,
-      sessionReady: false,
-      sessionItems: [],
-      maxSessionItems: MAX_SELECTION_SESSION_ITEMS,
-      selectedText: '',
-      articleContext: session.articleContext,
-      articleContextError: session.articleContextError,
-      articleCacheState: session.articleCacheState,
-    });
+    };
+    await setAnalysisSession(tabId, emptyBatchSession);
+    await renderOverlay(tabId, buildOverlayPayload(emptyBatchSession));
     return;
   }
 
@@ -303,6 +294,22 @@ function resolveModelOptions(
     modelId,
     displayName: modelId,
   }));
+}
+
+export async function clearSelectionBatch(tabId: number): Promise<void> {
+  const session = await getAnalysisSession(tabId);
+  if (!session) {
+    return;
+  }
+
+  const emptyBatchSession: SelectionAnalysisSession = {
+    ...session,
+    items: [],
+    modelOptions: [...session.modelOptions],
+  };
+
+  await setAnalysisSession(tabId, emptyBatchSession);
+  await renderOverlay(tabId, buildOverlayPayload(emptyBatchSession));
 }
 
 function createSessionItemId(source: SelectionSessionSource): string {

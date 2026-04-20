@@ -3,6 +3,8 @@ import type {
   AnalysisAction,
   AnalyzeApiResponse,
   AnalyzeUsageMetrics,
+  CacheListApiResponse,
+  CacheListItem,
   CacheStatusApiResponse,
   DegradedReason,
   ModelCatalogSource,
@@ -105,6 +107,19 @@ interface RawTokenCountApiResponse {
   ok: boolean;
   token_count: number;
   model_name: string;
+}
+
+interface RawCacheListItemResponse {
+  cache_name: string;
+  display_name: string;
+  model_name: string;
+  expire_time?: string | null;
+  token_count?: number | null;
+}
+
+interface RawCacheListApiResponse {
+  ok: boolean;
+  items: RawCacheListItemResponse[];
 }
 
 interface RawCreateCacheRequestBody {
@@ -457,4 +472,28 @@ function mapAnalyzeUsage(
     candidatesTokenCount: usage.candidates_token_count ?? undefined,
     totalTokenCount: usage.total_token_count ?? undefined,
   };
+}
+
+export async function listBrowserExtensionCaches(
+  apiBaseUrl: string = PHASE0_API_BASE_URL
+): Promise<CacheListApiResponse> {
+  const response = await fetch(`${apiBaseUrl}/cache/list`);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Local API cache list failed (${response.status}): ${errorText}`
+    );
+  }
+
+  const payload = (await response.json()) as RawCacheListApiResponse;
+  const items: CacheListItem[] = payload.items.map((item) => ({
+    cacheName: item.cache_name,
+    displayName: item.display_name,
+    modelName: item.model_name,
+    expireTime: item.expire_time ?? undefined,
+    tokenCount: item.token_count ?? undefined,
+  }));
+
+  return { ok: payload.ok, items };
 }

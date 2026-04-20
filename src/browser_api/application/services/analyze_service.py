@@ -8,6 +8,8 @@ from browser_api.adapters.ai_gateway import GemReadAIGateway
 from browser_api.application.dto import (
     CacheCreateCommand,
     CacheDeleteResult,
+    CacheListItem,
+    CacheListResult,
     CacheStatusResult,
     AnalyzeUsageMetrics,
     AnalyzeTranslateCommand,
@@ -160,6 +162,28 @@ class AnalyzeService:
 
         await self.ai_gateway.delete_cache(cache_name)
         return CacheDeleteResult(cache_name=cache_name)
+
+    async def list_browser_extension_caches(self) -> CacheListResult:
+        """Return all caches whose display_name starts with 'browser-extension:'."""
+
+        try:
+            raw_caches = await self.ai_gateway.list_all_caches()
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Failed to list caches from gateway: %s", exc)
+            raw_caches = []
+
+        items = [
+            CacheListItem(
+                cache_name=c["name"],
+                display_name=c["display_name"],
+                model_name=c["model_name"],
+                expire_time=c.get("expire_time"),
+                token_count=c.get("token_count"),
+            )
+            for c in raw_caches
+            if c.get("display_name", "").startswith("browser-extension:")
+        ]
+        return CacheListResult(items=items)
 
     @staticmethod
     def _to_usage_metrics(usage) -> AnalyzeUsageMetrics | None:

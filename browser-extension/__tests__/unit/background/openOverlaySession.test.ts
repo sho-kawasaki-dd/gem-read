@@ -144,4 +144,57 @@ describe('openOverlaySession', () => {
 			})
 		);
 	});
+
+	it('passes allowAutoCreate=false to syncArticleCacheState when batch is empty', async () => {
+		await setAnalysisSession(7, {
+			items: [],
+			modelOptions: [{ modelId: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' }],
+			lastAction: 'translation',
+			articleContext: {
+				title: 'Article',
+				url: 'https://example.com/article',
+				bodyText: 'body text',
+				bodyHash: 'hash123',
+				source: 'readability',
+				textLength: 100,
+			},
+		});
+
+		await openOverlaySession(7);
+
+		expect(syncArticleCacheStateMock).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ allowAutoCreate: false })
+		);
+	});
+
+	it('passes allowAutoCreate=true to syncArticleCacheState when batch has items', async () => {
+		await setAnalysisSession(7, {
+			items: [
+				{
+					id: 'selection-1',
+					source: 'text-selection',
+					selection: {
+						text: 'Selected text',
+						rect: { left: 1, top: 2, width: 3, height: 4 },
+						viewportWidth: 100,
+						viewportHeight: 100,
+						devicePixelRatio: 1,
+						url: 'https://example.com',
+						pageTitle: 'Example',
+					},
+					includeImage: false,
+				},
+			],
+			modelOptions: [{ modelId: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' }],
+			lastAction: 'translation',
+		});
+
+		await openOverlaySession(7);
+
+		expect(syncArticleCacheStateMock).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ allowAutoCreate: true })
+		);
+	});
 });

@@ -118,6 +118,24 @@ class CacheDeleteResult:
 
 
 @dataclass(frozen=True, slots=True)
+class CacheListItem:
+    """Metadata for a single browser-extension-owned cache."""
+
+    cache_name: str
+    display_name: str
+    model_name: str
+    expire_time: str | None = None
+    token_count: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CacheListResult:
+    """Ordered list of browser-extension caches returned to the popup debug section."""
+
+    items: list[CacheListItem]
+
+
+@dataclass(frozen=True, slots=True)
 class TokenCountCommand:
     """Application-layer request for token preflight estimation."""
 

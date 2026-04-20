@@ -27,6 +27,13 @@
         "mac": "Command+Shift+Y"
       },
       "description": "Start Gem Read rectangle selection"
+    },
+    "gem-read-phase3-clear-selection-batch": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+X",
+        "mac": "Command+Shift+X"
+      },
+      "description": "Clear all selections from the Gem Read batch"
     }
   },
   "permissions": [

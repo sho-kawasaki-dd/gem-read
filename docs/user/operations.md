@@ -82,6 +82,8 @@ Available entry points:
 - `Shift+Esc`: close the overlay and clear the tab session
 - `Ctrl+Enter`: submit the custom prompt while the custom prompt textarea is focused
 - `Alt+R`: rerun the last action with the last model and last custom prompt when focus is not in an editable control
+- `Alt+Backspace`: clear all selections from the current batch (focus must be outside editable controls)
+- Browser command `Ctrl+Shift+X` (Mac: `Command+Shift+X`): clear all selections from the batch from anywhere on the page
 
 1. Use the minimize button or `Esc` if you want to keep the current session available while reducing the overlay footprint.
 
@@ -92,6 +94,7 @@ Current Phase 3 scope:
 - Popup-managed local API URL and default model
 - Overlay reruns for translation, explanation, and custom prompt
 - Keyboard-first cached-session reopen and rerun flow
+- Clear-all batch shortcut (keyboard and browser command)
 
 ## Use Article Context and Cache in the Browser Extension
 
@@ -126,3 +129,5 @@ Unsupported or extraction-failure pages fall back to the existing selection-base
 For `Ctrl+Shift+9`, Gem Read uses only the current live text selection. It does not reuse the last rectangle capture or the previous batch item when no live selection is active.
 
 For `Ctrl+Shift+8`, Gem Read does not synthesize a new batch or reopen a purely minimized UI state on its own. It only restores the full overlay when the current tab already has a cached Gem Read session in the background store.
+
+For `Ctrl+Shift+8`, Gem Read will not auto-create a new article cache when the current batch is empty. Article cache auto-creation only triggers when the batch has at least one item.

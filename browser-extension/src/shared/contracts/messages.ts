@@ -134,6 +134,19 @@ export interface CacheStatusApiResponse {
   expireTime?: string;
 }
 
+export interface CacheListItem {
+  cacheName: string;
+  displayName: string;
+  modelName: string;
+  expireTime?: string;
+  tokenCount?: number;
+}
+
+export interface CacheListApiResponse {
+  ok: boolean;
+  items: CacheListItem[];
+}
+
 export interface TokenCountApiResponse {
   ok: boolean;
   tokenCount: number;
@@ -385,6 +398,15 @@ export interface DeleteActiveArticleCacheResponse {
   error?: string;
 }
 
+export interface ClearSelectionBatchMessage {
+  type: 'phase3.clearSelectionBatch';
+}
+
+export interface ClearSelectionBatchResponse {
+  ok: boolean;
+  error?: string;
+}
+
 export type ContentScriptMessage =
   | CollectSelectionMessage
   | CollectArticleContextMessage
@@ -403,4 +425,5 @@ export type BackgroundRuntimeMessage =
   | ToggleSessionItemImageMessage
   | ClearOverlaySessionMessage
   | OpenOverlayMessage
-  | DeleteActiveArticleCacheMessage;
+  | DeleteActiveArticleCacheMessage
+  | ClearSelectionBatchMessage;

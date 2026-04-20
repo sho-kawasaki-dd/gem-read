@@ -4,6 +4,7 @@ import type {
   AppendSessionItemResponse,
   BeginRectangleSelectionResponse,
   ClearOverlaySessionMessage,
+  ClearSelectionBatchMessage,
   DeleteActiveArticleCacheResponse,
   OverlayPayload,
   RemoveSessionItemResponse,
@@ -272,7 +273,7 @@ export function renderOverlay(payload: OverlayPayload): void {
   );
   actionHint.textContent = actionsEnabled
     ? 'Reuse the cached batch with a different action or model. Press Alt+R to rerun the last action or Ctrl+Enter in the custom prompt box to submit.'
-    : 'Select text and run Gem Read once before action buttons become available.';
+    : 'Select text and run Gem Read once before action buttons become available. Press Alt+Backspace to clear all selections.';
 
   metaBox.textContent = buildMetaText(effectivePayload);
   metaBox.classList.toggle('loading', effectivePayload.status === 'loading');
@@ -1833,6 +1834,24 @@ function handleOverlayKeyDown(event: KeyboardEvent): void {
       errorBox,
       errorSection
     );
+  }
+
+  if (
+    event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    event.key === 'Backspace'
+  ) {
+    if (isEditableTarget(event)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const message: ClearSelectionBatchMessage = {
+      type: 'phase3.clearSelectionBatch',
+    };
+    void chrome.runtime.sendMessage(message);
   }
 }
 

@@ -37,3 +37,32 @@ class GemReadAIGateway:
 
     async def delete_cache(self, cache_name: str) -> None:
         await self._ai_model.delete_cache(cache_name)
+
+    async def list_all_caches(self) -> list[dict]:
+        """Return raw cache metadata dicts by iterating the SDK caches.list() pager.
+
+        The caller is responsible for prefix-based filtering.
+        Returns an empty list when the API key is not configured or the client is None.
+        """
+        client = self._ai_model._client  # noqa: SLF001
+        if client is None:
+            return []
+
+        results: list[dict] = []
+        async for cache in await client.aio.caches.list():
+            results.append({
+                "name": cache.name,
+                "display_name": cache.display_name or "",
+                "model_name": cache.model or "",
+                "expire_time": (
+                    cache.expire_time.isoformat()
+                    if hasattr(cache.expire_time, "isoformat")
+                    else str(cache.expire_time) if cache.expire_time else None
+                ),
+                "token_count": (
+                    getattr(cache.usage_metadata, "total_token_count", None)
+                    if cache.usage_metadata
+                    else None
+                ),
+            })
+        return results

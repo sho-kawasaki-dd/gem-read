@@ -26,6 +26,7 @@ import {
 import {
   appendLiveSelectionSessionItem,
   appendSelectionSessionItem,
+  clearSelectionBatch,
   removeSelectionSessionItem,
   toggleSelectionSessionItemImage,
 } from '../../../src/background/usecases/updateSelectionSession';
@@ -250,7 +251,98 @@ describe('updateSelectionSession', () => {
 
     await removeSelectionSessionItem(7, item.id);
 
-    expect(await getAnalysisSession(7)).toBeUndefined();
+    const preserved = await getAnalysisSession(7);
+    expect(preserved).toBeDefined();
+    expect(preserved?.items).toEqual([]);
+    expect(renderOverlayMock).toHaveBeenLastCalledWith(
+      7,
+      expect.objectContaining({
+        sessionReady: false,
+        sessionItems: [],
+      })
+    );
+  });
+
+  it('preserves articleContext when last item is removed via removeSelectionSessionItem', async () => {
+    const chromeMock = getChromeMock();
+    (chromeMock.tabs.captureVisibleTab as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      'data:image/png;base64,shot'
+    );
+
+    await setAnalysisSession(7, {
+      items: [],
+      modelOptions: [{ modelId: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' }],
+      lastAction: 'translation',
+      articleContext: {
+        title: 'My Article',
+        url: 'https://example.com/article',
+        bodyText: 'body',
+        bodyHash: 'hash999',
+        source: 'readability',
+        textLength: 50,
+      },
+    });
+    const item = await appendSelectionSessionItem(
+      { id: 7, windowId: 3 } as chrome.tabs.Tab,
+      {
+        text: 'Selected text',
+        rect: { left: 1, top: 2, width: 3, height: 4 },
+        viewportWidth: 100,
+        viewportHeight: 100,
+        devicePixelRatio: 1,
+        url: 'https://example.com',
+        pageTitle: 'Example',
+      },
+      'text-selection'
+    );
+
+    await removeSelectionSessionItem(7, item.id);
+
+    const session = await getAnalysisSession(7);
+    expect(session).toBeDefined();
+    expect(session?.items).toEqual([]);
+    expect(session?.articleContext?.title).toBe('My Article');
+  });
+
+  it('clearSelectionBatch sets items to empty while preserving session context', async () => {
+    const chromeMock = getChromeMock();
+    (chromeMock.tabs.captureVisibleTab as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      'data:image/png;base64,shot'
+    );
+
+    await setAnalysisSession(7, {
+      items: [],
+      modelOptions: [{ modelId: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' }],
+      lastAction: 'explanation',
+      articleContext: {
+        title: 'Context Article',
+        url: 'https://example.com/ctx',
+        bodyText: 'ctx body',
+        bodyHash: 'hash-ctx',
+        source: 'readability',
+        textLength: 80,
+      },
+    });
+    await appendSelectionSessionItem(
+      { id: 7, windowId: 3 } as chrome.tabs.Tab,
+      {
+        text: 'First selection',
+        rect: { left: 0, top: 0, width: 10, height: 10 },
+        viewportWidth: 100,
+        viewportHeight: 100,
+        devicePixelRatio: 1,
+        url: 'https://example.com',
+        pageTitle: 'Example',
+      },
+      'text-selection'
+    );
+
+    await clearSelectionBatch(7);
+
+    const session = await getAnalysisSession(7);
+    expect(session).toBeDefined();
+    expect(session?.items).toEqual([]);
+    expect(session?.articleContext?.title).toBe('Context Article');
     expect(renderOverlayMock).toHaveBeenLastCalledWith(
       7,
       expect.objectContaining({

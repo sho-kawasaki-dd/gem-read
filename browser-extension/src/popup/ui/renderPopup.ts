@@ -4,12 +4,13 @@ import {
   type ExtensionSettings,
 } from '../../shared/config/phase0';
 import type {
+  CacheListItem,
   ModelCatalogSource,
   ModelOption,
   OpenOverlayResponse,
   PopupStatusPayload,
 } from '../../shared/contracts/messages';
-import { fetchPopupBootstrap } from '../../shared/gateways/localApiGateway';
+import { fetchPopupBootstrap, listBrowserExtensionCaches, deleteContextCache } from '../../shared/gateways/localApiGateway';
 import {
   loadExtensionSettings,
   patchExtensionSettings,
@@ -35,6 +36,9 @@ interface PopupRefs {
   saveButton: HTMLButtonElement;
   openOverlayButton: HTMLButtonElement;
   modelDatalist: HTMLDataListElement;
+  debugSection: HTMLDetailsElement;
+  debugCacheList: HTMLElement;
+  debugLoadButton: HTMLButtonElement;
 }
 
 /**
@@ -190,6 +194,75 @@ export async function renderPopup(documentRef: Document): Promise<void> {
       .message-line.is-success {
         color: #166534;
       }
+      .debug-section {
+        margin-top: 16px;
+        border: 1px solid rgba(120, 53, 15, 0.14);
+        border-radius: 14px;
+        background: rgba(255, 252, 244, 0.6);
+      }
+      .debug-summary {
+        padding: 10px 14px;
+        cursor: pointer;
+        color: #92400e;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        list-style: none;
+        user-select: none;
+      }
+      .debug-summary::-webkit-details-marker { display: none; }
+      .debug-body {
+        padding: 0 14px 12px;
+      }
+      .debug-load-button {
+        display: inline-block;
+        margin-bottom: 8px;
+        padding: 6px 10px;
+        border: 1px solid rgba(146, 64, 14, 0.22);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.72);
+        color: #7c2d12;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .debug-load-button:disabled { opacity: 0.6; cursor: progress; }
+      .debug-cache-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .debug-cache-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 6px 0;
+        border-top: 1px solid rgba(120, 53, 15, 0.08);
+        font-size: 11px;
+        word-break: break-all;
+      }
+      .debug-cache-name {
+        flex: 1;
+        color: #374151;
+      }
+      .debug-cache-delete {
+        flex-shrink: 0;
+        padding: 2px 6px;
+        border: 1px solid rgba(185, 28, 28, 0.3);
+        border-radius: 6px;
+        background: transparent;
+        color: #b91c1c;
+        font: inherit;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .debug-cache-delete:disabled { opacity: 0.5; cursor: progress; }
+      .debug-empty {
+        color: #6b7280;
+        font-size: 12px;
+      }
     </style>
     <div class="popup-shell">
       <div class="panel">
@@ -224,6 +297,13 @@ export async function renderPopup(documentRef: Document): Promise<void> {
           <button class="button button-secondary button-wide" type="button" data-role="open-overlay-button">Open Overlay On Active Tab</button>
           <p class="hint">Browser commands are the primary flow in Phase 3. This button uses the same active-tab overlay reopen path as the keyboard shortcut.</p>
         </form>
+        <details class="debug-section" data-role="debug-section">
+          <summary class="debug-summary">Debug: Cache Management</summary>
+          <div class="debug-body">
+            <button class="debug-load-button" type="button" data-role="debug-load-button">Load browser-extension caches</button>
+            <ul class="debug-cache-list" data-role="debug-cache-list"></ul>
+          </div>
+        </details>
       </div>
     </div>
   `;
@@ -333,6 +413,22 @@ export async function renderPopup(documentRef: Document): Promise<void> {
     }
   });
 
+  refs.debugLoadButton.addEventListener('click', async () => {
+    refs.debugLoadButton.disabled = true;
+    try {
+      const result = await listBrowserExtensionCaches(state.settings.apiBaseUrl);
+      renderDebugCacheList(refs, result.items, state, refs);
+    } catch (error) {
+      setMessage(
+        refs,
+        toErrorMessage(error, 'Failed to load cache list.'),
+        true
+      );
+    } finally {
+      refs.debugLoadButton.disabled = false;
+    }
+  });
+
   await refreshPopupState(state, refs, state.settings.apiBaseUrl, true);
 }
 
@@ -369,6 +465,15 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
   );
   const modelDatalist =
     appRoot.querySelector<HTMLDataListElement>('#model-options');
+  const debugSection = appRoot.querySelector<HTMLDetailsElement>(
+    '[data-role="debug-section"]'
+  );
+  const debugCacheList = appRoot.querySelector<HTMLElement>(
+    '[data-role="debug-cache-list"]'
+  );
+  const debugLoadButton = appRoot.querySelector<HTMLButtonElement>(
+    '[data-role="debug-load-button"]'
+  );
 
   if (
     !form ||
@@ -382,7 +487,10 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
     !refreshButton ||
     !saveButton ||
     !openOverlayButton ||
-    !modelDatalist
+    !modelDatalist ||
+    !debugSection ||
+    !debugCacheList ||
+    !debugLoadButton
   ) {
     return null;
   }
@@ -400,6 +508,9 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
     saveButton,
     openOverlayButton,
     modelDatalist,
+    debugSection,
+    debugCacheList,
+    debugLoadButton,
   };
 }
 
@@ -483,6 +594,7 @@ function setBusy(refs: PopupRefs, busy: boolean): void {
   refs.refreshButton.disabled = busy;
   refs.saveButton.disabled = busy;
   refs.openOverlayButton.disabled = busy;
+  refs.debugLoadButton.disabled = busy;
 }
 
 function setMessage(refs: PopupRefs, message: string, isError: boolean): void {
@@ -554,4 +666,53 @@ function escapeHtml(value: string): string {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function renderDebugCacheList(
+  refs: PopupRefs,
+  items: CacheListItem[],
+  state: PopupViewState,
+  outerRefs: PopupRefs
+): void {
+  if (items.length === 0) {
+    refs.debugCacheList.innerHTML =
+      '<li class="debug-empty">No browser-extension caches found.</li>';
+    return;
+  }
+
+  refs.debugCacheList.innerHTML = items
+    .map(
+      (item) => `
+      <li class="debug-cache-item" data-cache-name="${escapeHtml(item.cacheName)}">
+        <span class="debug-cache-name">${escapeHtml(item.displayName || item.cacheName)}</span>
+        <button class="debug-cache-delete" type="button" data-cache-name="${escapeHtml(item.cacheName)}">Delete</button>
+      </li>`
+    )
+    .join('');
+
+  for (const btn of refs.debugCacheList.querySelectorAll<HTMLButtonElement>(
+    '.debug-cache-delete'
+  )) {
+    btn.addEventListener('click', async () => {
+      const cacheName = btn.dataset.cacheName;
+      if (!cacheName) {
+        return;
+      }
+
+      btn.disabled = true;
+      try {
+        await deleteContextCache(cacheName, state.settings.apiBaseUrl);
+        const result = await listBrowserExtensionCaches(state.settings.apiBaseUrl);
+        renderDebugCacheList(outerRefs, result.items, state, outerRefs);
+        setMessage(outerRefs, `Deleted cache: ${cacheName}`, false);
+      } catch (error) {
+        btn.disabled = false;
+        setMessage(
+          outerRefs,
+          toErrorMessage(error, 'Failed to delete cache.'),
+          true
+        );
+      }
+    });
+  }
 }

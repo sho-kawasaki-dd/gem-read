@@ -35,7 +35,7 @@ export async function openOverlaySession(tabId: number): Promise<void> {
       {
         apiBaseUrl: settings.apiBaseUrl,
         modelName: session.lastModelName || settings.defaultModel || undefined,
-        allowAutoCreate: true,
+        allowAutoCreate: session.items.length > 0,
       }
     );
     const tokenAwareSession = await syncPayloadTokenEstimate(refreshedSession, {
