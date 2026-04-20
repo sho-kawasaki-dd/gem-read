@@ -73,6 +73,47 @@ describe('articleCacheService', () => {
     );
   });
 
+  it('keeps the article as a candidate with a dedicated notice when auto-create is disabled in settings', async () => {
+    countTokensMock.mockResolvedValue({
+      ok: true,
+      tokenCount: 1400,
+      modelName: 'gemini-2.5-flash',
+    });
+
+    const session = await syncArticleCacheState(
+      {
+        items: [],
+        modelOptions: [],
+        lastAction: 'translation',
+        lastModelName: 'gemini-2.5-flash',
+        articleContext: {
+          title: 'Example article',
+          url: 'https://example.com/article',
+          bodyText: 'Long article body',
+          bodyHash: 'abc123def4567890',
+          source: 'readability',
+          textLength: 1800,
+        },
+      },
+      {
+        apiBaseUrl: 'http://127.0.0.1:9000',
+        modelName: 'gemini-2.5-flash',
+        allowAutoCreate: false,
+        autoCreateDisabledBySetting: true,
+      }
+    );
+
+    expect(createContextCacheMock).not.toHaveBeenCalled();
+    expect(session.articleCacheState).toEqual(
+      expect.objectContaining({
+        status: 'candidate',
+        autoCreateEligible: true,
+        notice:
+          'Automatic full article cache creation is disabled in popup settings.',
+      })
+    );
+  });
+
   it('invalidates the tracked cache when the model changes', async () => {
     deleteContextCacheMock.mockResolvedValue(undefined);
     countTokensMock.mockResolvedValue({
@@ -368,7 +409,8 @@ describe('articleCacheService', () => {
         lastAction: 'translation',
         lastModelName: 'gemini-2.5-flash',
         articleContext: undefined,
-        articleContextError: 'Readable article context could not be extracted on this page.',
+        articleContextError:
+          'Readable article context could not be extracted on this page.',
         articleCacheState: {
           status: 'active',
           cacheName: 'cachedContents/article-1',

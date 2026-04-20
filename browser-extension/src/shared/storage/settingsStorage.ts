@@ -33,6 +33,10 @@ export async function patchExtensionSettings(
   const next = mergeExtensionSettings({
     ...current,
     ...patch,
+    articleCache: {
+      ...current.articleCache,
+      ...patch.articleCache,
+    },
     markdownExport: {
       ...current.markdownExport,
       ...patch.markdownExport,
@@ -47,6 +51,7 @@ export function getDefaultExtensionSettings(): ExtensionSettings {
     ...DEFAULT_EXTENSION_SETTINGS,
     // 配列を複製しておかないと、呼び出し元が既定値を破壊的に更新できてしまう。
     lastKnownModels: [...DEFAULT_EXTENSION_SETTINGS.lastKnownModels],
+    articleCache: { ...DEFAULT_EXTENSION_SETTINGS.articleCache },
     markdownExport: { ...DEFAULT_EXTENSION_SETTINGS.markdownExport },
   };
 }

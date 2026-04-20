@@ -75,10 +75,13 @@ export async function runSelectionAnalysis(
       sessionReady: Boolean(reusableSession ?? cachedSession),
       selectedText: fallbackSelectionText,
       articleContext: (reusableSession ?? cachedSession)?.articleContext,
-      articleContextError: (reusableSession ?? cachedSession)?.articleContextError,
+      articleContextError: (reusableSession ?? cachedSession)
+        ?.articleContextError,
       articleCacheState: (reusableSession ?? cachedSession)?.articleCacheState,
-      payloadTokenEstimate: (reusableSession ?? cachedSession)?.payloadTokenEstimate,
-      payloadTokenModelName: (reusableSession ?? cachedSession)?.payloadTokenModelName,
+      payloadTokenEstimate: (reusableSession ?? cachedSession)
+        ?.payloadTokenEstimate,
+      payloadTokenModelName: (reusableSession ?? cachedSession)
+        ?.payloadTokenModelName,
       payloadTokenError: (reusableSession ?? cachedSession)?.payloadTokenError,
     });
 
@@ -90,20 +93,18 @@ export async function runSelectionAnalysis(
       options.reuseCachedSession === true,
       resolvedRequestOptions.apiBaseUrl,
       resolvedRequestOptions.modelName,
+      settings.articleCache.enableAutoCreate,
       cachedSession
     );
     const sessionItem = getRequiredSessionItem(session);
 
-    const apiResponse = await sendAnalyzeTranslateRequest(
-      session.items,
-      {
-        ...resolvedRequestOptions,
-        cacheName: resolveExplicitCacheName(
-          session.articleCacheState,
-          resolvedRequestOptions.modelName
-        ),
-      }
-    );
+    const apiResponse = await sendAnalyzeTranslateRequest(session.items, {
+      ...resolvedRequestOptions,
+      cacheName: resolveExplicitCacheName(
+        session.articleCacheState,
+        resolvedRequestOptions.modelName
+      ),
+    });
 
     await setAnalysisSession(tabId, {
       ...session,
@@ -173,6 +174,7 @@ async function resolveAnalysisSession(
   reuseCachedSession: boolean,
   apiBaseUrl: string,
   modelName: string | undefined,
+  autoCreateEnabled: boolean,
   cachedSession: SelectionAnalysisSession | undefined
 ): Promise<SelectionAnalysisSession> {
   if (reuseCachedSession) {
@@ -192,7 +194,8 @@ async function resolveAnalysisSession(
         {
           apiBaseUrl,
           modelName,
-          allowAutoCreate: true,
+          allowAutoCreate: autoCreateEnabled,
+          autoCreateDisabledBySetting: !autoCreateEnabled,
         }
       );
       const tokenAwareSession = await syncPayloadTokenEstimate(
@@ -218,6 +221,7 @@ async function resolveAnalysisSession(
     modelOptions,
     apiBaseUrl,
     modelName,
+    autoCreateEnabled,
     cachedSession
   );
 }
@@ -229,6 +233,7 @@ async function createFreshSession(
   modelOptions: ModelOption[],
   apiBaseUrl: string,
   modelName: string | undefined,
+  autoCreateEnabled: boolean,
   cachedSession: SelectionAnalysisSession | undefined
 ): Promise<SelectionAnalysisSession> {
   const [selection, articleContextResult] = await Promise.all([
@@ -290,7 +295,8 @@ async function createFreshSession(
   const cacheAwareSession = await syncArticleCacheState(session, {
     apiBaseUrl,
     modelName,
-    allowAutoCreate: true,
+    allowAutoCreate: autoCreateEnabled,
+    autoCreateDisabledBySetting: !autoCreateEnabled,
   });
   const tokenAwareSession = await syncPayloadTokenEstimate(cacheAwareSession, {
     apiBaseUrl,

@@ -39,6 +39,13 @@ import { runPhase0TranslationTest } from '../../../src/background/usecases/runPh
 import { runSelectionAnalysis } from '../../../src/background/usecases/runSelectionAnalysis';
 import { setAnalysisSession } from '../../../src/background/services/analysisSessionStore';
 
+function mockCaptureVisibleTab(dataUrl: string): void {
+  const chromeMock = getChromeMock();
+  (
+    chromeMock.tabs.captureVisibleTab as unknown as ReturnType<typeof vi.fn>
+  ).mockResolvedValue(dataUrl);
+}
+
 // selection capture、crop、API 呼び出し、overlay 更新の orchestration を固定する suite。
 describe('runSelectionAnalysis', () => {
   beforeEach(async () => {
@@ -48,6 +55,9 @@ describe('runSelectionAnalysis', () => {
       apiBaseUrl: 'http://127.0.0.1:9000',
       defaultModel: 'gemini-2.5-flash',
       lastKnownModels: ['gemini-2.5-flash'],
+      articleCache: {
+        enableAutoCreate: true,
+      },
     });
     collectArticleContextMock.mockResolvedValue({
       ok: true,
@@ -85,9 +95,7 @@ describe('runSelectionAnalysis', () => {
 
   it('renders loading then success overlay using stored settings', async () => {
     const chromeMock = getChromeMock();
-    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
-      'data:image/png;base64,shot'
-    );
+    mockCaptureVisibleTab('data:image/png;base64,shot');
     collectSelectionMock.mockResolvedValue({
       ok: true,
       payload: {
@@ -196,10 +204,7 @@ describe('runSelectionAnalysis', () => {
   });
 
   it('keeps the selection flow working when article extraction falls back', async () => {
-    const chromeMock = getChromeMock();
-    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
-      'data:image/png;base64,shot'
-    );
+    mockCaptureVisibleTab('data:image/png;base64,shot');
     collectArticleContextMock.mockResolvedValueOnce({
       ok: false,
       error: 'Readable article context could not be extracted on this page.',
@@ -263,10 +268,7 @@ describe('runSelectionAnalysis', () => {
   });
 
   it('accepts explicit action overrides for custom prompt requests', async () => {
-    const chromeMock = getChromeMock();
-    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
-      'data:image/png;base64,shot'
-    );
+    mockCaptureVisibleTab('data:image/png;base64,shot');
     collectSelectionMock.mockResolvedValue({
       ok: true,
       payload: {
@@ -302,7 +304,6 @@ describe('runSelectionAnalysis', () => {
         action: 'custom_prompt',
         apiBaseUrl: 'http://localhost:9010',
         modelName: 'gemini-2.5-pro',
-        cacheName: undefined,
         customPrompt: 'Summarize this',
       }
     );
@@ -343,10 +344,7 @@ describe('runSelectionAnalysis', () => {
   });
 
   it('carries forward the cached article state into a fresh session after navigation', async () => {
-    const chromeMock = getChromeMock();
-    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
-      'data:image/png;base64,shot'
-    );
+    mockCaptureVisibleTab('data:image/png;base64,shot');
     await setAnalysisSession(7, {
       items: [],
       modelOptions: [
@@ -429,6 +427,59 @@ describe('runSelectionAnalysis', () => {
       }),
       expect.objectContaining({
         allowAutoCreate: true,
+        autoCreateDisabledBySetting: false,
+      })
+    );
+  });
+
+  it('passes allowAutoCreate=false when popup settings disable automatic article cache creation', async () => {
+    mockCaptureVisibleTab('data:image/png;base64,shot');
+    loadExtensionSettingsMock.mockResolvedValueOnce({
+      apiBaseUrl: 'http://127.0.0.1:9000',
+      defaultModel: 'gemini-2.5-flash',
+      lastKnownModels: ['gemini-2.5-flash'],
+      articleCache: {
+        enableAutoCreate: false,
+      },
+    });
+    collectSelectionMock.mockResolvedValueOnce({
+      ok: true,
+      payload: {
+        text: 'selection from content script',
+        rect: { left: 10, top: 20, width: 30, height: 40 },
+        viewportWidth: 1440,
+        viewportHeight: 900,
+        devicePixelRatio: 2,
+        url: 'https://example.com/article',
+        pageTitle: 'Example page',
+      },
+    });
+    cropSelectionImageMock.mockResolvedValueOnce({
+      imageDataUrl: 'data:image/webp;base64,crop',
+      durationMs: 12.5,
+    });
+    sendAnalyzeTranslateRequestMock.mockResolvedValueOnce({
+      ok: true,
+      mode: 'translation',
+      translated_text: '翻訳結果',
+      explanation: null,
+      raw_response: '翻訳結果',
+      used_mock: false,
+      availability: 'live',
+      degraded_reason: null,
+      image_count: 1,
+    });
+
+    await runSelectionAnalysis(
+      { id: 7, windowId: 9 } as chrome.tabs.Tab,
+      'fallback text'
+    );
+
+    expect(syncArticleCacheStateMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        allowAutoCreate: false,
+        autoCreateDisabledBySetting: true,
       })
     );
   });
@@ -471,9 +522,7 @@ describe('runSelectionAnalysis', () => {
 
   it('reuses the cached session for overlay-triggered reruns', async () => {
     const chromeMock = getChromeMock();
-    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
-      'data:image/png;base64,shot'
-    );
+    mockCaptureVisibleTab('data:image/png;base64,shot');
     collectSelectionMock.mockResolvedValue({
       ok: true,
       payload: {
@@ -562,10 +611,7 @@ describe('runSelectionAnalysis', () => {
   });
 
   it('keeps the phase0 wrapper delegating to translation action', async () => {
-    const chromeMock = getChromeMock();
-    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
-      'data:image/png;base64,shot'
-    );
+    mockCaptureVisibleTab('data:image/png;base64,shot');
     collectSelectionMock.mockResolvedValue({
       ok: true,
       payload: {
@@ -606,10 +652,7 @@ describe('runSelectionAnalysis', () => {
   });
 
   it('sends cacheName when the stored cache model uses a models prefix', async () => {
-    const chromeMock = getChromeMock();
-    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
-      'data:image/png;base64,shot'
-    );
+    mockCaptureVisibleTab('data:image/png;base64,shot');
     syncArticleCacheStateMock.mockImplementationOnce(async (session) => ({
       ...session,
       articleCacheState: {
@@ -669,10 +712,7 @@ describe('runSelectionAnalysis', () => {
   });
 
   it('keeps using cacheName after a selection is added to an existing cached session', async () => {
-    const chromeMock = getChromeMock();
-    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
-      'data:image/png;base64,shot'
-    );
+    mockCaptureVisibleTab('data:image/png;base64,shot');
     await setAnalysisSession(7, {
       items: [
         {
@@ -719,7 +759,8 @@ describe('runSelectionAnalysis', () => {
       articleContext: {
         title: 'Example article',
         url: 'https://example.com/article',
-        bodyText: 'Long article context paragraph one. Long article context paragraph two. Long article context paragraph three.',
+        bodyText:
+          'Long article context paragraph one. Long article context paragraph two. Long article context paragraph three.',
         bodyHash: 'abc123def4567890',
         source: 'readability',
         textLength: 104,
@@ -749,11 +790,9 @@ describe('runSelectionAnalysis', () => {
       image_count: 2,
     });
 
-    await runSelectionAnalysis(
-      { id: 7, windowId: 9 } as chrome.tabs.Tab,
-      '',
-      { reuseCachedSession: true }
-    );
+    await runSelectionAnalysis({ id: 7, windowId: 9 } as chrome.tabs.Tab, '', {
+      reuseCachedSession: true,
+    });
 
     expect(sendAnalyzeTranslateRequestMock).toHaveBeenCalledWith(
       expect.any(Array),

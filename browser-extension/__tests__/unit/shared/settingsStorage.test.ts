@@ -20,6 +20,9 @@ describe('settingsStorage', () => {
       apiBaseUrl: 'http://127.0.0.1:8000',
       defaultModel: '',
       lastKnownModels: [],
+      articleCache: {
+        enableAutoCreate: true,
+      },
       markdownExport: {
         includeExplanation: true,
         includeSelections: true,
@@ -53,6 +56,9 @@ describe('settingsStorage', () => {
       apiBaseUrl: 'http://localhost:8123',
       defaultModel: 'gemini-2.5-pro',
       lastKnownModels: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+      articleCache: {
+        enableAutoCreate: true,
+      },
       markdownExport: {
         includeExplanation: false,
         includeSelections: true,
@@ -93,6 +99,9 @@ describe('settingsStorage', () => {
       apiBaseUrl: 'http://127.0.0.1:9000',
       defaultModel: 'gemini-2.5-flash',
       lastKnownModels: ['gemini-2.5-flash', 'gemini-2.5-pro'],
+      articleCache: {
+        enableAutoCreate: true,
+      },
       markdownExport: {
         includeExplanation: true,
         includeSelections: false,
@@ -132,6 +141,40 @@ describe('settingsStorage', () => {
     });
   });
 
+  it('patches articleCache fields without resetting markdownExport toggles', async () => {
+    await saveExtensionSettings({
+      articleCache: {
+        enableAutoCreate: true,
+      },
+      markdownExport: {
+        includeExplanation: false,
+        includeSelections: true,
+        includeRawResponse: true,
+        includeArticleMetadata: true,
+        includeUsageMetrics: false,
+        includeYamlFrontmatter: false,
+      },
+    });
+
+    const patched = await patchExtensionSettings({
+      articleCache: {
+        enableAutoCreate: false,
+      },
+    });
+
+    expect(patched.articleCache).toEqual({
+      enableAutoCreate: false,
+    });
+    expect(patched.markdownExport).toEqual({
+      includeExplanation: false,
+      includeSelections: true,
+      includeRawResponse: true,
+      includeArticleMetadata: true,
+      includeUsageMetrics: false,
+      includeYamlFrontmatter: false,
+    });
+  });
+
   it('upgrades legacy settings objects without markdownExport', async () => {
     const chromeMock = getChromeMock();
     chromeMock.storage.local.set(
@@ -151,6 +194,9 @@ describe('settingsStorage', () => {
       apiBaseUrl: 'http://localhost:8010',
       defaultModel: 'gemini-2.5-flash',
       lastKnownModels: ['gemini-2.5-flash'],
+      articleCache: {
+        enableAutoCreate: true,
+      },
       markdownExport: {
         includeExplanation: true,
         includeSelections: true,

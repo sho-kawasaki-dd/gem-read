@@ -14,11 +14,14 @@ import type { SelectionAnalysisSession } from './analysisSessionStore';
 const AUTO_CACHE_MIN_TEXT_LENGTH = 4000;
 const AUTO_CACHE_MIN_TOKEN_ESTIMATE = 1200;
 const CACHE_DISPLAY_NAME_PREFIX = 'browser-extension:';
+const AUTO_CREATE_DISABLED_NOTICE =
+  'Automatic full article cache creation is disabled in popup settings.';
 
 export interface SyncArticleCacheOptions {
   apiBaseUrl: string;
   modelName?: string;
   allowAutoCreate?: boolean;
+  autoCreateDisabledBySetting?: boolean;
 }
 
 export interface InvalidateArticleCacheOptions {
@@ -95,10 +98,10 @@ export async function syncArticleCacheState(
   nextState = refreshTrackedCacheTtl(nextState, articleContext, now);
 
   if (shouldInvalidateCachedModel) {
-    console.warn(
-      '[GemRead] articleCache: model changed → invalidating',
-      { cachedModel: existingState?.modelName, resolvedModel: resolvedModelName }
-    );
+    console.warn('[GemRead] articleCache: model changed → invalidating', {
+      cachedModel: existingState?.modelName,
+      resolvedModel: resolvedModelName,
+    });
     nextState = await invalidateTrackedState(nextState, {
       apiBaseUrl: options.apiBaseUrl,
       reason: 'model-changed',
@@ -115,22 +118,20 @@ export async function syncArticleCacheState(
   }
 
   if (shouldInvalidateForArticleChange(nextState, articleContext)) {
-    console.warn(
-      '[GemRead] articleCache: article changed → invalidating',
-      {
-        reason: 'article-identity-changed',
-        cachedIdentity: nextState.articleIdentity,
-        currentIdentity: buildArticleIdentity(articleContext),
-        cachedUrl: nextState.articleUrl,
-        currentUrl: articleContext.url,
-        cachedHash: nextState.articleHash,
-        currentHash: articleContext.bodyHash,
-      }
-    );
+    console.warn('[GemRead] articleCache: article changed → invalidating', {
+      reason: 'article-identity-changed',
+      cachedIdentity: nextState.articleIdentity,
+      currentIdentity: buildArticleIdentity(articleContext),
+      cachedUrl: nextState.articleUrl,
+      currentUrl: articleContext.url,
+      cachedHash: nextState.articleHash,
+      currentHash: articleContext.bodyHash,
+    });
     nextState = await invalidateTrackedState(nextState, {
       apiBaseUrl: options.apiBaseUrl,
       reason: 'article-identity-changed',
-      notice: 'Article cache was cleared because the extracted article changed.',
+      notice:
+        'Article cache was cleared because the extracted article changed.',
     });
     if (nextState.status === 'degraded') {
       return {
@@ -141,18 +142,15 @@ export async function syncArticleCacheState(
 
     nextState = bindTrackedArticleState(nextState, articleContext);
   } else {
-    console.debug(
-      '[GemRead] articleCache: no article change detected',
-      {
-        cacheName: nextState.cacheName,
-        cachedIdentity: nextState.articleIdentity,
-        currentIdentity: buildArticleIdentity(articleContext),
-        cachedUrl: nextState.articleUrl,
-        currentUrl: articleContext.url,
-        cachedHash: nextState.articleHash,
-        currentHash: articleContext.bodyHash,
-      }
-    );
+    console.debug('[GemRead] articleCache: no article change detected', {
+      cacheName: nextState.cacheName,
+      cachedIdentity: nextState.articleIdentity,
+      currentIdentity: buildArticleIdentity(articleContext),
+      cachedUrl: nextState.articleUrl,
+      currentUrl: articleContext.url,
+      cachedHash: nextState.articleHash,
+      currentHash: articleContext.bodyHash,
+    });
   }
 
   if (!resolvedModelName) {
@@ -221,7 +219,9 @@ export async function syncArticleCacheState(
       articleCacheState: {
         ...nextState,
         status: 'candidate',
-        notice: 'Article context is eligible for automatic cache creation.',
+        notice: options.autoCreateDisabledBySetting
+          ? AUTO_CREATE_DISABLED_NOTICE
+          : 'Article context is eligible for automatic cache creation.',
         lastValidatedAt: now,
       },
     };
@@ -359,13 +359,13 @@ function buildSeedCacheState(
     displayName: existingState?.displayName,
     modelName: resolvedModelName ?? existingState?.modelName,
     articleUrl: tracksActiveCache
-      ? existingState?.articleUrl ?? articleContext.url
+      ? (existingState?.articleUrl ?? articleContext.url)
       : articleContext.url,
     articleIdentity: tracksActiveCache
       ? existingState?.articleIdentity
       : currentArticleIdentity,
     articleHash: tracksActiveCache
-      ? existingState?.articleHash ?? articleContext.bodyHash
+      ? (existingState?.articleHash ?? articleContext.bodyHash)
       : articleContext.bodyHash,
     tokenEstimate: existingState?.tokenEstimate,
     tokenCount: existingState?.tokenCount,
@@ -476,8 +476,7 @@ function shouldInvalidateForArticleChange(
   }
 
   return Boolean(
-    state.articleHash &&
-    state.articleHash !== articleContext.bodyHash
+    state.articleHash && state.articleHash !== articleContext.bodyHash
   );
 }
 

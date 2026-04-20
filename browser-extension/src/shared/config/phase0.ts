@@ -25,10 +25,15 @@ export interface MarkdownExportSettings {
   includeYamlFrontmatter: boolean;
 }
 
+export interface ArticleCacheSettings {
+  enableAutoCreate: boolean;
+}
+
 export interface ExtensionSettings {
   apiBaseUrl: string;
   defaultModel: string;
   lastKnownModels: string[];
+  articleCache: ArticleCacheSettings;
   markdownExport: MarkdownExportSettings;
 }
 
@@ -36,8 +41,13 @@ export interface ExtensionSettingsInput {
   apiBaseUrl?: string | null;
   defaultModel?: string | null;
   lastKnownModels?: readonly string[] | null;
+  articleCache?: Partial<ArticleCacheSettings> | null;
   markdownExport?: Partial<MarkdownExportSettings> | null;
 }
+
+export const DEFAULT_ARTICLE_CACHE_SETTINGS: ArticleCacheSettings = {
+  enableAutoCreate: true,
+};
 
 export const DEFAULT_MARKDOWN_EXPORT_SETTINGS: MarkdownExportSettings = {
   includeExplanation: true,
@@ -52,6 +62,7 @@ export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
   apiBaseUrl: DEFAULT_LOCAL_API_BASE_URL,
   defaultModel: '',
   lastKnownModels: [],
+  articleCache: { ...DEFAULT_ARTICLE_CACHE_SETTINGS },
   markdownExport: { ...DEFAULT_MARKDOWN_EXPORT_SETTINGS },
 };
 
@@ -127,6 +138,16 @@ export function mergeMarkdownExportSettings(
   };
 }
 
+export function mergeArticleCacheSettings(
+  value: Partial<ArticleCacheSettings> | null | undefined
+): ArticleCacheSettings {
+  return {
+    enableAutoCreate:
+      value?.enableAutoCreate ??
+      DEFAULT_ARTICLE_CACHE_SETTINGS.enableAutoCreate,
+  };
+}
+
 export function mergeExtensionSettings(
   value: ExtensionSettingsInput | null | undefined
 ): ExtensionSettings {
@@ -134,6 +155,7 @@ export function mergeExtensionSettings(
     apiBaseUrl: normalizeLocalApiBaseUrl(value?.apiBaseUrl),
     defaultModel: value?.defaultModel?.trim() ?? '',
     lastKnownModels: normalizeModelList(value?.lastKnownModels),
+    articleCache: mergeArticleCacheSettings(value?.articleCache),
     markdownExport: mergeMarkdownExportSettings(value?.markdownExport),
   };
 }

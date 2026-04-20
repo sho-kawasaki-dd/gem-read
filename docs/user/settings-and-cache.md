@@ -37,7 +37,11 @@ These are separate settings.
 
 ## Browser Extension Popup Settings
 
-The browser extension popup also stores Markdown export preferences.
+The browser extension popup stores article-cache and Markdown export preferences.
+
+Article cache toggle:
+
+- Automatically create full article cache
 
 Available toggles:
 
@@ -47,6 +51,8 @@ Available toggles:
 - Article metadata
 - Usage metrics
 - YAML frontmatter
+
+The article-cache toggle is enabled by default. Turning it off stops Gem Read from creating a new full article cache automatically for article-sized pages, but it does not disable reuse of an existing cache for the current tab and model.
 
 Default export behavior keeps `Explanation` and `Selected source text` enabled, while raw response, article metadata, usage metrics, and YAML frontmatter stay off until you opt in.
 
@@ -81,6 +87,7 @@ For article pages in the browser extension:
 
 - Gem Read first tries Readability-based extraction, then falls back to a lighter DOM-based extraction.
 - Automatic cache creation is conditional. It only happens when article extraction succeeds, the article is large enough, and the selected model is expected to support caching.
+- If the popup toggle for automatic full-article cache creation is off, Gem Read keeps showing cache status and can still reuse an already active cache, but it will not create a new article cache automatically.
 - The overlay shows whether the cache is active, invalidated, unsupported, or degraded.
 - `Delete Cache` removes the active cache for the current tab only.
 - One article cache serves all three overlay actions (Translate, Translate + Explain, and Run Custom Prompt). Switching between them does not recreate the cache.

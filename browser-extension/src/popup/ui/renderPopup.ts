@@ -1,6 +1,7 @@
 import {
   isValidLocalApiBaseUrl,
   normalizeLocalApiBaseUrl,
+  type ArticleCacheSettings,
   type MarkdownExportSettings,
   type ExtensionSettings,
 } from '../../shared/config/phase0';
@@ -32,6 +33,7 @@ interface PopupRefs {
   form: HTMLFormElement;
   apiInput: HTMLInputElement;
   defaultModelInput: HTMLInputElement;
+  articleCacheAutoCreateInput: HTMLInputElement;
   includeExplanationInput: HTMLInputElement;
   includeSelectionsInput: HTMLInputElement;
   includeRawResponseInput: HTMLInputElement;
@@ -342,7 +344,7 @@ export async function renderPopup(documentRef: Document): Promise<void> {
         <div class="title-row">
           <div>
             <h1 class="title">Local Bridge</h1>
-            <p class="subtitle">Popup settings for Local API connectivity, default model, and Markdown export metadata.</p>
+            <p class="subtitle">Popup settings for Local API connectivity, default model, article cache behavior, and Markdown export metadata.</p>
           </div>
           <div class="status-badge" data-role="status-badge">Checking</div>
         </div>
@@ -362,6 +364,23 @@ export async function renderPopup(documentRef: Document): Promise<void> {
             <datalist id="model-options"></datalist>
             <p class="hint">Fetched models are suggested automatically, but a manual model ID is also allowed.</p>
           </div>
+          <details class="details-section" data-role="article-cache-section">
+            <summary class="details-summary">Article Cache
+              <span class="details-summary-note">Default: automatic full-article cache creation is on</span>
+            </summary>
+            <div class="details-body">
+              <div class="checkbox-group">
+                <label class="checkbox-card" for="article-cache-auto-create">
+                  <input class="checkbox-input" id="article-cache-auto-create" data-role="article-cache-auto-create" type="checkbox" />
+                  <span class="checkbox-copy">
+                    <span class="checkbox-title">Automatically create full article cache</span>
+                    <span class="checkbox-hint">When off, Gem Read still reuses an existing article cache for the tab, but it will not create a new one automatically.</span>
+                  </span>
+                </label>
+              </div>
+              <p class="hint">This applies to article-sized pages only. It does not disable cache reuse or manual deletion.</p>
+            </div>
+          </details>
           <details class="details-section" data-role="markdown-export-section">
             <summary class="details-summary">Markdown Export
               <span class="details-summary-note">Default: explanation + selected text</span>
@@ -478,6 +497,7 @@ export async function renderPopup(documentRef: Document): Promise<void> {
         apiBaseUrl: normalizeLocalApiBaseUrl(candidateUrl),
         defaultModel: refs.defaultModelInput.value.trim(),
         lastKnownModels: state.models.map((model) => model.modelId),
+        articleCache: readArticleCacheSettings(refs),
         markdownExport: readMarkdownExportSettings(refs),
       });
       refs.apiInput.value = state.settings.apiBaseUrl;
@@ -566,6 +586,9 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
   const apiInput = appRoot.querySelector<HTMLInputElement>('#api-base-url');
   const defaultModelInput =
     appRoot.querySelector<HTMLInputElement>('#default-model');
+  const articleCacheAutoCreateInput = appRoot.querySelector<HTMLInputElement>(
+    '[data-role="article-cache-auto-create"]'
+  );
   const includeExplanationInput = appRoot.querySelector<HTMLInputElement>(
     '[data-role="include-explanation"]'
   );
@@ -624,6 +647,7 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
     !form ||
     !apiInput ||
     !defaultModelInput ||
+    !articleCacheAutoCreateInput ||
     !includeExplanationInput ||
     !includeSelectionsInput ||
     !includeRawResponseInput ||
@@ -650,6 +674,7 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
     form,
     apiInput,
     defaultModelInput,
+    articleCacheAutoCreateInput,
     includeExplanationInput,
     includeSelectionsInput,
     includeRawResponseInput,
@@ -739,6 +764,8 @@ function syncView(refs: PopupRefs, state: PopupViewState): void {
   if (!refs.defaultModelInput.value) {
     refs.defaultModelInput.value = state.settings.defaultModel;
   }
+  refs.articleCacheAutoCreateInput.checked =
+    state.settings.articleCache.enableAutoCreate;
   refs.includeExplanationInput.checked =
     state.settings.markdownExport.includeExplanation;
   refs.includeSelectionsInput.checked =
@@ -757,6 +784,12 @@ function syncView(refs: PopupRefs, state: PopupViewState): void {
         `<option value="${escapeHtml(model.modelId)}">${escapeHtml(model.displayName)}</option>`
     )
     .join('');
+}
+
+function readArticleCacheSettings(refs: PopupRefs): ArticleCacheSettings {
+  return {
+    enableAutoCreate: refs.articleCacheAutoCreateInput.checked,
+  };
 }
 
 function readMarkdownExportSettings(refs: PopupRefs): MarkdownExportSettings {

@@ -22,7 +22,7 @@ async function settle(): Promise<void> {
 
 // popup が設定編集と接続確認に責務を絞っていることを固定する suite。
 describe('renderPopup', () => {
-  it('renders markdown export checkboxes with the documented default states', async () => {
+  it('renders article cache and markdown export checkboxes with the documented default states', async () => {
     document.body.innerHTML = '<div id="app"></div>';
 
     const fetchMock = vi
@@ -53,6 +53,16 @@ describe('renderPopup', () => {
     expect(document.body.textContent).toContain(
       'Default: explanation + selected text'
     );
+    expect(document.body.textContent).toContain(
+      'Default: automatic full-article cache creation is on'
+    );
+    expect(
+      (
+        document.querySelector(
+          '[data-role="article-cache-auto-create"]'
+        ) as HTMLInputElement
+      ).checked
+    ).toBe(true);
 
     expect(
       (
@@ -107,6 +117,9 @@ describe('renderPopup', () => {
           apiBaseUrl: 'http://127.0.0.1:8001',
           defaultModel: 'gemini-2.5-pro',
           lastKnownModels: ['gemini-2.5-pro'],
+          articleCache: {
+            enableAutoCreate: false,
+          },
           markdownExport: {
             includeExplanation: false,
             includeSelections: true,
@@ -155,6 +168,13 @@ describe('renderPopup', () => {
     expect(
       (
         document.querySelector(
+          '[data-role="article-cache-auto-create"]'
+        ) as HTMLInputElement
+      ).checked
+    ).toBe(false);
+    expect(
+      (
+        document.querySelector(
           '[data-role="include-explanation"]'
         ) as HTMLInputElement
       ).checked
@@ -173,6 +193,9 @@ describe('renderPopup', () => {
           apiBaseUrl: 'http://127.0.0.1:8001',
           defaultModel: 'gemini-2.5-pro',
           lastKnownModels: ['gemini-2.5-flash'],
+          articleCache: {
+            enableAutoCreate: false,
+          },
           markdownExport: {
             includeExplanation: false,
             includeSelections: true,
@@ -239,6 +262,9 @@ describe('renderPopup', () => {
     const form = document.querySelector(
       '[data-role="settings-form"]'
     ) as HTMLFormElement;
+    const articleCacheAutoCreateInput = document.querySelector(
+      '[data-role="article-cache-auto-create"]'
+    ) as HTMLInputElement;
     const includeExplanationInput = document.querySelector(
       '[data-role="include-explanation"]'
     ) as HTMLInputElement;
@@ -260,6 +286,7 @@ describe('renderPopup', () => {
 
     apiInput.value = 'http://localhost:9001/';
     defaultModelInput.value = ' gemini-2.5-pro ';
+    articleCacheAutoCreateInput.checked = false;
     includeExplanationInput.checked = false;
     includeSelectionsInput.checked = true;
     includeRawResponseInput.checked = true;
@@ -277,6 +304,9 @@ describe('renderPopup', () => {
           apiBaseUrl: 'http://localhost:9001',
           defaultModel: 'gemini-2.5-pro',
           lastKnownModels: ['gemini-2.5-flash'],
+          articleCache: {
+            enableAutoCreate: false,
+          },
           markdownExport: {
             includeExplanation: false,
             includeSelections: true,
@@ -300,7 +330,9 @@ describe('renderPopup', () => {
   it('opens the overlay shortcut on the active tab', async () => {
     document.body.innerHTML = '<div id="app"></div>';
     const chromeMock = getChromeMock();
-    chromeMock.runtime.sendMessage.mockResolvedValue({ ok: true });
+    (
+      chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({ ok: true });
 
     const fetchMock = vi
       .fn()
