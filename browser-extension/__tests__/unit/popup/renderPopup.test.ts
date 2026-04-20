@@ -31,6 +31,14 @@ describe('renderPopup', () => {
           apiBaseUrl: 'http://127.0.0.1:8001',
           defaultModel: 'gemini-2.5-pro',
           lastKnownModels: ['gemini-2.5-pro'],
+          markdownExport: {
+            includeExplanation: false,
+            includeSelections: true,
+            includeRawResponse: true,
+            includeArticleMetadata: true,
+            includeUsageMetrics: false,
+            includeYamlFrontmatter: true,
+          },
         },
       },
       () => undefined
@@ -68,6 +76,20 @@ describe('renderPopup', () => {
     expect(
       (document.querySelector('#default-model') as HTMLInputElement).value
     ).toBe('gemini-2.5-pro');
+    expect(
+      (
+        document.querySelector(
+          '[data-role="include-explanation"]'
+        ) as HTMLInputElement
+      ).checked
+    ).toBe(false);
+    expect(
+      (
+        document.querySelector(
+          '[data-role="include-raw-response"]'
+        ) as HTMLInputElement
+      ).checked
+    ).toBe(true);
     expect(document.querySelectorAll('#model-options option')).toHaveLength(1);
     expect(chromeMock.storage.local.set).toHaveBeenCalledWith(
       {
@@ -75,6 +97,14 @@ describe('renderPopup', () => {
           apiBaseUrl: 'http://127.0.0.1:8001',
           defaultModel: 'gemini-2.5-pro',
           lastKnownModels: ['gemini-2.5-flash'],
+          markdownExport: {
+            includeExplanation: false,
+            includeSelections: true,
+            includeRawResponse: true,
+            includeArticleMetadata: true,
+            includeUsageMetrics: false,
+            includeYamlFrontmatter: true,
+          },
         },
       },
       expect.any(Function)
@@ -133,9 +163,33 @@ describe('renderPopup', () => {
     const form = document.querySelector(
       '[data-role="settings-form"]'
     ) as HTMLFormElement;
+    const includeExplanationInput = document.querySelector(
+      '[data-role="include-explanation"]'
+    ) as HTMLInputElement;
+    const includeSelectionsInput = document.querySelector(
+      '[data-role="include-selections"]'
+    ) as HTMLInputElement;
+    const includeRawResponseInput = document.querySelector(
+      '[data-role="include-raw-response"]'
+    ) as HTMLInputElement;
+    const includeArticleMetadataInput = document.querySelector(
+      '[data-role="include-article-metadata"]'
+    ) as HTMLInputElement;
+    const includeUsageMetricsInput = document.querySelector(
+      '[data-role="include-usage-metrics"]'
+    ) as HTMLInputElement;
+    const includeYamlFrontmatterInput = document.querySelector(
+      '[data-role="include-yaml-frontmatter"]'
+    ) as HTMLInputElement;
 
     apiInput.value = 'http://localhost:9001/';
     defaultModelInput.value = ' gemini-2.5-pro ';
+    includeExplanationInput.checked = false;
+    includeSelectionsInput.checked = true;
+    includeRawResponseInput.checked = true;
+    includeArticleMetadataInput.checked = true;
+    includeUsageMetricsInput.checked = true;
+    includeYamlFrontmatterInput.checked = false;
     form.dispatchEvent(
       new Event('submit', { bubbles: true, cancelable: true })
     );
@@ -147,6 +201,14 @@ describe('renderPopup', () => {
           apiBaseUrl: 'http://localhost:9001',
           defaultModel: 'gemini-2.5-pro',
           lastKnownModels: ['gemini-2.5-flash'],
+          markdownExport: {
+            includeExplanation: false,
+            includeSelections: true,
+            includeRawResponse: true,
+            includeArticleMetadata: true,
+            includeUsageMetrics: true,
+            includeYamlFrontmatter: false,
+          },
         },
       },
       expect.any(Function)
@@ -154,6 +216,9 @@ describe('renderPopup', () => {
     expect(
       document.querySelector('[data-role="message-line"]')?.textContent
     ).toContain('Settings saved.');
+    expect(document.body.textContent).toContain(
+      'Filename rule is page title plus timestamp.'
+    );
   });
 
   it('opens the overlay shortcut on the active tab', async () => {

@@ -1,6 +1,7 @@
 import {
   isValidLocalApiBaseUrl,
   normalizeLocalApiBaseUrl,
+  type MarkdownExportSettings,
   type ExtensionSettings,
 } from '../../shared/config/phase0';
 import type {
@@ -27,6 +28,12 @@ interface PopupRefs {
   form: HTMLFormElement;
   apiInput: HTMLInputElement;
   defaultModelInput: HTMLInputElement;
+  includeExplanationInput: HTMLInputElement;
+  includeSelectionsInput: HTMLInputElement;
+  includeRawResponseInput: HTMLInputElement;
+  includeArticleMetadataInput: HTMLInputElement;
+  includeUsageMetricsInput: HTMLInputElement;
+  includeYamlFrontmatterInput: HTMLInputElement;
   statusBadge: HTMLElement;
   statusLine: HTMLElement;
   detailLine: HTMLElement;
@@ -42,8 +49,8 @@ interface PopupRefs {
 }
 
 /**
- * Phase 1 の popup は本格 UI ではなく、Local API の接続確認と既定モデル設定の入口として機能する。
- * 翻訳結果の表示責務を持たせないことで、将来 overlay 主体へ寄せても popup の責務が肥大化しない。
+ * Popup は Local API の接続確認と永続 settings の編集に責務を絞る。
+ * 実行系 UI を overlay 側に寄せることで、popup は設定と診断の導線として保守しやすく保つ。
  */
 export async function renderPopup(documentRef: Document): Promise<void> {
   const appRoot = documentRef.getElementById('app');
@@ -188,6 +195,37 @@ export async function renderPopup(documentRef: Document): Promise<void> {
         color: #78716c;
         font-size: 12px;
       }
+      .checkbox-group {
+        display: grid;
+        gap: 10px;
+        margin-top: 10px;
+      }
+      .checkbox-card {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        padding: 10px 12px;
+        border: 1px solid rgba(146, 64, 14, 0.12);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.66);
+      }
+      .checkbox-input {
+        margin: 2px 0 0;
+        accent-color: #c2410c;
+      }
+      .checkbox-copy {
+        display: grid;
+        gap: 2px;
+      }
+      .checkbox-title {
+        color: #1f2937;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .checkbox-hint {
+        color: #6b7280;
+        font-size: 11px;
+      }
       .message-line.is-error {
         color: #b91c1c;
       }
@@ -270,7 +308,7 @@ export async function renderPopup(documentRef: Document): Promise<void> {
         <div class="title-row">
           <div>
             <h1 class="title">Local Bridge</h1>
-            <p class="subtitle">Popup settings for the Phase 1 browser translation flow.</p>
+            <p class="subtitle">Popup settings for Local API connectivity, default model, and Markdown export metadata.</p>
           </div>
           <div class="status-badge" data-role="status-badge">Checking</div>
         </div>
@@ -289,6 +327,54 @@ export async function renderPopup(documentRef: Document): Promise<void> {
             <input class="input" id="default-model" name="defaultModel" type="text" list="model-options" autocomplete="off" spellcheck="false" />
             <datalist id="model-options"></datalist>
             <p class="hint">Fetched models are suggested automatically, but a manual model ID is also allowed.</p>
+          </div>
+          <div class="section">
+            <span class="label">Markdown Export</span>
+            <div class="checkbox-group">
+              <label class="checkbox-card" for="include-explanation">
+                <input class="checkbox-input" id="include-explanation" data-role="include-explanation" type="checkbox" />
+                <span class="checkbox-copy">
+                  <span class="checkbox-title">Include explanation</span>
+                  <span class="checkbox-hint">Enabled by default. Saves Gemini's explanation section when present.</span>
+                </span>
+              </label>
+              <label class="checkbox-card" for="include-selections">
+                <input class="checkbox-input" id="include-selections" data-role="include-selections" type="checkbox" />
+                <span class="checkbox-copy">
+                  <span class="checkbox-title">Include selected source text</span>
+                  <span class="checkbox-hint">Enabled by default. Lists the current batch selections before the answer body.</span>
+                </span>
+              </label>
+              <label class="checkbox-card" for="include-raw-response">
+                <input class="checkbox-input" id="include-raw-response" data-role="include-raw-response" type="checkbox" />
+                <span class="checkbox-copy">
+                  <span class="checkbox-title">Include raw response</span>
+                  <span class="checkbox-hint">Disabled by default. Adds the unprocessed Gemini response payload.</span>
+                </span>
+              </label>
+              <label class="checkbox-card" for="include-article-metadata">
+                <input class="checkbox-input" id="include-article-metadata" data-role="include-article-metadata" type="checkbox" />
+                <span class="checkbox-copy">
+                  <span class="checkbox-title">Include article metadata</span>
+                  <span class="checkbox-hint">Disabled by default. Adds source page metadata such as title, byline, and site name.</span>
+                </span>
+              </label>
+              <label class="checkbox-card" for="include-usage-metrics">
+                <input class="checkbox-input" id="include-usage-metrics" data-role="include-usage-metrics" type="checkbox" />
+                <span class="checkbox-copy">
+                  <span class="checkbox-title">Include usage metrics</span>
+                  <span class="checkbox-hint">Disabled by default. Adds token usage when the current result includes it.</span>
+                </span>
+              </label>
+              <label class="checkbox-card" for="include-yaml-frontmatter">
+                <input class="checkbox-input" id="include-yaml-frontmatter" data-role="include-yaml-frontmatter" type="checkbox" />
+                <span class="checkbox-copy">
+                  <span class="checkbox-title">Include YAML frontmatter</span>
+                  <span class="checkbox-hint">Disabled by default. Adds machine-readable metadata at the top of the file.</span>
+                </span>
+              </label>
+            </div>
+            <p class="hint">Default export saves answer body, explanation, and selected text. Filename rule is page title plus timestamp.</p>
           </div>
           <div class="section button-row">
             <button class="button button-secondary" type="button" data-role="refresh-button">Refresh</button>
@@ -354,6 +440,7 @@ export async function renderPopup(documentRef: Document): Promise<void> {
         apiBaseUrl: normalizeLocalApiBaseUrl(candidateUrl),
         defaultModel: refs.defaultModelInput.value.trim(),
         lastKnownModels: state.models.map((model) => model.modelId),
+        markdownExport: readMarkdownExportSettings(refs),
       });
       refs.apiInput.value = state.settings.apiBaseUrl;
       refs.defaultModelInput.value = state.settings.defaultModel;
@@ -439,6 +526,18 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
   const apiInput = appRoot.querySelector<HTMLInputElement>('#api-base-url');
   const defaultModelInput =
     appRoot.querySelector<HTMLInputElement>('#default-model');
+  const includeExplanationInput =
+    appRoot.querySelector<HTMLInputElement>('[data-role="include-explanation"]');
+  const includeSelectionsInput =
+    appRoot.querySelector<HTMLInputElement>('[data-role="include-selections"]');
+  const includeRawResponseInput =
+    appRoot.querySelector<HTMLInputElement>('[data-role="include-raw-response"]');
+  const includeArticleMetadataInput =
+    appRoot.querySelector<HTMLInputElement>('[data-role="include-article-metadata"]');
+  const includeUsageMetricsInput =
+    appRoot.querySelector<HTMLInputElement>('[data-role="include-usage-metrics"]');
+  const includeYamlFrontmatterInput =
+    appRoot.querySelector<HTMLInputElement>('[data-role="include-yaml-frontmatter"]');
   const statusBadge = appRoot.querySelector<HTMLElement>(
     '[data-role="status-badge"]'
   );
@@ -479,6 +578,12 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
     !form ||
     !apiInput ||
     !defaultModelInput ||
+    !includeExplanationInput ||
+    !includeSelectionsInput ||
+    !includeRawResponseInput ||
+    !includeArticleMetadataInput ||
+    !includeUsageMetricsInput ||
+    !includeYamlFrontmatterInput ||
     !statusBadge ||
     !statusLine ||
     !detailLine ||
@@ -499,6 +604,12 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
     form,
     apiInput,
     defaultModelInput,
+    includeExplanationInput,
+    includeSelectionsInput,
+    includeRawResponseInput,
+    includeArticleMetadataInput,
+    includeUsageMetricsInput,
+    includeYamlFrontmatterInput,
     statusBadge,
     statusLine,
     detailLine,
@@ -582,12 +693,35 @@ function syncView(refs: PopupRefs, state: PopupViewState): void {
   if (!refs.defaultModelInput.value) {
     refs.defaultModelInput.value = state.settings.defaultModel;
   }
+  refs.includeExplanationInput.checked =
+    state.settings.markdownExport.includeExplanation;
+  refs.includeSelectionsInput.checked =
+    state.settings.markdownExport.includeSelections;
+  refs.includeRawResponseInput.checked =
+    state.settings.markdownExport.includeRawResponse;
+  refs.includeArticleMetadataInput.checked =
+    state.settings.markdownExport.includeArticleMetadata;
+  refs.includeUsageMetricsInput.checked =
+    state.settings.markdownExport.includeUsageMetrics;
+  refs.includeYamlFrontmatterInput.checked =
+    state.settings.markdownExport.includeYamlFrontmatter;
   refs.modelDatalist.innerHTML = state.models
     .map(
       (model) =>
         `<option value="${escapeHtml(model.modelId)}">${escapeHtml(model.displayName)}</option>`
     )
     .join('');
+}
+
+function readMarkdownExportSettings(refs: PopupRefs): MarkdownExportSettings {
+  return {
+    includeExplanation: refs.includeExplanationInput.checked,
+    includeSelections: refs.includeSelectionsInput.checked,
+    includeRawResponse: refs.includeRawResponseInput.checked,
+    includeArticleMetadata: refs.includeArticleMetadataInput.checked,
+    includeUsageMetrics: refs.includeUsageMetricsInput.checked,
+    includeYamlFrontmatter: refs.includeYamlFrontmatterInput.checked,
+  };
 }
 
 function setBusy(refs: PopupRefs, busy: boolean): void {
