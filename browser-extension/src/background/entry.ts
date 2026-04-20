@@ -10,6 +10,7 @@ import {
   invalidateArticleCache,
 } from './services/articleCacheService';
 import { runSelectionAnalysis } from './usecases/runSelectionAnalysis';
+import { exportMarkdown } from './usecases/exportMarkdown';
 import {
   appendLiveSelectionSessionItem,
   appendSelectionSessionItem,
@@ -36,6 +37,7 @@ import type {
   ClearSelectionBatchResponse,
   RemoveSessionItemResponse,
   OpenOverlayResponse,
+  ExportMarkdownResponse,
   RunOverlayActionResponse,
   ToggleSessionItemImageResponse,
   DeleteActiveArticleCacheResponse,
@@ -112,7 +114,11 @@ export function registerBackgroundRuntime(): void {
         message.type === 'phase2.cacheBatchOverlaySession' &&
         sender.tab?.id !== undefined
       ) {
-        void handleCacheBatchOverlaySession(sender.tab.id, message, sendResponse);
+        void handleCacheBatchOverlaySession(
+          sender.tab.id,
+          message,
+          sendResponse
+        );
         return true;
       }
 
@@ -155,6 +161,11 @@ export function registerBackgroundRuntime(): void {
         sender.tab?.id !== undefined
       ) {
         void handleClearSelectionBatch(sender.tab.id, sendResponse);
+        return true;
+      }
+
+      if (message.type === 'phase5.exportMarkdown') {
+        void handleExportMarkdown(message, sendResponse);
         return true;
       }
 
@@ -252,7 +263,9 @@ async function handleCacheOverlaySession(
     sendResponse({
       ok: false,
       error:
-        error instanceof Error ? error.message : 'Failed to cache overlay session.',
+        error instanceof Error
+          ? error.message
+          : 'Failed to cache overlay session.',
     });
   }
 }
@@ -376,7 +389,10 @@ async function handleRectangleSelectionStart(
 }
 
 async function handleOverlayAction(
-  message: Extract<BackgroundRuntimeMessage, { type: 'phase1.runOverlayAction' }>,
+  message: Extract<
+    BackgroundRuntimeMessage,
+    { type: 'phase1.runOverlayAction' }
+  >,
   tab: chrome.tabs.Tab,
   sendResponse: (response: RunOverlayActionResponse) => void
 ): Promise<void> {
@@ -398,7 +414,10 @@ async function handleOverlayAction(
 }
 
 async function handleAppendSessionItem(
-  message: Extract<BackgroundRuntimeMessage, { type: 'phase2.appendSessionItem' }>,
+  message: Extract<
+    BackgroundRuntimeMessage,
+    { type: 'phase2.appendSessionItem' }
+  >,
   tab: chrome.tabs.Tab,
   sendResponse: (response: AppendSessionItemResponse) => void
 ): Promise<void> {
@@ -412,13 +431,19 @@ async function handleAppendSessionItem(
   } catch (error) {
     sendResponse({
       ok: false,
-      error: error instanceof Error ? error.message : 'Failed to append selection item.',
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Failed to append selection item.',
     });
   }
 }
 
 async function handleRemoveSessionItem(
-  message: Extract<BackgroundRuntimeMessage, { type: 'phase2.removeSessionItem' }>,
+  message: Extract<
+    BackgroundRuntimeMessage,
+    { type: 'phase2.removeSessionItem' }
+  >,
   tabId: number,
   sendResponse: (response: RemoveSessionItemResponse) => void
 ): Promise<void> {
@@ -428,13 +453,19 @@ async function handleRemoveSessionItem(
   } catch (error) {
     sendResponse({
       ok: false,
-      error: error instanceof Error ? error.message : 'Failed to remove selection item.',
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Failed to remove selection item.',
     });
   }
 }
 
 async function handleToggleSessionItemImage(
-  message: Extract<BackgroundRuntimeMessage, { type: 'phase2.toggleSessionItemImage' }>,
+  message: Extract<
+    BackgroundRuntimeMessage,
+    { type: 'phase2.toggleSessionItemImage' }
+  >,
   tabId: number,
   sendResponse: (response: ToggleSessionItemImageResponse) => void
 ): Promise<void> {
@@ -459,7 +490,8 @@ async function handleToggleSessionItemImage(
 async function handleDeleteActiveArticleCache(
   tabId: number,
   sendResponse: (response: DeleteActiveArticleCacheResponse) => void
-): Promise<void> {  try {
+): Promise<void> {
+  try {
     const session = await getAnalysisSession(tabId);
     if (!session) {
       sendResponse({ ok: true });
@@ -510,9 +542,32 @@ async function handleClearSelectionBatch(
   }
 }
 
+async function handleExportMarkdown(
+  message: Extract<BackgroundRuntimeMessage, { type: 'phase5.exportMarkdown' }>,
+  sendResponse: (response: ExportMarkdownResponse) => void
+): Promise<void> {
+  try {
+    const settings = await loadExtensionSettings();
+    const result = await exportMarkdown(
+      message.payload,
+      settings.markdownExport
+    );
+    sendResponse({
+      ok: true,
+      downloadId: result.downloadId,
+      filename: result.filename,
+    });
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      error: error instanceof Error ? error.message : 'Markdown export failed.',
+    });
+  }
+}
+
 async function handleTabUpdated(
   tabId: number,
-  changeInfo: chrome.tabs.TabChangeInfo
+  changeInfo: { url?: string }
 ): Promise<void> {
   if (!changeInfo.url) {
     return;
@@ -541,7 +596,10 @@ async function cleanupAnalysisSession(
   }
 ): Promise<void> {
   const session = await getAnalysisSession(tabId);
-  if (session?.articleCacheState?.cacheName && options.shouldDeleteRemoteCache) {
+  if (
+    session?.articleCacheState?.cacheName &&
+    options.shouldDeleteRemoteCache
+  ) {
     const settings = await loadExtensionSettings();
     await invalidateArticleCache(session, {
       apiBaseUrl: settings.apiBaseUrl,

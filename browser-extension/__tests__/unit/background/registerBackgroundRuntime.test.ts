@@ -14,6 +14,7 @@ const invalidateArticleCacheMock = vi.hoisted(() => vi.fn());
 const buildNavigatedSessionStateMock = vi.hoisted(() => vi.fn());
 const loadExtensionSettingsMock = vi.hoisted(() => vi.fn());
 const renderOverlayMock = vi.hoisted(() => vi.fn());
+const exportMarkdownMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/background/menus/phase0ContextMenu', () => ({
   ensurePhase0ContextMenu: ensurePhase0ContextMenuMock,
@@ -44,6 +45,10 @@ vi.mock('../../../src/shared/storage/settingsStorage', () => ({
   loadExtensionSettings: loadExtensionSettingsMock,
 }));
 
+vi.mock('../../../src/background/usecases/exportMarkdown', () => ({
+  exportMarkdown: exportMarkdownMock,
+}));
+
 vi.mock('../../../src/background/gateways/tabMessagingGateway', () => ({
   renderOverlay: renderOverlayMock,
 }));
@@ -70,6 +75,14 @@ describe('registerBackgroundRuntime', () => {
       apiBaseUrl: 'http://127.0.0.1:9000',
       defaultModel: 'gemini-2.5-flash',
       lastKnownModels: ['gemini-2.5-flash'],
+      markdownExport: {
+        includeExplanation: true,
+        includeSelections: true,
+        includeRawResponse: false,
+        includeArticleMetadata: false,
+        includeUsageMetrics: false,
+        includeYamlFrontmatter: false,
+      },
     });
     invalidateArticleCacheMock.mockImplementation(async (session) => session);
     buildNavigatedSessionStateMock.mockImplementation((session) => session);
@@ -77,13 +90,16 @@ describe('registerBackgroundRuntime', () => {
       ...session,
       ...options,
     }));
+    exportMarkdownMock.mockResolvedValue({
+      downloadId: 17,
+      filename: 'Example-20260420-103000.md',
+    });
   });
 
   function getContextMenuHandler() {
     return (
-      getChromeMock().contextMenus.onClicked.addListener as unknown as ReturnType<
-        typeof vi.fn
-      >
+      getChromeMock().contextMenus.onClicked
+        .addListener as unknown as ReturnType<typeof vi.fn>
     ).mock.calls[0][0];
   }
 
@@ -153,7 +169,9 @@ describe('registerBackgroundRuntime', () => {
   });
 
   it('forwards free-rectangle starts from the context menu to the content script', async () => {
-    (getChromeMock().tabs.sendMessage as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (
+      getChromeMock().tabs.sendMessage as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({
       ok: true,
     });
     registerBackgroundRuntime();
@@ -174,7 +192,9 @@ describe('registerBackgroundRuntime', () => {
   });
 
   it('forwards free-rectangle starts from the keyboard command to the content script', async () => {
-    (getChromeMock().tabs.sendMessage as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (
+      getChromeMock().tabs.sendMessage as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({
       ok: true,
     });
     registerBackgroundRuntime();
@@ -201,7 +221,9 @@ describe('registerBackgroundRuntime', () => {
   });
 
   it('dispatches the add-selection command to the live-selection append usecase', async () => {
-    appendLiveSelectionSessionItemMock.mockResolvedValue({ id: 'selection-live' });
+    appendLiveSelectionSessionItemMock.mockResolvedValue({
+      id: 'selection-live',
+    });
     registerBackgroundRuntime();
 
     const handler = getCommandHandler();
@@ -382,9 +404,9 @@ describe('registerBackgroundRuntime', () => {
 
   it('opens the overlay on the active tab for popup-triggered requests', async () => {
     openOverlaySessionMock.mockResolvedValue(undefined);
-    (getChromeMock().tabs.query as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 7, windowId: 3 },
-    ]);
+    (
+      getChromeMock().tabs.query as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue([{ id: 7, windowId: 3 }]);
     registerBackgroundRuntime();
 
     const handler = getRuntimeMessageHandler();
@@ -449,11 +471,13 @@ describe('registerBackgroundRuntime', () => {
         cacheName: 'cachedContents/article-1',
       },
     });
-    buildNavigatedSessionStateMock.mockImplementationOnce((session, nextUrl) => ({
-      ...session,
-      items: [],
-      articleContextError: `Page changed to ${nextUrl}. Article context will be refreshed on the next run.`,
-    }));
+    buildNavigatedSessionStateMock.mockImplementationOnce(
+      (session, nextUrl) => ({
+        ...session,
+        items: [],
+        articleContextError: `Page changed to ${nextUrl}. Article context will be refreshed on the next run.`,
+      })
+    );
 
     registerBackgroundRuntime();
 
@@ -512,5 +536,50 @@ describe('registerBackgroundRuntime', () => {
     );
     expect(renderOverlayMock).toHaveBeenCalled();
     expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it('exports markdown through the background runtime with stored export settings', async () => {
+    registerBackgroundRuntime();
+
+    const handler = getRuntimeMessageHandler();
+    const sendResponse = vi.fn();
+    const keepChannelOpen = handler(
+      {
+        type: 'phase5.exportMarkdown',
+        payload: {
+          action: 'translation_with_explanation',
+          modelName: 'gemini-2.5-pro',
+          pageTitle: 'Example article',
+          pageUrl: 'https://example.com/article',
+          translatedText: 'Translated body',
+          explanation: 'Why this was translated that way.',
+          rawResponse: 'raw payload',
+          selectedText: 'Original selection',
+          sessionItems: [],
+        },
+      },
+      { tab: { id: 7 } },
+      sendResponse
+    );
+
+    expect(keepChannelOpen).toBe(true);
+    await flushAsyncWork();
+
+    expect(loadExtensionSettingsMock).toHaveBeenCalled();
+    expect(exportMarkdownMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pageTitle: 'Example article',
+        pageUrl: 'https://example.com/article',
+      }),
+      expect.objectContaining({
+        includeExplanation: true,
+        includeSelections: true,
+      })
+    );
+    expect(sendResponse).toHaveBeenCalledWith({
+      ok: true,
+      downloadId: 17,
+      filename: 'Example-20260420-103000.md',
+    });
   });
 });

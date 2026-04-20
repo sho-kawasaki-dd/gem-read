@@ -39,6 +39,7 @@
   "permissions": [
     "contextMenus",
     "activeTab",
+    "downloads",
     "offscreen",
     "scripting",
     "storage"

@@ -37,6 +37,9 @@ export function createChromeMock(): typeof chrome {
       removeAll: vi.fn(),
       onClicked: createEventHook(),
     },
+    downloads: {
+      download: vi.fn(),
+    },
     storage: {
       local: {
         get: vi.fn(
