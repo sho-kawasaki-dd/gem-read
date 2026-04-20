@@ -26,6 +26,7 @@ import {
   removeSelectionItem,
   toggleSelectionItemImage,
   deleteActiveArticleCache,
+  exportCurrentMarkdown,
 } from './overlayActions';
 import type { OverlayTabId } from './overlayKeyboard';
 import {
@@ -343,6 +344,17 @@ export function renderOverlay(payload: OverlayPayload): void {
 
     setActiveOverlayTab('gemini');
   });
+  root
+    .querySelector<HTMLButtonElement>('.action-export-markdown')
+    ?.addEventListener('click', () => {
+      void exportCurrentMarkdown(
+        effectivePayload,
+        sessionItems,
+        selectionText,
+        errorBox,
+        errorSection
+      );
+    });
   for (const removeButton of root.querySelectorAll<HTMLButtonElement>(
     '.session-item-remove'
   )) {
@@ -469,6 +481,7 @@ function renderPanelMarkup(
         ${geminiSelected ? '' : 'hidden'}
       >
         <div class="gemini-empty-state"></div>
+        ${renderMarkdownExportAction(payload)}
         <div class="section result-section" hidden>
           <div class="label result-label">Translation</div>
           <div class="box rich-text-box result-box"></div>
@@ -545,6 +558,15 @@ function overlayHasGeminiContent(
   );
 }
 
+function hasMarkdownExportableResult(
+  payload: OverlayPayload | null | undefined
+): boolean {
+  return Boolean(
+    payload?.status === 'success' &&
+    (payload.translatedText || payload.explanation)
+  );
+}
+
 function shouldAutoOpenGeminiTab(
   previousPayload: OverlayPayload | null,
   nextPayload: OverlayPayload
@@ -560,10 +582,7 @@ function isGeminiTabEnabled(
   payload: OverlayPayload,
   currentTab: OverlayTabId
 ): boolean {
-  return (
-    overlayHasGeminiContent(payload) ||
-    currentTab === 'gemini'
-  );
+  return overlayHasGeminiContent(payload) || currentTab === 'gemini';
 }
 
 function configureOverlayTabButton(
@@ -586,6 +605,21 @@ function buildGeminiEmptyStateText(payload: OverlayPayload): string {
     return 'No Gemini response is available for the latest run.';
   }
   return 'Run Translate or Translate + Explain to show Gemini output here.';
+}
+
+function renderMarkdownExportAction(payload: OverlayPayload): string {
+  if (!hasMarkdownExportableResult(payload)) {
+    return '';
+  }
+
+  return `
+    <div class="section export-section">
+      <div class="label">Export</div>
+      <div class="action-row action-row--single">
+        <button class="action-button action-button--secondary action-export-markdown" type="button">Download Markdown</button>
+      </div>
+    </div>
+  `;
 }
 
 function setActiveOverlayTab(
@@ -611,9 +645,7 @@ function focusOverlayTabButton(tabId: OverlayTabId): void {
   const host = document.getElementById(OVERLAY_HOST_ID);
   const root = host?.shadowRoot;
   root
-    ?.querySelector<HTMLButtonElement>(
-      `.panel-tab[data-tab-id="${tabId}"]`
-    )
+    ?.querySelector<HTMLButtonElement>(`.panel-tab[data-tab-id="${tabId}"]`)
     ?.focus();
 }
 
@@ -1047,7 +1079,6 @@ function renderSessionItemsMarkup(
     .join('');
 }
 
-
 async function addRectangleSelection(
   errorBox: HTMLElement,
   errorSection: HTMLElement,
@@ -1108,8 +1139,6 @@ async function addRectangleSelection(
   errorBox.textContent = '';
   errorSection.hidden = true;
 }
-
-
 
 function disposeOverlay(): void {
   const host = document.getElementById(OVERLAY_HOST_ID);

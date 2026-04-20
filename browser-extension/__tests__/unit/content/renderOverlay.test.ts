@@ -269,9 +269,11 @@ describe('renderOverlay', () => {
     });
 
     let root = getShadowRoot();
-    (root.querySelector(
-      '.panel-tab[data-tab-id="workspace"]'
-    ) as HTMLButtonElement).click();
+    (
+      root.querySelector(
+        '.panel-tab[data-tab-id="workspace"]'
+      ) as HTMLButtonElement
+    ).click();
 
     renderOverlay({
       status: 'success',
@@ -504,6 +506,120 @@ describe('renderOverlay', () => {
         customPrompt: 'Explain the terminology',
       },
     });
+  });
+
+  it('renders a markdown export button only when Gemini has exportable result content', () => {
+    renderOverlay({
+      status: 'loading',
+      action: 'translation',
+      sessionReady: true,
+      sessionItems: [],
+      maxSessionItems: 10,
+      rawResponse: 'raw only',
+    });
+
+    let root = getShadowRoot();
+    expect(root.querySelector('.action-export-markdown')).toBeNull();
+
+    renderOverlay({
+      status: 'success',
+      action: 'translation_with_explanation',
+      sessionReady: true,
+      sessionItems: [],
+      maxSessionItems: 10,
+      explanation: 'Explanation only result',
+      rawResponse: 'raw only',
+    });
+
+    root = getShadowRoot();
+    expect(root.querySelector('.action-export-markdown')).not.toBeNull();
+  });
+
+  it('sends markdown export messages and surfaces export failures in the error section', async () => {
+    const chromeMock = getChromeMock();
+    (chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ ok: true, downloadId: 42 })
+      .mockResolvedValueOnce({ ok: false, error: 'Download API failed.' });
+
+    renderOverlay({
+      status: 'success',
+      action: 'translation_with_explanation',
+      sessionReady: true,
+      sessionItems: [
+        {
+          id: 'selection-1',
+          source: 'text-selection',
+          selection: {
+            text: 'Selected paragraph',
+            rect: { left: 1, top: 2, width: 3, height: 4 },
+            viewportWidth: 100,
+            viewportHeight: 100,
+            devicePixelRatio: 1,
+            url: 'https://example.com/article',
+            pageTitle: 'Example Page',
+          },
+          includeImage: false,
+          previewImageUrl: 'data:image/webp;base64,preview',
+          cropDurationMs: 12.3,
+        },
+      ],
+      maxSessionItems: 10,
+      modelName: 'gemini-2.5-flash',
+      selectedText: 'Selected paragraph',
+      translatedText: 'Translated body',
+      explanation: 'Supporting explanation',
+      rawResponse: 'raw payload',
+      usage: {
+        totalTokenCount: 18,
+      },
+    });
+
+    let root = getShadowRoot();
+    (
+      root.querySelector('.action-export-markdown') as HTMLButtonElement
+    ).click();
+    await Promise.resolve();
+
+    expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'phase5.exportMarkdown',
+      payload: {
+        action: 'translation_with_explanation',
+        modelName: 'gemini-2.5-flash',
+        translatedText: 'Translated body',
+        explanation: 'Supporting explanation',
+        rawResponse: 'raw payload',
+        selectedText: 'Selected paragraph',
+        sessionItems: [
+          expect.objectContaining({
+            id: 'selection-1',
+            selection: expect.objectContaining({
+              text: 'Selected paragraph',
+              pageTitle: 'Example Page',
+              url: 'https://example.com/article',
+            }),
+          }),
+        ],
+        articleContext: undefined,
+        usage: {
+          totalTokenCount: 18,
+        },
+        pageTitle: 'Example Page',
+        pageUrl: 'https://example.com/article',
+      },
+    });
+
+    (
+      root.querySelector('.action-export-markdown') as HTMLButtonElement
+    ).click();
+    await Promise.resolve();
+
+    root = getShadowRoot();
+    expect((root.querySelector('.error-section') as HTMLElement).hidden).toBe(
+      false
+    );
+    expect(root.querySelector('.error-box')?.textContent).toContain(
+      'Download API failed.'
+    );
   });
 
   it('renders article cache details and sends manual delete requests', async () => {
@@ -996,7 +1112,9 @@ describe('renderOverlay', () => {
     });
 
     const root = getShadowRoot();
-    const textarea = root.querySelector('.custom-prompt-input') as HTMLTextAreaElement;
+    const textarea = root.querySelector(
+      '.custom-prompt-input'
+    ) as HTMLTextAreaElement;
 
     // Dispatch the event from inside the shadow DOM so composedPath() includes the textarea.
     textarea.dispatchEvent(

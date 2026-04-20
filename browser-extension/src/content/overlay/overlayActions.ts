@@ -3,10 +3,13 @@ import type {
   AnalysisAction,
   AppendSessionItemResponse,
   DeleteActiveArticleCacheResponse,
+  ExportMarkdownPayload,
+  ExportMarkdownResponse,
   OverlayPayload,
   RemoveSessionItemResponse,
   RunOverlayActionMessage,
   RunOverlayActionResponse,
+  SelectionSessionItem,
   ToggleSessionItemImageResponse,
 } from '../../shared/contracts/messages';
 import { canAppendSelectionBatchItem } from '../selection/selectionBatchController';
@@ -149,4 +152,61 @@ export async function deleteActiveArticleCache(
 
   errorBox.textContent = '';
   errorSection.hidden = true;
+}
+
+export async function exportCurrentMarkdown(
+  payload: OverlayPayload,
+  sessionItems: SelectionSessionItem[],
+  selectedText: string,
+  errorBox: HTMLElement,
+  errorSection: HTMLElement
+): Promise<void> {
+  const exportPayload = buildExportMarkdownPayload(
+    payload,
+    sessionItems,
+    selectedText
+  );
+  const response = (await chrome.runtime.sendMessage({
+    type: 'phase5.exportMarkdown',
+    payload: exportPayload,
+  })) as ExportMarkdownResponse | undefined;
+
+  if (response?.ok === false) {
+    errorBox.textContent =
+      response.error ?? 'Failed to export the current Gemini result.';
+    errorSection.hidden = false;
+    return;
+  }
+
+  errorBox.textContent = '';
+  errorSection.hidden = true;
+}
+
+function buildExportMarkdownPayload(
+  payload: OverlayPayload,
+  sessionItems: SelectionSessionItem[],
+  selectedText: string
+): ExportMarkdownPayload {
+  const latestSelection = sessionItems.at(-1)?.selection;
+
+  return {
+    action: payload.action ?? 'translation',
+    modelName: payload.modelName,
+    translatedText: payload.translatedText,
+    explanation: payload.explanation,
+    rawResponse: payload.rawResponse,
+    selectedText: selectedText.trim() || undefined,
+    sessionItems,
+    articleContext: payload.articleContext,
+    usage: payload.usage,
+    pageTitle:
+      latestSelection?.pageTitle?.trim() ||
+      payload.articleContext?.title?.trim() ||
+      document.title ||
+      'Gem Read Export',
+    pageUrl:
+      latestSelection?.url?.trim() ||
+      payload.articleContext?.url?.trim() ||
+      window.location.href,
+  };
 }
