@@ -36,7 +36,7 @@
 3. `PanelPresenter` updates cache UI state and countdown.
 4. `AIModel.analyze()` includes `cached_content` when the model matches. Because the Gemini API forbids supplying `system_instruction` alongside `cached_content`, the `GenerateContentConfig` for cached requests omits `system_instruction` entirely — the cached copy applies automatically.
 5. Action mode differences (`translation`, `translation_with_explanation`, `custom_prompt`) and `output_language` are encoded in `contents` at request time, not in `system_instruction`. This means one cache serves all three action modes and all language settings without recreation.
-6. If cache-backed analysis fails for non-rate-limit reasons, AIModel clears the cache linkage and retries without cache, supplying the static `system_instruction` in the fallback `GenerateContentConfig`.
+6. If cache-backed analysis fails for non-rate-limit reasons, AIModel retries once without cache, supplying the static `system_instruction` in the fallback `GenerateContentConfig`, and returns optional metadata describing that the cache-backed request was attempted and failed.
 7. Cache can expire, be invalidated manually, be replaced, or be cleared on shutdown.
 
 ## Browser Extension Phase 2 Flow
@@ -59,8 +59,9 @@
 4. Background asks `/tokens/count` for two separate estimates when possible: the current selection batch request and the extracted article body.
 5. If the article is large enough, the selected model is cache-capable, and popup settings still allow automatic full-article cache creation, background creates one active remote cache through `/cache/create`.
 6. The overlay renders article status, token comparison, and degraded notices without blocking normal selection-based actions.
-7. After `/analyze/translate` returns, the overlay also shows Gemini usage metadata such as prompt tokens, cached-content tokens, output tokens, and total tokens when the backend provides them.
-8. Because action differences and output language are encoded in request `contents`, successive translation, translation-with-explanation, and custom-prompt calls reuse the same cached article without forcing cache recreation.
+7. After `/analyze/translate` returns, background checks the cache fallback metadata. If a cache-backed request failed but the uncached fallback succeeded, the article cache is invalidated locally with reason `remote-missing` and the stale cache name is not sent again.
+8. The overlay also shows Gemini usage metadata such as prompt tokens, cached-content tokens, output tokens, and total tokens when the backend provides them.
+9. Because action differences and output language are encoded in request `contents`, successive translation, translation-with-explanation, and custom-prompt calls reuse the same cached article without forcing cache recreation, unless the remote cache has already gone missing and local state has been invalidated.
 
 ## Overlay Rerun Flow
 

@@ -78,6 +78,9 @@ class AnalyzeService:
                 availability="live",
                 selection_metadata=command.selection_metadata,
                 usage=self._to_usage_metrics(result.usage),
+                cache_request_attempted=result.cache_request_attempted,
+                cache_request_failed=result.cache_request_failed,
+                cache_fallback_reason=result.cache_fallback_reason,
             )
         except AIKeyMissingError:
             # API key 未設定でも extension 側の結線確認は進めたいので、mock で degraded success を返す。

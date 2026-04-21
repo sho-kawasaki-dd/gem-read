@@ -425,6 +425,8 @@ async function invalidateTrackedState(
   state: ArticleCacheState,
   options: InvalidateArticleCacheOptions
 ): Promise<ArticleCacheState> {
+  const lastValidatedAt = new Date().toISOString();
+
   if (!state.cacheName) {
     return {
       ...state,
@@ -432,7 +434,22 @@ async function invalidateTrackedState(
       autoCreateEligible: false,
       invalidationReason: options.reason,
       notice: options.notice,
-      lastValidatedAt: new Date().toISOString(),
+      lastValidatedAt,
+    };
+  }
+
+  if (options.reason === 'remote-missing') {
+    return {
+      ...state,
+      status: 'invalidated',
+      autoCreateEligible: false,
+      cacheName: undefined,
+      tokenCount: undefined,
+      ttlSeconds: undefined,
+      expireTime: undefined,
+      invalidationReason: options.reason,
+      notice: options.notice,
+      lastValidatedAt,
     };
   }
 
@@ -448,7 +465,7 @@ async function invalidateTrackedState(
       expireTime: undefined,
       invalidationReason: options.reason,
       notice: options.notice,
-      lastValidatedAt: new Date().toISOString(),
+      lastValidatedAt,
     };
   } catch (error) {
     return {
@@ -457,7 +474,7 @@ async function invalidateTrackedState(
       autoCreateEligible: false,
       invalidationReason: options.reason,
       notice: `${options.notice} Remote cache deletion failed: ${toErrorMessage(error)}`,
-      lastValidatedAt: new Date().toISOString(),
+      lastValidatedAt,
     };
   }
 }

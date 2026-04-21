@@ -126,6 +126,9 @@ class AnalyzeTranslateResponse(BaseModel):
     degraded_reason: str | None = None
     selection_metadata: dict[str, Any] | None = None
     usage: AnalyzeUsagePayload | None = None
+    cache_request_attempted: bool | None = None
+    cache_request_failed: bool | None = None
+    cache_fallback_reason: str | None = None
 
     @classmethod
     def from_result(
@@ -149,6 +152,9 @@ class AnalyzeTranslateResponse(BaseModel):
                 if result.usage is not None
                 else None
             ),
+            cache_request_attempted=result.cache_request_attempted,
+            cache_request_failed=result.cache_request_failed,
+            cache_fallback_reason=result.cache_fallback_reason,
         )
 
 

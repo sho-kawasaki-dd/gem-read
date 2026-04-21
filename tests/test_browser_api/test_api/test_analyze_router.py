@@ -36,6 +36,9 @@ def test_translate_returns_response_payload(api_client, stub_analyze_service) ->
     assert payload["selection_metadata"]["url"] == "https://example.com"
     assert payload["usage"]["prompt_token_count"] == 42
     assert payload["usage"]["cached_content_token_count"] == 1600
+    assert payload["cache_request_attempted"] is None
+    assert payload["cache_request_failed"] is None
+    assert payload["cache_fallback_reason"] is None
     assert len(stub_analyze_service.calls) == 1
     command = stub_analyze_service.calls[0]
     assert command.text == "Hello"
@@ -58,6 +61,41 @@ def test_translate_accepts_explicit_cache_name(api_client, stub_analyze_service)
     assert response.status_code == 200
     command = stub_analyze_service.calls[0]
     assert command.cache_name == "cachedContents/article-1"
+
+
+def test_translate_serializes_cache_fallback_metadata(
+    api_client, stub_analyze_service
+) -> None:
+    stub_analyze_service.result = AnalyzeTranslateResult(
+        mode="translation",
+        translated_text="こんにちは",
+        explanation=None,
+        raw_response="こんにちは",
+        used_mock=False,
+        image_count=0,
+        availability="live",
+        degraded_reason=None,
+        selection_metadata=None,
+        usage=None,
+        cache_request_attempted=True,
+        cache_request_failed=True,
+        cache_fallback_reason="permission-denied",
+    )
+
+    response = api_client.post(
+        "/analyze/translate",
+        json={
+            "text": "Hello",
+            "images": [],
+            "mode": "translation",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["cache_request_attempted"] is True
+    assert payload["cache_request_failed"] is True
+    assert payload["cache_fallback_reason"] == "permission-denied"
 
 
 def test_translate_accepts_custom_prompt_mode(api_client, stub_analyze_service) -> None:

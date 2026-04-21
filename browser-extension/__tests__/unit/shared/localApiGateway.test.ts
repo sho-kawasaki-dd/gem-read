@@ -31,6 +31,9 @@ describe('localApiGateway', () => {
         image_count: 1,
         availability: 'live',
         degraded_reason: null,
+        cache_request_attempted: true,
+        cache_request_failed: true,
+        cache_fallback_reason: 'permission-denied',
         selection_metadata: {
           url: 'https://example.com/article',
         },
@@ -162,6 +165,9 @@ describe('localApiGateway', () => {
         candidatesTokenCount: 73,
         totalTokenCount: 1715,
       },
+      cacheRequestAttempted: true,
+      cacheRequestFailed: true,
+      cacheFallbackReason: 'permission-denied',
     });
   });
 

@@ -10,6 +10,7 @@ const cropSelectionImageMock = vi.hoisted(() => vi.fn());
 const loadExtensionSettingsMock = vi.hoisted(() => vi.fn());
 const mergeCollectedArticleContextMock = vi.hoisted(() => vi.fn());
 const syncArticleCacheStateMock = vi.hoisted(() => vi.fn());
+const invalidateArticleCacheMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/background/gateways/tabMessagingGateway', () => ({
   collectArticleContext: collectArticleContextMock,
@@ -30,6 +31,7 @@ vi.mock('../../../src/shared/storage/settingsStorage', () => ({
 }));
 
 vi.mock('../../../src/background/services/articleCacheService', () => ({
+  invalidateArticleCache: invalidateArticleCacheMock,
   mergeCollectedArticleContext: mergeCollectedArticleContextMock,
   syncArticleCacheState: syncArticleCacheStateMock,
 }));
@@ -89,6 +91,16 @@ describe('runSelectionAnalysis', () => {
         tokenCount: 1500,
         ttlSeconds: 3600,
         notice: 'Article cache created automatically for the current tab.',
+      },
+    }));
+    invalidateArticleCacheMock.mockImplementation(async (session, options) => ({
+      ...session,
+      articleCacheState: {
+        ...session.articleCacheState,
+        status: 'invalidated',
+        cacheName: undefined,
+        invalidationReason: options.reason,
+        notice: options.notice,
       },
     }));
   });
@@ -587,6 +599,71 @@ describe('runSelectionAnalysis', () => {
       expect.objectContaining({
         action: 'translation_with_explanation',
         cacheName: 'cachedContents/article-1',
+      })
+    );
+  });
+
+  it('invalidates stale article cache locally after cached request fallback succeeds', async () => {
+    mockCaptureVisibleTab('data:image/png;base64,shot');
+    collectSelectionMock.mockResolvedValueOnce({
+      ok: true,
+      payload: {
+        text: 'selection from content script',
+        rect: { left: 10, top: 20, width: 30, height: 40 },
+        viewportWidth: 1440,
+        viewportHeight: 900,
+        devicePixelRatio: 2,
+        url: 'https://example.com/article',
+        pageTitle: 'Example page',
+      },
+    });
+    cropSelectionImageMock.mockResolvedValueOnce({
+      imageDataUrl: 'data:image/webp;base64,crop',
+      durationMs: 12.5,
+    });
+    sendAnalyzeTranslateRequestMock.mockResolvedValueOnce({
+      ok: true,
+      mode: 'translation',
+      translated_text: '翻訳結果',
+      explanation: null,
+      raw_response: '翻訳結果',
+      used_mock: false,
+      availability: 'live',
+      degraded_reason: null,
+      image_count: 1,
+      cacheRequestAttempted: true,
+      cacheRequestFailed: true,
+      cacheFallbackReason: 'permission-denied',
+    });
+
+    await runSelectionAnalysis(
+      { id: 7, windowId: 9 } as chrome.tabs.Tab,
+      'fallback'
+    );
+
+    expect(invalidateArticleCacheMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        articleCacheState: expect.objectContaining({
+          status: 'active',
+          cacheName: 'cachedContents/article-1',
+        }),
+      }),
+      {
+        apiBaseUrl: 'http://127.0.0.1:9000',
+        reason: 'remote-missing',
+        notice:
+          'The server-side article cache could not be found, so this request completed without cache.',
+      }
+    );
+    expect(renderOverlayMock).toHaveBeenLastCalledWith(
+      7,
+      expect.objectContaining({
+        status: 'success',
+        articleCacheState: expect.objectContaining({
+          status: 'invalidated',
+          invalidationReason: 'remote-missing',
+          cacheName: undefined,
+        }),
       })
     );
   });

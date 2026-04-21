@@ -67,6 +67,9 @@ class AnalysisResult:
     explanation: str | None = None
     raw_response: str = ""
     usage: AnalysisUsage | None = None
+    cache_request_attempted: bool = False
+    cache_request_failed: bool = False
+    cache_fallback_reason: str | None = None
 
 
 @dataclass(frozen=True)

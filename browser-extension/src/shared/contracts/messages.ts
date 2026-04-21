@@ -121,6 +121,9 @@ export interface AnalyzeApiResponse {
   degraded_reason?: DegradedReason | null;
   selection_metadata?: Record<string, unknown> | null;
   usage?: AnalyzeUsageMetrics | null;
+  cacheRequestAttempted?: boolean | null;
+  cacheRequestFailed?: boolean | null;
+  cacheFallbackReason?: string | null;
 }
 
 export interface CacheStatusApiResponse {

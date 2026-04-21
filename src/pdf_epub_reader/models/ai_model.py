@@ -145,6 +145,9 @@ class AIModel:
         cache_name = explicit_cache_name or active_internal_cache_name
         use_explicit_cache = explicit_cache_name is not None
         use_cache = cache_name is not None
+        cache_request_attempted = use_cache
+        cache_request_failed = False
+        cache_fallback_reason: str | None = None
 
         if use_cache:
             # system_instruction はキャッシュ作成時に埋め込み済み。
@@ -162,6 +165,8 @@ class AIModel:
             except AIAPIError as exc:
                 # キャッシュ付きリクエスト失敗 → キャッシュを内部クリアし
                 # キャッシュなしで 1 回リトライ
+                cache_request_failed = True
+                cache_fallback_reason = self._normalize_cache_fallback_reason(exc)
                 logger.warning(
                     "キャッシュ付きリクエスト失敗、キャッシュなしでリトライ: "
                     "status_code=%s cache_name=%s cache_model=%s request_model=%s message=%s",
@@ -191,7 +196,13 @@ class AIModel:
         # usage_metadata ログ出力
         self._log_usage_metadata(response)
 
-        return self._parse_response(request, response)
+        return self._parse_response(
+            request,
+            response,
+            cache_request_attempted=cache_request_attempted,
+            cache_request_failed=cache_request_failed,
+            cache_fallback_reason=cache_fallback_reason,
+        )
 
     async def list_available_models(self) -> list[ModelInfo]:
         """API 経由で利用可能なモデル一覧を取得する。
@@ -674,6 +685,10 @@ class AIModel:
     def _parse_response(
         request: AnalysisRequest,
         response: genai_types.GenerateContentResponse,
+        *,
+        cache_request_attempted: bool = False,
+        cache_request_failed: bool = False,
+        cache_fallback_reason: str | None = None,
     ) -> AnalysisResult:
         """API レスポンスを AnalysisResult に変換する。
 
@@ -696,9 +711,31 @@ class AIModel:
                 explanation=explanation,
                 raw_response=raw_text,
                 usage=usage,
+                cache_request_attempted=cache_request_attempted,
+                cache_request_failed=cache_request_failed,
+                cache_fallback_reason=cache_fallback_reason,
             )
         # カスタムプロンプトモード
-        return AnalysisResult(raw_response=raw_text, usage=usage)
+        return AnalysisResult(
+            raw_response=raw_text,
+            usage=usage,
+            cache_request_attempted=cache_request_attempted,
+            cache_request_failed=cache_request_failed,
+            cache_fallback_reason=cache_fallback_reason,
+        )
+
+    @staticmethod
+    def _normalize_cache_fallback_reason(error: AIAPIError) -> str:
+        status_code = error.status_code
+        if status_code == 400:
+            return "bad-request"
+        if status_code == 403:
+            return "permission-denied"
+        if status_code == 404:
+            return "not-found"
+        if status_code is not None:
+            return f"upstream-{status_code}"
+        return "upstream-error"
 
     @staticmethod
     def _extract_usage_metadata(

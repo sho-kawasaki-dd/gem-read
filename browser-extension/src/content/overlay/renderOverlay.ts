@@ -727,6 +727,15 @@ function shouldShowBanner(payload: OverlayPayload): boolean {
 }
 
 function buildBannerText(payload: OverlayPayload): string {
+  if (
+    payload.articleCacheState?.status === 'invalidated' &&
+    payload.articleCacheState.invalidationReason === 'remote-missing'
+  ) {
+    return (
+      payload.articleCacheState.notice ??
+      'The server-side article cache was missing, so this request completed without cache.'
+    );
+  }
   if (payload.articleCacheState?.notice) {
     return payload.articleCacheState.notice;
   }
@@ -888,6 +897,9 @@ function formatArticleCacheStatus(
     return 'Creating article cache';
   }
   if (cacheState.status === 'invalidated') {
+    if (cacheState.invalidationReason === 'remote-missing') {
+      return 'Cache missing on server; local state reset';
+    }
     return cacheState.invalidationReason
       ? `Cache invalidated: ${cacheState.invalidationReason}`
       : 'Cache invalidated';
@@ -945,6 +957,9 @@ function buildCacheImpactValue(payload: OverlayPayload): string {
   }
 
   if (cacheState.status === 'invalidated') {
+    if (cacheState.invalidationReason === 'remote-missing') {
+      return 'Fallback without cache';
+    }
     return 'Invalidated';
   }
 
@@ -979,6 +994,16 @@ function buildCacheImpactNote(payload: OverlayPayload): string {
     return (
       cacheState.notice ??
       'This article is large enough to justify automatic cache creation.'
+    );
+  }
+
+  if (
+    cacheState.status === 'invalidated' &&
+    cacheState.invalidationReason === 'remote-missing'
+  ) {
+    return (
+      cacheState.notice ??
+      'Gem Read retried without article cache after Gemini could not find the server-side cache for this tab.'
     );
   }
 

@@ -92,6 +92,7 @@ For article pages in the browser extension:
 - `Delete Cache` removes the active cache for the current tab only.
 - One article cache serves all three overlay actions (Translate, Translate + Explain, and Run Custom Prompt). Switching between them does not recreate the cache.
 - Changing output language in the popup settings does not recreate the article cache. The new language takes effect on the next analysis request.
+- If Gemini no longer has the remote article cache, Gem Read finishes the current request without cache, marks the local article cache state as invalidated, and avoids sending the same stale cache name on later requests.
 
 The cache can disappear without direct user action when:
 
@@ -99,6 +100,8 @@ The cache can disappear without direct user action when:
 - You switch to a different model
 - Gemini expires the cache TTL
 - Gem Read detects that the extracted article body hash changed
+
+When that happens during an overlay request, the overlay notice switches from a cache-created message to a cache-missing message so the UI matches the uncached fallback that actually ran.
 
 ## Token Display in the Browser Extension
 

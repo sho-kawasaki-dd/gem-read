@@ -75,6 +75,9 @@ class AnalyzeTranslateResult:
     degraded_reason: str | None = None
     selection_metadata: AnalyzeSelectionMetadata | None = None
     usage: AnalyzeUsageMetrics | None = None
+    cache_request_attempted: bool | None = None
+    cache_request_failed: bool | None = None
+    cache_fallback_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

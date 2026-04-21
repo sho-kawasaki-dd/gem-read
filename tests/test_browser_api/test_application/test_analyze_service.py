@@ -160,6 +160,9 @@ class TestAnalyzeService:
                     candidates_token_count=73,
                     total_token_count=1715,
                 ),
+                cache_request_attempted=True,
+                cache_request_failed=True,
+                cache_fallback_reason="permission-denied",
             ),
             requests=[],
         )
@@ -178,6 +181,9 @@ class TestAnalyzeService:
         assert result.raw_response == "翻訳本文\n\n---\n\n補足説明"
         assert result.usage is not None
         assert result.usage.cached_content_token_count == 1600
+        assert result.cache_request_attempted is True
+        assert result.cache_request_failed is True
+        assert result.cache_fallback_reason == "permission-denied"
         assert gateway.requests[0].include_explanation is True
 
     @pytest.mark.asyncio

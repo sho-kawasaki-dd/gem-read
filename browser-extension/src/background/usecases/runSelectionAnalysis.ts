@@ -23,11 +23,15 @@ import {
   type SelectionAnalysisSession,
 } from '../services/analysisSessionStore';
 import {
+  invalidateArticleCache,
   mergeCollectedArticleContext,
   syncArticleCacheState,
 } from '../services/articleCacheService';
 import { cropSelectionImage } from '../services/cropSelectionImage';
 import { syncPayloadTokenEstimate } from '../services/payloadTokenService';
+
+const REMOTE_MISSING_CACHE_NOTICE =
+  'The server-side article cache could not be found, so this request completed without cache.';
 
 export interface RunSelectionAnalysisOptions {
   action?: AnalysisAction;
@@ -106,8 +110,17 @@ export async function runSelectionAnalysis(
       ),
     });
 
+    const nextSession =
+      apiResponse.cacheRequestAttempted && apiResponse.cacheRequestFailed
+        ? await invalidateArticleCache(session, {
+            apiBaseUrl: resolvedRequestOptions.apiBaseUrl,
+            reason: 'remote-missing',
+            notice: REMOTE_MISSING_CACHE_NOTICE,
+          })
+        : session;
+
     await setAnalysisSession(tabId, {
-      ...session,
+      ...nextSession,
       lastAction: apiResponse.mode,
       lastModelName: resolvedRequestOptions.modelName,
       lastCustomPrompt: resolvedRequestOptions.customPrompt,
@@ -124,12 +137,12 @@ export async function runSelectionAnalysis(
       customPrompt: resolvedRequestOptions.customPrompt,
       sessionReady: true,
       selectedText: buildSelectedText(sessionItem),
-      articleContext: session.articleContext,
-      articleContextError: session.articleContextError,
-      articleCacheState: session.articleCacheState,
-      payloadTokenEstimate: session.payloadTokenEstimate,
-      payloadTokenModelName: session.payloadTokenModelName,
-      payloadTokenError: session.payloadTokenError,
+      articleContext: nextSession.articleContext,
+      articleContextError: nextSession.articleContextError,
+      articleCacheState: nextSession.articleCacheState,
+      payloadTokenEstimate: nextSession.payloadTokenEstimate,
+      payloadTokenModelName: nextSession.payloadTokenModelName,
+      payloadTokenError: nextSession.payloadTokenError,
       translatedText: apiResponse.translated_text,
       explanation: apiResponse.explanation,
       previewImageUrl: sessionItem.previewImageUrl,

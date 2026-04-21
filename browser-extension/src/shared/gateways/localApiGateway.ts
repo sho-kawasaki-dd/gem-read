@@ -65,6 +65,9 @@ interface RawAnalyzeApiResponse {
   degraded_reason?: DegradedReason | null;
   selection_metadata?: Record<string, unknown> | null;
   usage?: RawAnalyzeUsageApiResponse | null;
+  cache_request_attempted?: boolean | null;
+  cache_request_failed?: boolean | null;
+  cache_fallback_reason?: string | null;
 }
 
 interface RawAnalyzeUsageApiResponse {
@@ -197,6 +200,9 @@ export async function sendAnalyzeTranslateRequest(
     degraded_reason: payload.degraded_reason,
     selection_metadata: payload.selection_metadata,
     usage: mapAnalyzeUsage(payload.usage),
+    cacheRequestAttempted: payload.cache_request_attempted,
+    cacheRequestFailed: payload.cache_request_failed,
+    cacheFallbackReason: payload.cache_fallback_reason,
   };
 }
 

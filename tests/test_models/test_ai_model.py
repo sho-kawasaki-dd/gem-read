@@ -958,6 +958,9 @@ class TestAnalyzeWithCache:
         assert config.cached_content == "caches/test-123"
         # Gemini API はキャッシュ付きリクエストで system_instruction を禁じる
         assert config.system_instruction is None
+        assert result.cache_request_attempted is True
+        assert result.cache_request_failed is False
+        assert result.cache_fallback_reason is None
 
     @pytest.mark.asyncio
     async def test_analyze_model_mismatch_no_cache(self) -> None:
@@ -1006,6 +1009,9 @@ class TestAnalyzeWithCache:
             result = await model.analyze(request)
 
         assert result.translated_text == "fallback result"
+        assert result.cache_request_attempted is True
+        assert result.cache_request_failed is True
+        assert result.cache_fallback_reason == "bad-request"
         # キャッシュ状態がクリアされている
         assert model._cache_name is None
         assert model._cache_model is None
@@ -1060,6 +1066,9 @@ class TestAnalyzeWithCache:
             )
 
         assert result.translated_text == "fallback result"
+        assert result.cache_request_attempted is True
+        assert result.cache_request_failed is True
+        assert result.cache_fallback_reason == "bad-request"
         assert model._cache_name == "caches/internal-cache"
         assert model._cache_model == "models/gemini-test"
 

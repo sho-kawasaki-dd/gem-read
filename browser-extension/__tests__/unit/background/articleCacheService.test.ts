@@ -399,6 +399,40 @@ describe('articleCacheService', () => {
     );
   });
 
+  it('invalidates a remote-missing cache locally without calling delete', async () => {
+    const session = await invalidateArticleCache(
+      {
+        items: [],
+        modelOptions: [],
+        lastAction: 'translation',
+        articleCacheState: {
+          status: 'active',
+          cacheName: 'cachedContents/article-1',
+          modelName: 'gemini-2.5-flash',
+          tokenCount: 2048,
+          ttlSeconds: 3600,
+        },
+      },
+      {
+        apiBaseUrl: 'http://127.0.0.1:9000',
+        reason: 'remote-missing',
+        notice:
+          'The server-side article cache could not be found, so this request completed without cache.',
+      }
+    );
+
+    expect(deleteContextCacheMock).not.toHaveBeenCalled();
+    expect(session.articleCacheState).toEqual(
+      expect.objectContaining({
+        status: 'invalidated',
+        invalidationReason: 'remote-missing',
+        cacheName: undefined,
+        tokenCount: undefined,
+        ttlSeconds: undefined,
+      })
+    );
+  });
+
   it('deletes the remote cache when article extraction fails for an active cache', async () => {
     deleteContextCacheMock.mockResolvedValue(undefined);
 

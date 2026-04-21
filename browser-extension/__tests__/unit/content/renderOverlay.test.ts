@@ -248,6 +248,37 @@ describe('renderOverlay', () => {
     ).toBe(false);
   });
 
+  it('shows remote-missing cache fallback copy that matches the invalidated state', () => {
+    renderOverlay({
+      status: 'success',
+      action: 'translation',
+      sessionItems: [],
+      maxSessionItems: 10,
+      sessionReady: true,
+      selectedText: 'Selected paragraph',
+      translatedText: '翻訳結果',
+      rawResponse: '翻訳結果',
+      articleCacheState: {
+        status: 'invalidated',
+        invalidationReason: 'remote-missing',
+        notice:
+          'The server-side article cache could not be found, so this request completed without cache.',
+        tokenEstimate: 1400,
+      },
+    });
+
+    const root = getShadowRoot();
+    expect(root.querySelector('.banner-box')?.textContent).toContain(
+      'completed without cache'
+    );
+    expect(root.querySelector('.article-pill')?.textContent).toContain(
+      'Cache missing on server'
+    );
+    expect(root.querySelector('.token-grid')?.textContent).toContain(
+      'Fallback without cache'
+    );
+  });
+
   it('keeps a manual tab choice across ordinary rerenders', () => {
     renderOverlay({
       status: 'loading',
