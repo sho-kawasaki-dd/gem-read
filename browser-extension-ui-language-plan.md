@@ -32,6 +32,7 @@
 - Chrome Web Store 表示文言の多言語化
 - 3 言語目以降の対応
 - `system` 追従モードの追加
+- すでに開いている overlay のリアルタイム言語切り替え（言語変更後、次回 overlay 起動時またはページリロード時から反映されるものとする）
 
 `manifest.json` の静的文言まで多言語化する場合は `_locales/` と manifest i18n を別途導入する必要があるが、今回は runtime UI の手動切り替えを優先する。
 
@@ -140,6 +141,7 @@ export type UiLanguage = 'ja' | 'en';
 export interface ExtensionSettings {
   apiBaseUrl: string;
   defaultModel: string;
+  sharedSystemPrompt: string;
   lastKnownModels: string[];
   uiLanguage: UiLanguage;
   articleCache: ArticleCacheSettings;
@@ -149,6 +151,7 @@ export interface ExtensionSettings {
 export interface ExtensionSettingsInput {
   apiBaseUrl?: string | null;
   defaultModel?: string | null;
+  sharedSystemPrompt?: string | null;
   lastKnownModels?: readonly string[] | null;
   uiLanguage?: UiLanguage | null;
   articleCache?: Partial<ArticleCacheSettings> | null;
@@ -158,13 +161,14 @@ export interface ExtensionSettingsInput {
 
 ### default 値の扱い
 
-`DEFAULT_EXTENSION_SETTINGS` を完全な静的定数として維持すると locale 依存 default を表現しにくい。
-そのため、次のどちらかの方式を採る。
+方式 B を採用する。
 
-- 方式 A: `getDefaultExtensionSettings(uiLanguage?: UiLanguage)` のような factory を導入する
-- 方式 B: `mergeExtensionSettings()` は静的 default を使い、`loadExtensionSettings()` が `uiLanguage` 欠落時だけ locale を注入する
+- `DEFAULT_EXTENSION_SETTINGS.uiLanguage` は `'en'` 固定とする
+- `mergeExtensionSettings()` は `uiLanguage` の `null` / `undefined` / 不正値を `'en'` に正規化する（他フィールドと同じパターン）
+- `loadExtensionSettings()` は `mergeExtensionSettings()` 適用後に、storage に `uiLanguage` が保存されていなかった場合のみ `detectDefaultUiLanguage()` で上書きする
+- `loadExtensionSettings()` が locale 注入を行う唯一の場所であり、`mergeExtensionSettings()` は locale 検出を行わない
 
-今回の実装では、既存の normalize / merge の責務を大きく崩さないため、方式 B を第一候補とする。
+この方針により、テスト環境や `chrome.i18n` が使えない環境でも `'en'` として安全に動作する。また、`saveExtensionSettings()` / `patchExtensionSettings()` が `uiLanguage` を無言で落とす危険を防ぐ。
 
 ## shared i18n レイヤー設計
 
@@ -176,14 +180,26 @@ export interface ExtensionSettingsInput {
 
 ### `uiLanguage.ts` の責務
 
-- `UiLanguage` 型定義
 - locale string を `ja` / `en` へ正規化する関数
 - `chrome.i18n.getUILanguage()` を既定設定へ変換する関数
+
+`UiLanguage` 型は `phase0.ts` に定義し、`uiLanguage.ts` が import する。
+`phase0.ts` は外部依存ゼロを維持し、`i18n/` が `phase0.ts` に依存する方向を保つ。
+
+import 方向:
+
+```
+phase0.ts           ← UiLanguage 型定義、mergeExtensionSettings で uiLanguage を正規化
+  ↑ import
+i18n/uiLanguage.ts  ← normalizeUiLanguage(), detectDefaultUiLanguage()
+  ↑ import
+i18n/translator.ts  ← t()
+```
 
 想定 API:
 
 ```ts
-export type UiLanguage = 'ja' | 'en';
+import type { UiLanguage } from '../config/phase0';
 
 export function normalizeUiLanguage(
   value: string | null | undefined
@@ -195,22 +211,29 @@ export function detectDefaultUiLanguage(): UiLanguage;
 
 - ja / en の辞書本体を保持する
 - popup / overlay / context menu / error message 用キーをまとめる
+- TypeScript の `satisfies Record<UiLanguage, MessageDictionary>` パターン等を用いて、言語間の翻訳抜け漏れ（キーの不足）をコンパイル時に検知できる静的型定義を構成する
 
 想定イメージ:
 
 ```ts
+type MessageDictionary = {
+  popupTitle: string;
+  popupSave: string;
+  contextMenuTranslate: string;
+};
+
 export const UI_MESSAGES = {
-  ja: {
-    popupTitle: 'Local Bridge',
-    popupSave: '保存',
-    contextMenuTranslate: 'Gem Read で翻訳',
-  },
   en: {
     popupTitle: 'Local Bridge',
     popupSave: 'Save',
     contextMenuTranslate: 'Translate with Gem Read',
   },
-} as const;
+  ja: {
+    popupTitle: 'Local Bridge',
+    popupSave: '保存',
+    contextMenuTranslate: 'Gem Read で翻訳',
+  },
+} satisfies Record<UiLanguage, MessageDictionary>;
 ```
 
 ### `translator.ts` の責務
@@ -290,7 +313,22 @@ export function t(
 
 - content runtime 単独で locale 判定しない
 - background が settings を読んで payload に含めることで、overlay の表示言語を常に保存設定へ一致させる
-- 現在の `buildOverlayPayload()` と `buildEmptyOverlayPayload()` が言語注入の中心になる
+- `buildOverlayPayload()` と `buildEmptyOverlayPayload()` の `options` 引数に `uiLanguage` を追加し、呼び出し元が `settings.uiLanguage` を渡す形にする
+
+  ```ts
+  // options 型への追加
+  options: {
+    status?: OverlayPayload['status'];
+    error?: string;
+    launcherOnly?: boolean;
+    preserveDrafts?: boolean;
+    uiLanguage?: UiLanguage;  // 追加
+  }
+  ```
+
+  呼び出し箇所は `openOverlaySession.ts`、`updateSelectionSession.ts`、`entry.ts` 内の複数箇所に及ぶ。すべての呼び出し元で `settings.uiLanguage` を渡す。session に `uiLanguage` を持たせる方式は session の責務を広げすぎるため採用しない。`buildOverlayPayload()` 内部で settings を再読みする方式は非同期化が必要でコストが増すため採用しない。
+
+- `overlayActions.ts` のエラー文言は、`uiLanguage` が必要な関数に `payload: OverlayPayload` または `uiLanguage: UiLanguage` を直接引数として渡す形で対応する。モジュール変数で保持する方式は複数タブ時に言語が混線する危険があるため採用しない
 
 ## context menu 変更計画
 
@@ -301,8 +339,11 @@ export function t(
 
 ### context menu 実施内容
 
-- `ensurePhase0ContextMenu()` が `uiLanguage` を参照して menu title を生成するようにする
+- `ensurePhase0ContextMenu()` に `uiLanguage: UiLanguage` 引数を追加して menu title を生成するようにする
+  - 内部で `loadExtensionSettings()` を呼ぶ方式は非同期依存が重複するため採用しない
+  - install / startup / storage change のすべての経路で直前に settings を読むため、その値を引数として渡す
 - install / startup 時だけでなく、`uiLanguage` 変更時にも context menu を再生成する
+  - 対象は translation 用メニューと自由矩形開始メニューの両方とする
 
 ### 反映方法
 
@@ -318,8 +359,23 @@ export function t(
 
 1. popup が `saveExtensionSettings()` で `uiLanguage` を保存する
 2. background が `chrome.storage.onChanged` で `gem-read.settings` 変更を受ける
-3. `uiLanguage` に差分があれば `ensurePhase0ContextMenu()` を再実行する
+3. `uiLanguage` に差分があれば `ensurePhase0ContextMenu(next.uiLanguage)` を再実行する
 4. 以後の右クリックメニューは新しい言語で表示される
+
+`uiLanguage` 変化の差分検出は次のように行う。
+
+```ts
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  const settingsChange = changes[EXTENSION_SETTINGS_STORAGE_KEY];
+  if (!settingsChange) return;
+  const prev = settingsChange.oldValue as ExtensionSettings | undefined;
+  const next = settingsChange.newValue as ExtensionSettings | undefined;
+  if (prev?.uiLanguage !== next?.uiLanguage && next) {
+    void ensurePhase0ContextMenu(next.uiLanguage ?? detectDefaultUiLanguage());
+  }
+});
+```
 
 ## 実行時エラーメッセージ変更計画
 
@@ -329,6 +385,8 @@ export function t(
 - background service が throw する UI 向け error
 - content 側で即時表示する validation error
 - selection 取得失敗などのユーザー向け案内
+
+今回の Phase では、上記 4 類型をすべて辞書化の対象とし、Phase 4 へ棚卸しを持ち越さない。
 
 ### エラーメッセージ基本方針
 
@@ -350,6 +408,7 @@ export function t(
 ### 実装上のルール
 
 - UI へ直接出す既知エラーは `t(language, key)` で組み立てる
+- Background 側で発生した UI 向けエラー（usecase が overlay へ返すエラーなど）は、Background 自身が設定から保持している `uiLanguage` を用いて Background 内で翻訳済み文字列として構築し、Content (Overlay) 側へ文字列として渡す境界設計を基本とする
 - 想定外エラーは `toErrorMessage()` 系 helper で detail を連結する
 - 低レベル層で locale を持ち回る必要がある場合は、文字列を throw するより UI key を返す設計も検討する
 
@@ -389,19 +448,21 @@ export function t(
 
 ### background
 
-- `browser-extension/src/background/entry.ts`
-- `browser-extension/src/background/menus/phase0ContextMenu.ts`
+- `browser-extension/src/background/entry.ts` — `chrome.storage.onChanged` リスナー追加と、`runSelectionAnalysis` 完了後の `buildOverlayPayload()` 呼び出し（L512 付近）への `uiLanguage` 注入
+- `browser-extension/src/background/menus/phase0ContextMenu.ts` — `ensurePhase0ContextMenu(uiLanguage)` 引数追加
 - `browser-extension/src/background/usecases/openOverlaySession.ts`
-- `browser-extension/src/background/usecases/updateSelectionSession.ts`
+- `browser-extension/src/background/usecases/updateSelectionSession.ts` — `buildOverlayPayload()` / `buildEmptyOverlayPayload()` の `options` 拡張
 - `browser-extension/src/background/usecases/runSelectionAnalysis.ts`
 
 ### content
 
 - `browser-extension/src/content/overlay/renderOverlay.ts`
 - `browser-extension/src/content/overlay/overlayActions.ts`
-- `browser-extension/src/content/selection/snapshotStore.ts`
+- `browser-extension/src/content/selection/snapshotStore.ts` — UI 向けエラー文言があれば辞書参照へ移行、なければ変更不要（Phase 1 の棚卸しで確定する）
 
 ### 追加確認対象
+
+これら 3 ファイルは Phase 1 完了前に UI 向け文言の有無を棚卸しし、変更が必要かどうかを確定する。UI 向け文言が見つかった場合は、その場で今回のローカライズ対象に含める。
 
 - `browser-extension/src/background/services/cropSelectionImage.ts`
 - `browser-extension/src/background/services/markdownExportService.ts`
@@ -411,10 +472,12 @@ export function t(
 
 ### Phase 1: shared 基盤
 
-- `UiLanguage` 型と locale 正規化関数を追加
-- settings schema に `uiLanguage` を追加
-- legacy settings からの補完を追加
-- 文言辞書と translator を追加
+- `phase0.ts` に `UiLanguage` 型を追加し、`DEFAULT_EXTENSION_SETTINGS.uiLanguage` を `'en'` で追加する
+- `mergeExtensionSettings()` に `uiLanguage` の正規化ルール（`null` / `undefined` / 不正値 → `'en'`）を追加する
+- `settingsStorage.ts` の `loadExtensionSettings()` に locale 注入ロジックを追加する（`uiLanguage` が storage 未保存の場合のみ `detectDefaultUiLanguage()` で補完）
+- `i18n/uiLanguage.ts` に `normalizeUiLanguage()` と `detectDefaultUiLanguage()` を追加する（`UiLanguage` 型は `phase0.ts` から import）
+- 文言辞書 `i18n/messages.ts` と translator `i18n/translator.ts` を追加する
+- 「追加確認対象」3 ファイル（`cropSelectionImage.ts`、`markdownExportService.ts`、`analysisSessionStore.ts`）の UI 向け文言有無を棚卸しし、Phase 4 の対象に含めるか確定する
 
 ### Phase 2: popup
 
