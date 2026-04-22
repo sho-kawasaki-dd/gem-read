@@ -12,6 +12,10 @@ export function isRectangleSelectionActive(): boolean {
   return rectangleSelectionActive;
 }
 
+/**
+ * free-rectangle 選択 UI は content runtime が一時的に page 上へ被せる。
+ * background は結果の viewport rect だけを受け取り、実際の screenshot/crop は権限側で行う。
+ */
 export async function startRectangleSelection(
   triggerSource: RectangleSelectionTriggerSource
 ): Promise<SelectionCaptureResponse> {
@@ -120,6 +124,7 @@ export async function startRectangleSelection(
       finish({
         ok: true,
         payload: {
+          // rectangle mode は image-first なので text は空で返し、後段の payload shaping 側でそのまま扱えるようにする。
           text: '',
           rect: nextRect,
           viewportWidth: window.innerWidth,
@@ -177,6 +182,7 @@ function normalizeRectangle(
   endX: number,
   endY: number
 ): SelectionRect {
+  // drag 方向に依存せず、常に左上基準の viewport rect へ正規化する。
   const left = Math.min(startX, endX);
   const top = Math.min(startY, endY);
   const right = Math.max(startX, endX);

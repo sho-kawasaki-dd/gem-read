@@ -1,5 +1,9 @@
 export type OverlayTabId = 'workspace' | 'gemini';
 
+/**
+ * overlay shortcut は textarea や input 編集を壊さないことを優先する。
+ * そのため、まず editable target 上かどうかを shadow DOM を含めて判定する。
+ */
 export function isEditableTarget(event: KeyboardEvent): boolean {
   for (const entry of event.composedPath()) {
     if (!(entry instanceof HTMLElement)) {
@@ -43,6 +47,7 @@ export function resolveKeyboardOverlayTab(
   focusedTabButton: HTMLButtonElement,
   key: string
 ): OverlayTabId | null {
+  // disabled tab を飛ばして roving tabindex を維持し、ARIA tab として自然な移動に寄せる。
   const enabledButtons = Array.from(
     root.querySelectorAll<HTMLButtonElement>('.panel-tab[data-tab-id]')
   ).filter((button) => !button.disabled);

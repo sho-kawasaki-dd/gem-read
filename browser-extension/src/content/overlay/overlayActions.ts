@@ -15,6 +15,10 @@ import type {
 import { canAppendSelectionBatchItem } from '../selection/selectionBatchController';
 import { collectSelection } from '../selection/snapshotStore';
 
+/**
+ * overlay の button handler は privileged 処理を自前で持たず、background へ message を送る薄い adapter に留める。
+ * こうしておくと UI 側は DOM エラー表示に集中でき、session mutation や Local API 呼び出しは background へ閉じ込められる。
+ */
 export async function runOverlayAction(
   action: AnalysisAction,
   modelName: string,
@@ -189,6 +193,7 @@ function buildExportMarkdownPayload(
 ): ExportMarkdownPayload {
   const latestSelection = sessionItems.at(-1)?.selection;
 
+  // export は overlay の表示内容を再構成せず、その時点の payload と batch snapshot をそのまま background へ渡す。
   return {
     action: payload.action ?? 'translation',
     modelName: payload.modelName,

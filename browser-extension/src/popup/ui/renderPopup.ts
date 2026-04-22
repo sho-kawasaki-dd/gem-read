@@ -23,12 +23,20 @@ import {
   saveExtensionSettings,
 } from '../../shared/storage/settingsStorage';
 
+/**
+ * Popup は短命な Document 上で動くので、表示状態は永続設定と直近の疎通結果から毎回組み立て直す。
+ * overlay のような long-lived UI state は持たず、settings と diagnostics の入口に責務を絞る。
+ */
 interface PopupViewState {
   settings: ExtensionSettings;
   status: PopupStatusPayload;
   models: ModelOption[];
 }
 
+/**
+ * DOM query の散在を防ぐための参照束。
+ * popup の再描画はしない前提なので、初回 mount 後はこの refs を単一の操作窓口として使う。
+ */
 interface PopupRefs {
   form: HTMLFormElement;
   apiInput: HTMLInputElement;
@@ -467,6 +475,7 @@ export async function renderPopup(documentRef: Document): Promise<void> {
       modelSource: 'storage_fallback',
       degradedReason: 'unknown',
     },
+    // Local API がまだ未確認でも、前回取得した model 候補があれば入力補完には使える。
     models: settings.lastKnownModels.map((modelId) => ({
       modelId,
       displayName: modelId,
@@ -579,6 +588,10 @@ export async function renderPopup(documentRef: Document): Promise<void> {
   await refreshPopupState(state, refs, state.settings.apiBaseUrl, true);
 }
 
+/**
+ * Popup markup を組み立てた直後に必要な DOM 参照を集める。
+ * ここで欠ける場合は部分的に動かさず fail-closed にして、保存や接続確認だけ半端に動く状態を避ける。
+ */
 function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
   const form = appRoot.querySelector<HTMLFormElement>(
     '[data-role="settings-form"]'
@@ -716,6 +729,7 @@ async function refreshPopupState(
     };
     state.models = fetchedModels.length > 0 ? fetchedModels : fallbackModels;
 
+    // 到達できた model catalog は次回 offline 時の候補にも使うため、成功時だけ storage へ戻す。
     if (fetchedModels.length > 0 && persistFetchedModels) {
       state.settings = await patchExtensionSettings({
         lastKnownModels: fetchedModels.map((model) => model.modelId),
@@ -723,6 +737,7 @@ async function refreshPopupState(
     }
 
     if (fetchedModels.length === 0 && fallbackModels.length > 0) {
+      // popup は degraded でも手入力や cached model による設定編集を止めない。
       state.status.modelSource = 'storage_fallback';
       state.status.detail =
         state.status.detail ?? 'Using cached models from popup storage.';
@@ -750,6 +765,10 @@ async function refreshPopupState(
   }
 }
 
+/**
+ * 永続 settings と直近 bootstrap 結果を DOM へ反映する唯一の入口。
+ * popup 内で個別更新を増やしすぎないことで、reachable/degraded/offline の切替を追いやすくする。
+ */
 function syncView(refs: PopupRefs, state: PopupViewState): void {
   refs.statusBadge.textContent = formatStatusBadge(
     state.status.connectionStatus
@@ -918,6 +937,7 @@ function renderDebugCacheList(
         const result = await listBrowserExtensionCaches(
           state.settings.apiBaseUrl
         );
+        // 削除後は server-side 状態を再取得し、popup 内の list を再構築して stale 表示を残さない。
         renderDebugCacheList(outerRefs, result.items, state, outerRefs);
         setMessage(outerRefs, `Deleted cache: ${cacheName}`, false);
       } catch (error) {

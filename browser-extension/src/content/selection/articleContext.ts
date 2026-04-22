@@ -30,6 +30,10 @@ const FNV_PRIME = 0x100000001b3n;
 // 広告挿入など動的 DOM 変化の影響を受けにくくするため、先頭部分のみを対象とする。
 const BODY_HASH_PREFIX_LENGTH = 2000;
 
+/**
+ * article extraction は Readability を第一候補にし、失敗時だけ DOM fallback へ落とす。
+ * overlay から見たいのは厳密な全文 parser ではなく、cache 判断に十分な安定した article context である。
+ */
 export function collectArticleContext(
   documentRef: Document = document
 ): ArticleContextResponse {
@@ -192,6 +196,7 @@ function scoreCandidate(element: Element, bodyText: string): number {
   );
   const linkDensity = bodyText.length === 0 ? 1 : linkTextLength / bodyText.length;
 
+  // fallback は本文量を優先しつつ、リンク密度が高い nav/listing を候補から落としやすくする。
   return bodyText.length + blockCount * 80 - Math.round(linkDensity * 400);
 }
 

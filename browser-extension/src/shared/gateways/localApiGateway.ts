@@ -230,6 +230,7 @@ function buildAnalyzeRequestBody(
   }
 
   const images: string[] = [];
+  // image は includeImage=true かつ preview がある item だけを疎に詰め、metadata 側で元 item との対応を持つ。
   const metadataItems = sessionItems.map((item, order) => {
     const shouldIncludeImage =
       item.includeImage && Boolean(item.previewImageUrl);
@@ -373,6 +374,7 @@ export async function countTokens(
   text: string,
   options: TokenCountRequestOptions = {}
 ): Promise<TokenCountApiResponse> {
+  // token count は analyze 実行の前提条件ではなく、overlay の見積り表示用に独立 endpoint 化している。
   const apiBaseUrl = options.apiBaseUrl ?? PHASE0_API_BASE_URL;
   const response = await fetch(`${apiBaseUrl}/tokens/count`, {
     method: 'POST',
@@ -404,6 +406,7 @@ export async function createContextCache(
   fullText: string,
   options: CreateCacheRequestOptions = {}
 ): Promise<CacheStatusApiResponse> {
+  // article cache 作成は analyze とは切り分け、overlay が cache lifecycle を個別に扱えるようにする。
   const apiBaseUrl = options.apiBaseUrl ?? PHASE0_API_BASE_URL;
   const requestBody: RawCreateCacheRequestBody = {
     full_text: fullText,
@@ -483,6 +486,7 @@ function mapAnalyzeUsage(
 export async function listBrowserExtensionCaches(
   apiBaseUrl: string = PHASE0_API_BASE_URL
 ): Promise<CacheListApiResponse> {
+  // popup debug view は cache の existence を見るだけなので、一覧取得も gateway で response shape を揃える。
   const response = await fetch(`${apiBaseUrl}/cache/list`);
 
   if (!response.ok) {

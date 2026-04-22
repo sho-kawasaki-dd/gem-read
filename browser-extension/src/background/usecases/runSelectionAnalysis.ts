@@ -44,6 +44,7 @@ export interface RunSelectionAnalysisOptions {
 /**
  * Phase 1 の解析フローを background 側で束ねる use case。
  * 初回実行では selection/crop/session 作成まで進め、overlay からの再実行では cached session を再利用する。
+ * Content からは action と補助入力だけを受け取り、正準 session の解決と Local API 送信はここで完結させる。
  */
 export async function runSelectionAnalysis(
   tab: chrome.tabs.Tab,
@@ -193,6 +194,7 @@ async function resolveAnalysisSession(
   if (reuseCachedSession) {
     const session = await getCachedSession(tabId);
     if (session?.items.length) {
+      // rerun 時は selection batch 自体は再利用しつつ、article context と cache 状態だけは最新ページ文脈へ寄せ直す。
       const articleContextResult = await collectArticleContext(tabId).catch(
         (error) => ({
           ok: false as const,
@@ -305,6 +307,7 @@ async function createFreshSession(
     payloadTokenModelName: cachedSession?.payloadTokenModelName,
     payloadTokenError: cachedSession?.payloadTokenError,
   };
+  // fresh selection へ差し替えても article cache と token estimate の文脈は引き継ぎ、次の sync で再評価する。
   const cacheAwareSession = await syncArticleCacheState(session, {
     apiBaseUrl,
     modelName,
@@ -351,6 +354,11 @@ async function getCachedSession(
   };
 }
 
+/**
+ * store から取り出した session を defensive copy にして返す。
+ * overlay payload 組み立て側で配列や nested object を触っても、background store 本体を汚染しないため。
+ */
+
 function getRequiredSessionItem(session: SelectionAnalysisSession) {
   const item = getLatestSelectionItem(session);
   if (!item) {
@@ -380,6 +388,7 @@ function resolveExplicitCacheName(
   articleCacheState: SelectionAnalysisSession['articleCacheState'],
   modelName: string | undefined
 ): string | undefined {
+  // remote cache は model 固有なので、選択中 model が一致するときだけ明示的に再利用する。
   if (
     articleCacheState?.status !== 'active' ||
     !articleCacheState.cacheName ||

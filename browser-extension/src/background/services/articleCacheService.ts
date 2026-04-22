@@ -30,6 +30,10 @@ export interface InvalidateArticleCacheOptions {
   notice: string;
 }
 
+/**
+ * article context と現在の model から、tab session に紐づく article cache 状態を再評価する。
+ * ここでは cache の有無だけでなく、無効化を今すぐ行うか次回同期へ遅延させるかも一元的に判断する。
+ */
 export async function syncArticleCacheState(
   session: SelectionAnalysisSession,
   options: SyncArticleCacheOptions
@@ -439,6 +443,7 @@ async function invalidateTrackedState(
   }
 
   if (options.reason === 'remote-missing') {
+    // analyze 応答で remote missing が分かった場合は、すでに backend 側で cache 不在が確定しているので delete を再試行しない。
     return {
       ...state,
       status: 'invalidated',
@@ -526,6 +531,7 @@ function refreshTrackedCacheTtl(
   const remainingMs = expireTimeMs - new Date(now).getTime();
 
   if (remainingMs <= 0) {
+    // local countdown で期限切れが分かった時点で stale cache 名を落とし、次回 analyze が古い cache を送らないようにする。
     return bindTrackedArticleState(
       {
         ...state,

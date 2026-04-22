@@ -5,6 +5,7 @@ import type {
 } from '../../shared/contracts/messages';
 
 // Context menu 起動時には live Selection が消えていることがあるため、直近 snapshot を保持しておく。
+// ただし canonical session は background 側にあり、ここでは DOM 由来の一時 snapshot しか持たない。
 let lastSelectionSnapshot: SelectionCapturePayload | null = null;
 
 export interface CollectSelectionOptions {
@@ -84,6 +85,10 @@ function handleSelectionActivity(): void {
   }
 }
 
+/**
+ * 現在の live selection から、crop と metadata 送信に必要な最小 snapshot を作る。
+ * DOM Range はあとで再取得できない前提なので、必要な viewport 座標と文脈をここで固める。
+ */
 function buildSelectionSnapshot(
   fallbackText?: string
 ): SelectionCapturePayload | null {

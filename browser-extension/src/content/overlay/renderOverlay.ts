@@ -38,6 +38,7 @@ import {
 const OVERLAY_HOST_ID = 'gem-read-phase0-overlay-host';
 
 // minimize 状態と draft 入力は再描画を跨いで維持したいので module state に置く。
+// これは overlay 表示専用の UI state であり、selection batch の canonical copy ではない。
 let isOverlayMinimized = false;
 let draftModelName = '';
 let draftCustomPrompt = '';
@@ -58,6 +59,7 @@ export function renderOverlay(payload: OverlayPayload): void {
     isOverlayMinimized = payload.launcherOnly;
   }
 
+  // background session をそのまま握り続けず、content 側では描画用の mirror を毎回同期し直す。
   const sessionItems = syncSelectionBatch(payload.sessionItems);
   const maxSessionItems =
     payload.maxSessionItems ?? MAX_SELECTION_SESSION_ITEMS;
@@ -203,6 +205,7 @@ export function renderOverlay(payload: OverlayPayload): void {
     !geminiPanel ||
     !geminiEmptyState
   ) {
+    // 部分的に壊れた DOM を相手に続行すると event binding が不整合になるため、描画を fail-closed にする。
     return;
   }
 
@@ -635,6 +638,7 @@ function setActiveOverlayTab(
     return;
   }
 
+  // tab 切替も payload からの全再描画で揃え、差分 DOM 更新ロジックを増やさない。
   renderOverlay(currentOverlayPayload);
   if (options.focus) {
     focusOverlayTabButton(tabId);

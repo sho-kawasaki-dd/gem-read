@@ -19,6 +19,10 @@ This section explains how the application is structured and which diagrams shoul
 
 1. [docs/developer/packt-cache-notes.md](docs/developer/packt-cache-notes.md)
 
+## Implementation Plans
+
+1. [docs/developer/browser-extension-commenting-plan.md](docs/developer/browser-extension-commenting-plan.md)
+
 ## Diagrams
 
 1. [docs/developer/diagrams/system-overview.md](docs/developer/diagrams/system-overview.md)

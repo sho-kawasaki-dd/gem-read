@@ -26,6 +26,7 @@ import {
 /**
  * Content runtime は DOM と overlay の owner であり、browser API とは直接つながない。
  * 背景権限が要る処理は background へ委譲し、content 側は選択状態と UI の同期に集中する。
+ * この entry は page 上の listener 登録だけを担当し、実際の選択取得や overlay 更新は下位モジュールへ委譲する。
  */
 export function registerContentRuntime(): void {
   console.log('Gem Read Content Script Loaded');
@@ -48,6 +49,7 @@ export function registerContentRuntime(): void {
       }
 
       if (message.type === 'phase0.renderOverlay') {
+        // overlay は background session の mirror を描画するので、render 前に batch のローカル写像を揃える。
         syncSelectionBatch(message.payload.sessionItems);
         renderOverlay(message.payload);
       }
@@ -178,5 +180,6 @@ async function handleBeginRectangleSelection(
 }
 
 export function clearContentSelectionBatch(): void {
+  // canonical session は background 側で消えるが、content に残る mirror も明示的に空にして再描画ずれを防ぐ。
   clearSelectionBatch();
 }

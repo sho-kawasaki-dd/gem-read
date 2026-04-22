@@ -9,6 +9,10 @@ export interface SyncPayloadTokenOptions {
   modelName?: string;
 }
 
+/**
+ * 現在の selection batch から analyze request の概算 token 数を付与する。
+ * これは UX 用の補助情報であり、見積り失敗で解析フロー全体を止めない。
+ */
 export async function syncPayloadTokenEstimate(
   session: SelectionAnalysisSession,
   options: SyncPayloadTokenOptions
@@ -19,6 +23,7 @@ export async function syncPayloadTokenEstimate(
   const batchText = buildAnalyzeTextFromSessionItems(session.items);
 
   if (!batchText) {
+    // image-only batch など text 本体が空のときは estimate を消し、誤解を招く 0 件表示を避ける。
     return {
       ...session,
       payloadTokenEstimate: undefined,

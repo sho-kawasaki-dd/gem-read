@@ -124,6 +124,10 @@ const MATH_DELIMITERS = [
   { left: '\\(', right: '\\)', display: false },
 ];
 
+/**
+ * Gemini の text response は HTML として信用せず、Markdown parse -> sanitize -> KaTeX の順で描画する。
+ * どこかで失敗しても overlay 全体を壊さず、plain text へ戻すのが責務。
+ */
 export function renderRichText(container: HTMLElement, sourceText: string): void {
   container.classList.add('rich-text');
 
@@ -139,6 +143,7 @@ export function renderRichText(container: HTMLElement, sourceText: string): void
       breaks: true,
       gfm: true,
     }) as string;
+    // AI 応答をそのまま innerHTML に入れず、許可済み HTML だけへ落としてから math render へ渡す。
     const sanitizedHtml = DOMPurify.sanitize(html, {
       USE_PROFILES: { html: true },
     }) as string;

@@ -20,6 +20,7 @@ export async function loadExtensionSettings(): Promise<ExtensionSettings> {
 export async function saveExtensionSettings(
   settings: ExtensionSettingsInput
 ): Promise<ExtensionSettings> {
+  // 永続化前に normalize して、popup と background が常に同じ完全形を読むようにする。
   const normalizedSettings = mergeExtensionSettings(settings);
   await setInStorage(EXTENSION_SETTINGS_STORAGE_KEY, normalizedSettings);
   return normalizedSettings;
@@ -71,6 +72,7 @@ function getFromStorage<T>(key: string): Promise<T | undefined> {
 }
 
 function setInStorage<T>(key: string, value: T): Promise<void> {
+  // storage API の callback 形を Promise に閉じ込め、呼び出し側では入出力の正規化だけへ集中させる。
   return new Promise((resolve, reject) => {
     chrome.storage.local.set({ [key]: value }, () => {
       const error = chrome.runtime.lastError;

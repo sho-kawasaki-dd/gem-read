@@ -23,6 +23,10 @@ export interface SelectionAnalysisSession {
 const SESSION_STORAGE_KEY_PREFIX = 'gem-read.analysis-session.';
 const sessionStore = new Map<number, SelectionAnalysisSession>();
 
+/**
+ * Background が所有する tab-scoped session を返す。
+ * in-memory cache と chrome.storage.session を併用して、service worker 再起動後も overlay 再開に必要な文脈を残す。
+ */
 export async function getAnalysisSession(
   tabId: number
 ): Promise<SelectionAnalysisSession | undefined> {
@@ -72,6 +76,7 @@ function getSessionStorageKey(tabId: number): string {
 function cloneSession(
   session: SelectionAnalysisSession
 ): SelectionAnalysisSession {
+  // nested object を都度複製し、caller 側の一時的な整形や overlay payload 生成が store 本体へ波及しないようにする。
   return {
     ...session,
     items: session.items.map((item) => ({

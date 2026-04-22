@@ -8,6 +8,7 @@ import type { SelectionCapturePayload } from '../../shared/contracts/messages';
 /**
  * viewport 座標の selection を screenshot bitmap に合わせて crop/resize し、
  * Local API へ送る補助画像を browser 側で前処理する。
+ * こうしておくと Python 側はブラウザ依存の座標補正を知らずに済み、送信 payload も小さく保てる。
  */
 export async function cropSelectionImage(
   screenshotDataUrl: string,
@@ -109,5 +110,6 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {
+  // selection が viewport 外へ少しはみ出しても、crop 自体は安全に成立する範囲へ丸める。
   return Math.min(Math.max(value, minimum), maximum);
 }

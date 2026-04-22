@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 
+// Event target ごとの add/remove 呼び出し確認だけを行う軽量 hook。
 function createEventHook() {
   return {
     addListener: vi.fn(),

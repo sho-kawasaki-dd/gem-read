@@ -47,6 +47,7 @@ import { renderOverlay } from './gateways/tabMessagingGateway';
 /**
  * Background runtime は権限が必要な処理の集約点であり、Local API 通信もここを通す。
  * Content script から直接 localhost を叩かせないことで、対象ページの CSP と権限境界を横断しない。
+ * この entry の仕事は listener を束ねるところまでに留め、各分岐の実処理は usecase / service へ逃がす。
  */
 export function registerBackgroundRuntime(): void {
   console.log('Gem Read Background Service Worker Loaded');
@@ -94,6 +95,7 @@ export function registerBackgroundRuntime(): void {
 
   chrome.runtime.onMessage.addListener(
     (message: BackgroundRuntimeMessage, sender, sendResponse) => {
+      // background は tab-scoped session の owner なので、mutation 系 message をここで受けて正準状態へ反映する。
       if (
         message.type === 'phase1.cacheOverlaySession' &&
         sender.tab?.id !== undefined

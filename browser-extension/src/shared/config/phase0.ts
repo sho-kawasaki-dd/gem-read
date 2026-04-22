@@ -1,3 +1,7 @@
+/**
+ * shared/config は runtime をまたいで参照される定数と設定 merge ルールを置く。
+ * background/content/popup が別々に default や normalize を持たないようにして、設定解釈を 1 か所に固定する。
+ */
 export const PHASE0_MENU_ID = 'gem-read-phase0-translate-test';
 export const PHASE2_RECTANGLE_MENU_ID = 'gem-read-phase2-start-rectangle';
 export const PHASE2_RECTANGLE_COMMAND_ID = 'gem-read-phase2-start-rectangle';
@@ -29,6 +33,10 @@ export interface ArticleCacheSettings {
   enableAutoCreate: boolean;
 }
 
+/**
+ * popup で保存する永続設定の canonical shape。
+ * 各 runtime は storage から生値を直接解釈せず、この shape へ正規化された値だけを使う。
+ */
 export interface ExtensionSettings {
   apiBaseUrl: string;
   defaultModel: string;
@@ -37,6 +45,10 @@ export interface ExtensionSettings {
   markdownExport: MarkdownExportSettings;
 }
 
+/**
+ * storage から復元した未完成な値や旧バージョン設定を受けるための入力 shape。
+ * backward compatibility は merge 関数側で吸収し、呼び出し側へ欠損処理を漏らさない。
+ */
 export interface ExtensionSettingsInput {
   apiBaseUrl?: string | null;
   defaultModel?: string | null;
@@ -151,6 +163,7 @@ export function mergeArticleCacheSettings(
 export function mergeExtensionSettings(
   value: ExtensionSettingsInput | null | undefined
 ): ExtensionSettings {
+  // storage 由来の部分値をここで吸収して、各 runtime では完全形だけを扱う。
   return {
     apiBaseUrl: normalizeLocalApiBaseUrl(value?.apiBaseUrl),
     defaultModel: value?.defaultModel?.trim() ?? '',

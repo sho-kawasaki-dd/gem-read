@@ -21,6 +21,10 @@ import {
 import { cropSelectionImage } from '../services/cropSelectionImage';
 import { syncPayloadTokenEstimate } from '../services/payloadTokenService';
 
+/**
+ * selection batch の mutation はすべて background session に対して行う。
+ * overlay はその mirror を描画するだけに留め、append/remove/toggle の正準状態は常に background が持つ。
+ */
 export async function appendSelectionSessionItem(
   tab: chrome.tabs.Tab,
   selection: SelectionCapturePayload,
@@ -69,6 +73,7 @@ export async function appendSelectionSessionItem(
     payloadTokenError: existingSession?.payloadTokenError,
   };
 
+  // selection item の追加では article cache 自体は作り直さず、request payload 見積りだけを batch 内容に合わせて更新する。
   const tokenAwareSession = await syncPayloadTokenEstimate(nextSession, {
     apiBaseUrl: settings.apiBaseUrl,
     modelName: nextSession.lastModelName || settings.defaultModel || undefined,
@@ -94,6 +99,7 @@ export async function appendLiveSelectionSessionItem(
       'A live text selection is required. Select text on the page and try again.';
     const settings = await loadExtensionSettings();
     const session = await getAnalysisSession(tabId);
+    // live selection が取れないときも、既存 batch や draft を消さずに overlay 上へ明示エラーだけ返す。
     await renderOverlay(
       tabId,
       session
@@ -136,6 +142,7 @@ export async function removeSelectionSessionItem(
       items: [],
       modelOptions: [...session.modelOptions],
     };
+    // batch が空でも article context / cache 状態は残し、overlay reopen や次回追加時の文脈を失わないようにする。
     await setAnalysisSession(tabId, emptyBatchSession);
     await renderOverlay(tabId, buildOverlayPayload(emptyBatchSession));
     return;
@@ -229,6 +236,7 @@ export function buildOverlayPayload(
         rect: { ...item.selection.rect },
       },
     })),
+    // overlay は session の読み取り専用 mirror なので、nested value を複製して UI 側の変更が store へ漏れないようにする。
     maxSessionItems: MAX_SELECTION_SESSION_ITEMS,
     customPrompt: session.lastCustomPrompt,
     sessionReady: session.items.length > 0,
@@ -308,6 +316,7 @@ export async function clearSelectionBatch(tabId: number): Promise<void> {
     modelOptions: [...session.modelOptions],
   };
 
+  // clear は batch だけを落とし、article cache や設定文脈は残す。
   await setAnalysisSession(tabId, emptyBatchSession);
   await renderOverlay(tabId, buildOverlayPayload(emptyBatchSession));
 }

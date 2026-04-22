@@ -1,3 +1,7 @@
+/**
+ * shared/contracts は browser-extension 各 runtime の通信契約を集約する。
+ * message と payload を 1 か所で揃えることで、background/content/popup が同じ状態モデルを前提に進化できる。
+ */
 export type OverlayStatus = 'loading' | 'success' | 'error';
 export type AnalysisAction =
   | 'translation'
@@ -173,6 +177,10 @@ export interface ModelOption {
   displayName: string;
 }
 
+/**
+ * SelectionSessionItem は background が保持する ordered batch の最小単位。
+ * overlay はこの mirror を描画するが、item の canonical copy は常に background session 側にある。
+ */
 export interface SelectionSessionItem {
   id: string;
   source: SelectionSessionSource;
@@ -436,6 +444,10 @@ export interface ExportMarkdownResponse {
   error?: string;
 }
 
+/**
+ * ContentScriptMessage は content runtime が受け取る command 群を表す。
+ * DOM 読み取りや overlay 描画の owner は content なので、page 側へ届く命令だけをここへ集める。
+ */
 export type ContentScriptMessage =
   | CollectSelectionMessage
   | CollectArticleContextMessage
@@ -445,6 +457,10 @@ export type ContentScriptMessage =
   | SeedBatchOverlaySessionMessage
   | BeginRectangleSelectionMessage;
 
+/**
+ * BackgroundRuntimeMessage は privileged runtime が受ける mutation / orchestration 要求を表す。
+ * screenshot、Local API、tab-scoped session 更新を content から分離するため、更新系 message は background へ寄せる。
+ */
 export type BackgroundRuntimeMessage =
   | RunOverlayActionMessage
   | CacheOverlaySessionMessage

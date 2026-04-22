@@ -17,10 +17,15 @@ import {
   buildOverlayPayload,
 } from './updateSelectionSession';
 
+/**
+ * 既存 session があれば overlay をそのまま再表示し、必要な article/cache/token 情報だけ最新化する。
+ * live selection を再取得して full panel を復元するのではなく、background session から reopen できることが目的。
+ */
 export async function openOverlaySession(tabId: number): Promise<void> {
   const settings = await loadExtensionSettings();
   const session = await getAnalysisSession(tabId);
   if (session) {
+    // reopen 時も article context は取り直し、SPA 遷移や本文変化に対して cache 状態だけ stale のまま残さない。
     const articleContextResult = await collectArticleContext(tabId).catch(
       (error) => ({
         ok: false as const,
@@ -62,6 +67,7 @@ export async function openOverlaySession(tabId: number): Promise<void> {
     }
   }
 
+  // 復元可能な session がない場合だけ launcher-only へ落とし、overlay を開く導線自体は失わせない。
   await renderOverlay(
     tabId,
     buildEmptyOverlayPayload(settings, {
