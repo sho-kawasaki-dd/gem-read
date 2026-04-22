@@ -40,6 +40,7 @@ export interface ArticleCacheSettings {
 export interface ExtensionSettings {
   apiBaseUrl: string;
   defaultModel: string;
+  sharedSystemPrompt: string;
   lastKnownModels: string[];
   articleCache: ArticleCacheSettings;
   markdownExport: MarkdownExportSettings;
@@ -52,6 +53,7 @@ export interface ExtensionSettings {
 export interface ExtensionSettingsInput {
   apiBaseUrl?: string | null;
   defaultModel?: string | null;
+  sharedSystemPrompt?: string | null;
   lastKnownModels?: readonly string[] | null;
   articleCache?: Partial<ArticleCacheSettings> | null;
   markdownExport?: Partial<MarkdownExportSettings> | null;
@@ -73,6 +75,7 @@ export const DEFAULT_MARKDOWN_EXPORT_SETTINGS: MarkdownExportSettings = {
 export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
   apiBaseUrl: DEFAULT_LOCAL_API_BASE_URL,
   defaultModel: '',
+  sharedSystemPrompt: '',
   lastKnownModels: [],
   articleCache: { ...DEFAULT_ARTICLE_CACHE_SETTINGS },
   markdownExport: { ...DEFAULT_MARKDOWN_EXPORT_SETTINGS },
@@ -167,6 +170,7 @@ export function mergeExtensionSettings(
   return {
     apiBaseUrl: normalizeLocalApiBaseUrl(value?.apiBaseUrl),
     defaultModel: value?.defaultModel?.trim() ?? '',
+    sharedSystemPrompt: value?.sharedSystemPrompt ?? '',
     lastKnownModels: normalizeModelList(value?.lastKnownModels),
     articleCache: mergeArticleCacheSettings(value?.articleCache),
     markdownExport: mergeMarkdownExportSettings(value?.markdownExport),

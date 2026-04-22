@@ -50,6 +50,7 @@ interface AnalyzeTranslateRequestBody {
   model_name?: string;
   cache_name?: string;
   custom_prompt?: string;
+  system_prompt?: string;
   selection_metadata?: AnalyzeSelectionMetadataPayload;
 }
 
@@ -137,6 +138,7 @@ export interface SendAnalyzeRequestOptions {
   modelName?: string;
   cacheName?: string;
   customPrompt?: string;
+  systemPrompt?: string;
 }
 
 export interface TokenCountRequestOptions {
@@ -170,6 +172,7 @@ export async function sendAnalyzeTranslateRequest(
     modelName: options.modelName,
     cacheName: options.cacheName,
     customPrompt: options.customPrompt,
+    systemPrompt: options.systemPrompt,
   });
 
   const response = await fetch(`${apiBaseUrl}/analyze/translate`, {
@@ -220,7 +223,7 @@ function buildAnalyzeRequestBody(
   sessionItems: SelectionSessionItem[],
   options: Pick<
     SendAnalyzeRequestOptions,
-    'action' | 'modelName' | 'cacheName' | 'customPrompt'
+    'action' | 'modelName' | 'cacheName' | 'customPrompt' | 'systemPrompt'
   >
 ): AnalyzeTranslateRequestBody {
   if (sessionItems.length === 0) {
@@ -264,6 +267,7 @@ function buildAnalyzeRequestBody(
     model_name: options.modelName,
     cache_name: options.cacheName,
     custom_prompt: options.customPrompt,
+    system_prompt: options.systemPrompt,
     selection_metadata: primarySelection
       ? {
           url: primarySelection.url,

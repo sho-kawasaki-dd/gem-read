@@ -4,14 +4,18 @@ import os
 
 import dotenv
 
-from pdf_epub_reader.utils.config import ENV_GEMINI_API_KEY, AppConfig, load_config
+from browser_api.application.config import (
+    BrowserApiConfig,
+    map_app_config_to_browser_api_config,
+)
+from pdf_epub_reader.utils.config import ENV_GEMINI_API_KEY, load_config
 
 
-def load_runtime_config() -> AppConfig:
-    """Load the same runtime config that the desktop app uses so model settings stay aligned."""
+def load_runtime_config() -> BrowserApiConfig:
+    """Load browser_api runtime settings through an explicit AppConfig mapping."""
 
     dotenv.load_dotenv()
-    return load_config()
+    return map_app_config_to_browser_api_config(load_config())
 
 
 def load_api_key() -> str | None:

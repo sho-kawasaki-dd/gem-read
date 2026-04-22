@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass
 
 from browser_api.adapters.ai_gateway import GemReadAIGateway
+from browser_api.application.config import BrowserApiConfig
 from browser_api.application.dto import (
     CacheCreateCommand,
     CacheDeleteResult,
@@ -24,7 +25,6 @@ from browser_api.application.errors import (
     UnsupportedCacheModelError,
 )
 from pdf_epub_reader.dto import AnalysisMode, AnalysisRequest, CacheStatus, ModelInfo
-from pdf_epub_reader.utils.config import AppConfig
 from pdf_epub_reader.utils.exceptions import AICacheError, AIAPIError, AIKeyMissingError
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ class AnalyzeService:
     """
 
     ai_gateway: GemReadAIGateway
-    config: AppConfig
+    config: BrowserApiConfig
 
     async def analyze_translate(
         self,
@@ -241,7 +241,7 @@ class AnalyzeService:
     def _resolve_model_name(self, requested_model_name: str | None) -> str:
         """Prefer per-request model overrides, then fall back to configured defaults."""
 
-        model_name = (requested_model_name or self.config.gemini_model_name).strip()
+        model_name = (requested_model_name or self.config.default_model).strip()
         if not model_name:
             raise MissingModelError(
                 "model_name is required. Configure a Gemini model before calling the browser API."
@@ -265,7 +265,7 @@ class AnalyzeService:
         """Collapse configured model names into a stable deduplicated fallback list."""
 
         names: list[str] = []
-        for candidate in [self.config.gemini_model_name, *self.config.selected_models]:
+        for candidate in [self.config.default_model, *self.config.selected_models]:
             normalized = candidate.strip()
             if normalized and normalized not in names:
                 names.append(normalized)

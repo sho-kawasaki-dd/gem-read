@@ -164,6 +164,7 @@ export interface AnalyzeRequestOptions {
   action: AnalysisAction;
   modelName?: string;
   customPrompt?: string;
+  systemPrompt?: string;
 }
 
 export type SelectionSessionSource = 'text-selection' | 'free-rectangle';

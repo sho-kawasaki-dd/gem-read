@@ -418,11 +418,16 @@ function resolveAnalyzeRequestOptions(
   options: RunSelectionAnalysisOptions
 ): AnalyzeRequestOptions & { apiBaseUrl: string } {
   const resolvedModelName = options.modelName ?? settings.defaultModel;
+  const resolvedSystemPrompt =
+    settings.sharedSystemPrompt.trim().length > 0
+      ? settings.sharedSystemPrompt
+      : undefined;
 
   return {
     action: options.action ?? 'translation',
     apiBaseUrl: options.apiBaseUrl ?? settings.apiBaseUrl,
     modelName: resolvedModelName || undefined,
     customPrompt: options.customPrompt?.trim() || undefined,
+    systemPrompt: resolvedSystemPrompt,
   };
 }

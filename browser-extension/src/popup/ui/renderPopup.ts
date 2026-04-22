@@ -41,6 +41,7 @@ interface PopupRefs {
   form: HTMLFormElement;
   apiInput: HTMLInputElement;
   defaultModelInput: HTMLInputElement;
+  sharedSystemPromptInput: HTMLTextAreaElement;
   articleCacheAutoCreateInput: HTMLInputElement;
   includeExplanationInput: HTMLInputElement;
   includeSelectionsInput: HTMLInputElement;
@@ -146,6 +147,7 @@ export async function renderPopup(documentRef: Document): Promise<void> {
         text-transform: uppercase;
       }
       .input,
+      .textarea,
       .button {
         box-sizing: border-box;
         width: 100%;
@@ -153,11 +155,16 @@ export async function renderPopup(documentRef: Document): Promise<void> {
         border-radius: 12px;
         font: inherit;
       }
-      .input {
+      .input,
+      .textarea {
         border: 1px solid rgba(146, 64, 14, 0.22);
         padding: 10px 12px;
         background: rgba(255, 255, 255, 0.88);
         color: #111827;
+      }
+      .textarea {
+        min-height: 116px;
+        resize: vertical;
       }
       .status-card {
         padding: 12px;
@@ -372,6 +379,11 @@ export async function renderPopup(documentRef: Document): Promise<void> {
             <datalist id="model-options"></datalist>
             <p class="hint">Fetched models are suggested automatically, but a manual model ID is also allowed.</p>
           </div>
+          <div class="section">
+            <label class="label" for="shared-system-prompt">Shared System Prompt</label>
+            <textarea class="textarea" id="shared-system-prompt" name="sharedSystemPrompt" data-role="shared-system-prompt" spellcheck="false"></textarea>
+            <p class="hint">Applied to translation, translation with explanation, and custom prompt requests. The saved text is kept as entered.</p>
+          </div>
           <details class="details-section" data-role="article-cache-section">
             <summary class="details-summary">Article Cache
               <span class="details-summary-note">Default: automatic full-article cache creation is on</span>
@@ -484,6 +496,7 @@ export async function renderPopup(documentRef: Document): Promise<void> {
 
   refs.apiInput.value = state.settings.apiBaseUrl;
   refs.defaultModelInput.value = state.settings.defaultModel;
+  refs.sharedSystemPromptInput.value = state.settings.sharedSystemPrompt;
   syncView(refs, state);
 
   refs.form.addEventListener('submit', async (event) => {
@@ -505,12 +518,14 @@ export async function renderPopup(documentRef: Document): Promise<void> {
       state.settings = await saveExtensionSettings({
         apiBaseUrl: normalizeLocalApiBaseUrl(candidateUrl),
         defaultModel: refs.defaultModelInput.value.trim(),
+        sharedSystemPrompt: refs.sharedSystemPromptInput.value,
         lastKnownModels: state.models.map((model) => model.modelId),
         articleCache: readArticleCacheSettings(refs),
         markdownExport: readMarkdownExportSettings(refs),
       });
       refs.apiInput.value = state.settings.apiBaseUrl;
       refs.defaultModelInput.value = state.settings.defaultModel;
+      refs.sharedSystemPromptInput.value = state.settings.sharedSystemPrompt;
       setMessage(refs, 'Settings saved.', false);
       await refreshPopupState(state, refs, state.settings.apiBaseUrl, true);
     } catch (error) {
@@ -599,6 +614,9 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
   const apiInput = appRoot.querySelector<HTMLInputElement>('#api-base-url');
   const defaultModelInput =
     appRoot.querySelector<HTMLInputElement>('#default-model');
+  const sharedSystemPromptInput = appRoot.querySelector<HTMLTextAreaElement>(
+    '[data-role="shared-system-prompt"]'
+  );
   const articleCacheAutoCreateInput = appRoot.querySelector<HTMLInputElement>(
     '[data-role="article-cache-auto-create"]'
   );
@@ -660,6 +678,7 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
     !form ||
     !apiInput ||
     !defaultModelInput ||
+    !sharedSystemPromptInput ||
     !articleCacheAutoCreateInput ||
     !includeExplanationInput ||
     !includeSelectionsInput ||
@@ -687,6 +706,7 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
     form,
     apiInput,
     defaultModelInput,
+    sharedSystemPromptInput,
     articleCacheAutoCreateInput,
     includeExplanationInput,
     includeSelectionsInput,
@@ -782,6 +802,9 @@ function syncView(refs: PopupRefs, state: PopupViewState): void {
   refs.apiInput.value = state.settings.apiBaseUrl;
   if (!refs.defaultModelInput.value) {
     refs.defaultModelInput.value = state.settings.defaultModel;
+  }
+  if (!refs.sharedSystemPromptInput.value) {
+    refs.sharedSystemPromptInput.value = state.settings.sharedSystemPrompt;
   }
   refs.articleCacheAutoCreateInput.checked =
     state.settings.articleCache.enableAutoCreate;

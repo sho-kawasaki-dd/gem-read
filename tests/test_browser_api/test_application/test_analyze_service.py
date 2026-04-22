@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import pytest
 
+from browser_api.application.config import BrowserApiConfig
 from browser_api.application.dto import AnalyzeTranslateCommand
 from browser_api.application.dto import CacheCreateCommand, TokenCountCommand
 from browser_api.application.errors import (
@@ -14,7 +15,6 @@ from browser_api.application.errors import (
 )
 from browser_api.application.services.analyze_service import AnalyzeService
 from pdf_epub_reader.dto import AnalysisResult, AnalysisUsage, CacheStatus, ModelInfo
-from pdf_epub_reader.utils.config import AppConfig
 from pdf_epub_reader.utils.exceptions import AICacheError, AIAPIError, AIKeyMissingError
 
 
@@ -96,6 +96,20 @@ class StubAIGateway:
             raise self.delete_cache_error
 
 
+def _build_browser_api_config(
+    default_model: str = "default-model",
+    *,
+    selected_models: list[str] | None = None,
+) -> BrowserApiConfig:
+    return BrowserApiConfig(
+        default_model=default_model,
+        selected_models=selected_models or [],
+        output_language="日本語",
+        default_translation_system_prompt="translate",
+        cache_ttl_minutes=60,
+    )
+
+
 def _build_command(
     *,
     mode: str = "translation",
@@ -129,7 +143,7 @@ class TestAnalyzeService:
         )
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
+            config=_build_browser_api_config(),
         )
 
         result = await service.analyze_translate(
@@ -168,7 +182,7 @@ class TestAnalyzeService:
         )
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
+            config=_build_browser_api_config(),
         )
 
         result = await service.analyze_translate(
@@ -194,7 +208,7 @@ class TestAnalyzeService:
         )
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
+            config=_build_browser_api_config(),
         )
 
         result = await service.analyze_translate(
@@ -216,7 +230,7 @@ class TestAnalyzeService:
         )
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
+            config=_build_browser_api_config(),
         )
 
         await service.analyze_translate(
@@ -240,7 +254,7 @@ class TestAnalyzeService:
         )
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
+            config=_build_browser_api_config(),
         )
 
         result = await service.analyze_translate(
@@ -257,7 +271,7 @@ class TestAnalyzeService:
         gateway = StubAIGateway(error=AIKeyMissingError("missing key"), requests=[])
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
+            config=_build_browser_api_config(),
         )
 
         result = await service.analyze_translate(
@@ -275,7 +289,7 @@ class TestAnalyzeService:
         gateway = StubAIGateway(error=AIKeyMissingError("missing key"), requests=[])
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
+            config=_build_browser_api_config(),
         )
 
         result = await service.analyze_translate(
@@ -292,7 +306,7 @@ class TestAnalyzeService:
         gateway = StubAIGateway(error=AIKeyMissingError("missing key"), requests=[])
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
+            config=_build_browser_api_config(),
         )
 
         result = await service.analyze_translate(_build_command(text="", images=["abc="]))
@@ -305,7 +319,7 @@ class TestAnalyzeService:
         gateway = StubAIGateway(result=AnalysisResult(raw_response="unused"))
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name=" "),
+            config=_build_browser_api_config(" "),
         )
 
         with pytest.raises(MissingModelError):
@@ -316,7 +330,7 @@ class TestAnalyzeService:
         gateway = StubAIGateway(result=AnalysisResult(raw_response="unused"))
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
+            config=_build_browser_api_config(),
         )
 
         with pytest.raises(InvalidImagePayloadError):
@@ -333,7 +347,7 @@ class TestAnalyzeService:
         )
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
+            config=_build_browser_api_config(),
         )
 
         result = await service.list_models()
@@ -347,8 +361,8 @@ class TestAnalyzeService:
         gateway = StubAIGateway(model_error=AIKeyMissingError("missing key"))
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(
-                gemini_model_name="gemini-2.5-flash",
+            config=_build_browser_api_config(
+                "gemini-2.5-flash",
                 selected_models=["gemini-2.5-flash", "gemini-2.5-pro"],
             ),
         )
@@ -368,8 +382,8 @@ class TestAnalyzeService:
         gateway = StubAIGateway(model_error=AIAPIError("upstream down", status_code=503))
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(
-                gemini_model_name="gemini-2.5-flash",
+            config=_build_browser_api_config(
+                "gemini-2.5-flash",
                 selected_models=["gemini-2.5-pro"],
             ),
         )
@@ -386,7 +400,7 @@ class TestAnalyzeService:
         gateway = StubAIGateway(token_result=321, token_calls=[])
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
+            config=_build_browser_api_config(),
         )
 
         result = await service.count_tokens(
@@ -415,7 +429,7 @@ class TestAnalyzeService:
         )
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
+            config=_build_browser_api_config(),
         )
 
         result = await service.create_cache(
@@ -441,7 +455,7 @@ class TestAnalyzeService:
         gateway = StubAIGateway(delete_cache_calls=[])
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
+            config=_build_browser_api_config(),
         )
 
         result = await service.delete_cache("cachedContents/abc123")
@@ -458,7 +472,7 @@ class TestAnalyzeService:
         )
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
+            config=_build_browser_api_config(),
         )
 
         with pytest.raises(UnsupportedCacheModelError):
@@ -474,7 +488,7 @@ class TestAnalyzeService:
         gateway = StubAIGateway(cache_create_error=AICacheError("Gemini cache upstream failed"))
         service = AnalyzeService(
             ai_gateway=gateway,
-            config=AppConfig(gemini_model_name="default-model"),
+            config=_build_browser_api_config(),
         )
 
         with pytest.raises(AICacheError):

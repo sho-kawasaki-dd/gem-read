@@ -102,6 +102,7 @@ describe('localApiGateway', () => {
         modelName: 'gemini-2.5-pro',
         cacheName: 'cachedContents/article-1',
         customPrompt: 'Summarize this',
+        systemPrompt: 'Shared instructions',
       }
     );
 
@@ -119,6 +120,7 @@ describe('localApiGateway', () => {
         model_name: 'gemini-2.5-pro',
         cache_name: 'cachedContents/article-1',
         custom_prompt: 'Summarize this',
+        system_prompt: 'Shared instructions',
         images: [
           'data:image/webp;base64,preview-2',
           'data:image/webp;base64,preview-3',

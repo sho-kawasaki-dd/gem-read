@@ -19,6 +19,7 @@ describe('settingsStorage', () => {
     expect(settings).toEqual({
       apiBaseUrl: 'http://127.0.0.1:8000',
       defaultModel: '',
+      sharedSystemPrompt: '',
       lastKnownModels: [],
       articleCache: {
         enableAutoCreate: true,
@@ -55,6 +56,7 @@ describe('settingsStorage', () => {
     expect(settings).toEqual({
       apiBaseUrl: 'http://localhost:8123',
       defaultModel: 'gemini-2.5-pro',
+      sharedSystemPrompt: '',
       lastKnownModels: ['gemini-2.5-pro', 'gemini-2.5-flash'],
       articleCache: {
         enableAutoCreate: true,
@@ -98,6 +100,7 @@ describe('settingsStorage', () => {
     expect(patched).toEqual({
       apiBaseUrl: 'http://127.0.0.1:9000',
       defaultModel: 'gemini-2.5-flash',
+      sharedSystemPrompt: '',
       lastKnownModels: ['gemini-2.5-flash', 'gemini-2.5-pro'],
       articleCache: {
         enableAutoCreate: true,
@@ -139,6 +142,16 @@ describe('settingsStorage', () => {
       includeUsageMetrics: true,
       includeYamlFrontmatter: false,
     });
+  });
+
+  it('preserves sharedSystemPrompt exactly as entered', async () => {
+    const settings = await saveExtensionSettings({
+      sharedSystemPrompt: '  Keep leading and trailing spaces.\nLine two.  ',
+    });
+
+    expect(settings.sharedSystemPrompt).toBe(
+      '  Keep leading and trailing spaces.\nLine two.  '
+    );
   });
 
   it('patches articleCache fields without resetting markdownExport toggles', async () => {
@@ -193,6 +206,7 @@ describe('settingsStorage', () => {
     expect(settings).toEqual({
       apiBaseUrl: 'http://localhost:8010',
       defaultModel: 'gemini-2.5-flash',
+      sharedSystemPrompt: '',
       lastKnownModels: ['gemini-2.5-flash'],
       articleCache: {
         enableAutoCreate: true,

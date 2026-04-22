@@ -106,6 +106,13 @@ describe('renderPopup', () => {
         ) as HTMLInputElement
       ).checked
     ).toBe(false);
+    expect(
+      (
+        document.querySelector(
+          '[data-role="shared-system-prompt"]'
+        ) as HTMLTextAreaElement
+      ).value
+    ).toBe('');
   });
 
   it('loads saved settings and renders live popup status', async () => {
@@ -116,6 +123,7 @@ describe('renderPopup', () => {
         [EXTENSION_SETTINGS_STORAGE_KEY]: {
           apiBaseUrl: 'http://127.0.0.1:8001',
           defaultModel: 'gemini-2.5-pro',
+          sharedSystemPrompt: 'Shared instructions.\nLine two.',
           lastKnownModels: ['gemini-2.5-pro'],
           articleCache: {
             enableAutoCreate: false,
@@ -168,6 +176,13 @@ describe('renderPopup', () => {
     expect(
       (
         document.querySelector(
+          '[data-role="shared-system-prompt"]'
+        ) as HTMLTextAreaElement
+      ).value
+    ).toBe('Shared instructions.\nLine two.');
+    expect(
+      (
+        document.querySelector(
           '[data-role="article-cache-auto-create"]'
         ) as HTMLInputElement
       ).checked
@@ -192,7 +207,8 @@ describe('renderPopup', () => {
         [EXTENSION_SETTINGS_STORAGE_KEY]: {
           apiBaseUrl: 'http://127.0.0.1:8001',
           defaultModel: 'gemini-2.5-pro',
-          lastKnownModels: ['gemini-2.5-flash'],
+          sharedSystemPrompt: 'Shared instructions.\nLine two.',
+          lastKnownModels: ['gemini-2.5-pro'],
           articleCache: {
             enableAutoCreate: false,
           },
@@ -259,6 +275,9 @@ describe('renderPopup', () => {
     const defaultModelInput = document.querySelector(
       '#default-model'
     ) as HTMLInputElement;
+    const sharedSystemPromptInput = document.querySelector(
+      '[data-role="shared-system-prompt"]'
+    ) as HTMLTextAreaElement;
     const form = document.querySelector(
       '[data-role="settings-form"]'
     ) as HTMLFormElement;
@@ -286,6 +305,7 @@ describe('renderPopup', () => {
 
     apiInput.value = 'http://localhost:9001/';
     defaultModelInput.value = ' gemini-2.5-pro ';
+    sharedSystemPromptInput.value = '  Shared instructions.\nPreserve spacing.  ';
     articleCacheAutoCreateInput.checked = false;
     includeExplanationInput.checked = false;
     includeSelectionsInput.checked = true;
@@ -303,6 +323,7 @@ describe('renderPopup', () => {
         [EXTENSION_SETTINGS_STORAGE_KEY]: {
           apiBaseUrl: 'http://localhost:9001',
           defaultModel: 'gemini-2.5-pro',
+          sharedSystemPrompt: '  Shared instructions.\nPreserve spacing.  ',
           lastKnownModels: ['gemini-2.5-flash'],
           articleCache: {
             enableAutoCreate: false,

@@ -56,6 +56,7 @@ describe('runSelectionAnalysis', () => {
     loadExtensionSettingsMock.mockResolvedValue({
       apiBaseUrl: 'http://127.0.0.1:9000',
       defaultModel: 'gemini-2.5-flash',
+      sharedSystemPrompt: 'Shared translation rules.',
       lastKnownModels: ['gemini-2.5-flash'],
       articleCache: {
         enableAutoCreate: true,
@@ -177,13 +178,14 @@ describe('runSelectionAnalysis', () => {
           includeImage: false,
         }),
       ],
-      {
+      expect.objectContaining({
         action: 'translation',
         apiBaseUrl: 'http://127.0.0.1:9000',
         modelName: 'gemini-2.5-flash',
         cacheName: 'cachedContents/article-1',
         customPrompt: undefined,
-      }
+        systemPrompt: 'Shared translation rules.',
+      })
     );
     expect(renderOverlayMock).toHaveBeenLastCalledWith(
       7,
@@ -327,12 +329,13 @@ describe('runSelectionAnalysis', () => {
           previewImageUrl: 'data:image/webp;base64,crop',
         }),
       ],
-      {
+      expect.objectContaining({
         action: 'custom_prompt',
         apiBaseUrl: 'http://localhost:9010',
         modelName: 'gemini-2.5-pro',
         customPrompt: 'Summarize this',
-      }
+        systemPrompt: 'Shared translation rules.',
+      })
     );
     expect(renderOverlayMock).toHaveBeenLastCalledWith(
       7,
@@ -449,6 +452,7 @@ describe('runSelectionAnalysis', () => {
     loadExtensionSettingsMock.mockResolvedValueOnce({
       apiBaseUrl: 'http://127.0.0.1:9000',
       defaultModel: 'gemini-2.5-flash',
+      sharedSystemPrompt: '   ',
       lastKnownModels: ['gemini-2.5-flash'],
       articleCache: {
         enableAutoCreate: false,
@@ -492,6 +496,12 @@ describe('runSelectionAnalysis', () => {
       expect.objectContaining({
         allowAutoCreate: false,
         autoCreateDisabledBySetting: true,
+      })
+    );
+    expect(sendAnalyzeTranslateRequestMock).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.not.objectContaining({
+        systemPrompt: expect.anything(),
       })
     );
   });
