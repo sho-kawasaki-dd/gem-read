@@ -63,6 +63,22 @@ def test_translate_accepts_explicit_cache_name(api_client, stub_analyze_service)
     assert command.cache_name == "cachedContents/article-1"
 
 
+def test_translate_accepts_system_prompt(api_client, stub_analyze_service) -> None:
+    response = api_client.post(
+        "/analyze/translate",
+        json={
+            "text": "Hello",
+            "images": [],
+            "mode": "translation",
+            "system_prompt": "  Shared rules.\nLine two.  ",
+        },
+    )
+
+    assert response.status_code == 200
+    command = stub_analyze_service.calls[0]
+    assert command.system_prompt == "  Shared rules.\nLine two.  "
+
+
 def test_translate_serializes_cache_fallback_metadata(
     api_client, stub_analyze_service
 ) -> None:
@@ -180,6 +196,34 @@ def test_translate_rejects_custom_prompt_mode_without_prompt(api_client) -> None
             "text": "Hello",
             "images": [],
             "mode": "custom_prompt",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_translate_rejects_system_prompt_with_disallowed_control_chars(api_client) -> None:
+    response = api_client.post(
+        "/analyze/translate",
+        json={
+            "text": "Hello",
+            "images": [],
+            "mode": "translation",
+            "system_prompt": "bad\u0000prompt",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_translate_rejects_system_prompt_over_length_limit(api_client) -> None:
+    response = api_client.post(
+        "/analyze/translate",
+        json={
+            "text": "Hello",
+            "images": [],
+            "mode": "translation",
+            "system_prompt": "a" * 10001,
         },
     )
 

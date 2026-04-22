@@ -37,7 +37,12 @@ These are separate settings.
 
 ## Browser Extension Popup Settings
 
-The browser extension popup stores article-cache and Markdown export preferences.
+The browser extension popup stores request defaults, article-cache behavior, and Markdown export preferences.
+
+Available text settings:
+
+- Default model
+- Shared system prompt
 
 Article cache toggle:
 
@@ -51,6 +56,16 @@ Available toggles:
 - Article metadata
 - Usage metrics
 - YAML frontmatter
+
+The shared system prompt is optional and applies to all three overlay actions.
+
+- Translate
+- Translate + Explain
+- Run Custom Prompt
+
+If the shared system prompt is blank, Gem Read falls back to the desktop-side default translation prompt for translation requests and sends no extra user context for custom prompts.
+
+The popup keeps the shared system prompt exactly as entered. Gem Read does not trim or rewrite the saved text.
 
 The article-cache toggle is enabled by default. Turning it off stops Gem Read from creating a new full article cache automatically for article-sized pages, but it does not disable reuse of an existing cache for the current tab and model.
 
@@ -92,6 +107,7 @@ For article pages in the browser extension:
 - `Delete Cache` removes the active cache for the current tab only.
 - One article cache serves all three overlay actions (Translate, Translate + Explain, and Run Custom Prompt). Switching between them does not recreate the cache.
 - Changing output language in the popup settings does not recreate the article cache. The new language takes effect on the next analysis request.
+- Changing the shared system prompt in the popup does not recreate the article cache. The prompt is applied per request, not stored in the cache.
 - If Gemini no longer has the remote article cache, Gem Read finishes the current request without cache, marks the local article cache state as invalidated, and avoids sending the same stale cache name on later requests.
 
 The cache can disappear without direct user action when:

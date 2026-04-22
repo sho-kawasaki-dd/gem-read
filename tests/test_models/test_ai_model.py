@@ -136,6 +136,26 @@ class TestAnalyzeTranslation:
         result = await model.analyze(request)
         assert result.explanation is None
 
+    @pytest.mark.asyncio
+    async def test_translation_uses_request_system_prompt_over_config_default(self) -> None:
+        """request.system_prompt がある場合は config 既定 translation prompt より優先されること。"""
+        model = _build_model(system_prompt_translation="Translate into {output_language}.")
+        model._client.aio.models.generate_content = AsyncMock(
+            return_value=_make_mock_response("翻訳結果")
+        )
+
+        request = AnalysisRequest(
+            text="Hello world",
+            mode=AnalysisMode.TRANSLATION,
+            system_prompt="Use terse style in {output_language}. Keep technical terms.",
+        )
+        await model.analyze(request)
+
+        call_kwargs = model._client.aio.models.generate_content.call_args
+        contents = call_kwargs.kwargs["contents"]
+        assert "Use terse style in 日本語. Keep technical terms." in contents[0]
+        assert "Translate into 日本語." not in contents[0]
+
 
 class TestAnalyzeCustomPrompt:
     """analyze() のカスタムプロンプトモード動作を検証する。"""
@@ -189,6 +209,28 @@ class TestAnalyzeCustomPrompt:
         # contents[1]: selection text（<selection> タグで囲まれる）
         assert "Some text" in contents[1]
         assert "<selection>" in contents[1]
+
+    @pytest.mark.asyncio
+    async def test_custom_prompt_system_prompt_becomes_user_context(self) -> None:
+        """custom prompt request の system_prompt が USER_CONTEXT 節に入ること。"""
+        model = _build_model(output_language="English")
+        model._client.aio.models.generate_content = AsyncMock(
+            return_value=_make_mock_response("answer")
+        )
+
+        request = AnalysisRequest(
+            text="Explain this",
+            mode=AnalysisMode.CUSTOM_PROMPT,
+            custom_prompt="Summarize",
+            system_prompt="Background on the paper and target audience.",
+        )
+        await model.analyze(request)
+
+        call_kwargs = model._client.aio.models.generate_content.call_args
+        contents = call_kwargs.kwargs["contents"]
+        assert "USER_CONTEXT" in contents[0]
+        assert "Background on the paper and target audience." in contents[0]
+        assert "USER_TASK" in contents[0]
 
 
 class TestAnalyzeMultimodal:

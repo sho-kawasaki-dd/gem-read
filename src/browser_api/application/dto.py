@@ -48,6 +48,7 @@ class AnalyzeTranslateCommand:
     mode: Literal["translation", "translation_with_explanation", "custom_prompt"]
     cache_name: str | None = None
     custom_prompt: str | None = None
+    system_prompt: str | None = None
     selection_metadata: AnalyzeSelectionMetadata | None = None
 
 

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from typing import Annotated
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from browser_api.application.dto import (
     AnalyzeSelectionMetadata,
@@ -50,6 +51,19 @@ class AnalyzeSelectionMetadataPayload(SelectionMetadataPayload):
     items: list[SelectionMetadataItemPayload] = Field(default_factory=list)
 
 
+_MAX_SYSTEM_PROMPT_LENGTH = 10_000
+
+
+def _contains_disallowed_control_chars(value: str) -> bool:
+    for char in value:
+        codepoint = ord(char)
+        if codepoint in (9, 10, 13):
+            continue
+        if 0 <= codepoint <= 31 or codepoint == 127:
+            return True
+    return False
+
+
 class AnalyzeTranslateRequest(BaseModel):
     """HTTP schema accepted from the browser extension."""
 
@@ -59,7 +73,19 @@ class AnalyzeTranslateRequest(BaseModel):
     images: list[str] = Field(default_factory=list)
     mode: Literal["translation", "translation_with_explanation", "custom_prompt"] = "translation"
     custom_prompt: str | None = None
+    system_prompt: Annotated[str | None, Field(max_length=_MAX_SYSTEM_PROMPT_LENGTH)] = None
     selection_metadata: AnalyzeSelectionMetadataPayload | None = None
+
+    @field_validator("system_prompt")
+    @classmethod
+    def validate_system_prompt(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if _contains_disallowed_control_chars(value):
+            raise ValueError(
+                "system_prompt contains unsupported control characters"
+            )
+        return value
 
     @model_validator(mode="after")
     def validate_custom_prompt(self) -> "AnalyzeTranslateRequest":
@@ -89,6 +115,11 @@ class AnalyzeTranslateRequest(BaseModel):
             images=self.images,
             mode=self.mode,
             custom_prompt=self.custom_prompt.strip() if self.custom_prompt else None,
+            system_prompt=(
+                self.system_prompt
+                if self.system_prompt is not None and self.system_prompt.strip()
+                else None
+            ),
             selection_metadata=selection_metadata,
         )
 

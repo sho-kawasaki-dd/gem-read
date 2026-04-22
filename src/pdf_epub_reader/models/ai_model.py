@@ -584,21 +584,33 @@ class AIModel:
 
         - ``TRANSLATION`` (``include_explanation=False``): 翻訳タスクのみ
         - ``TRANSLATION`` (``include_explanation=True``): 翻訳タスク + ``---`` 区切り解説指示
-        - ``CUSTOM_PROMPT``: 出力言語指示 + ``USER_TASK`` セクション
+        - ``CUSTOM_PROMPT``: 出力言語指示 + ``USER_CONTEXT`` + ``USER_TASK`` セクション
         """
         output_language = self._config.output_language
         parts: list[genai_types.Part | str] = []
 
         if request.mode == AnalysisMode.CUSTOM_PROMPT:
             user_task = request.custom_prompt or ""
+            user_context = request.system_prompt
             prompt_header = (
                 f"Respond in {output_language}.\n\n"
-                f"USER_TASK:\n{user_task}\n\n"
+                + (
+                    f"USER_CONTEXT:\n{user_context}\n\n"
+                    if user_context
+                    else ""
+                )
+                + f"USER_TASK:\n{user_task}\n\n"
                 f"Apply the task only to the text enclosed in <selection> tags below."
             )
         else:
-            translation_task = self._config.system_prompt_translation.format(
-                output_language=output_language
+            translation_prompt = (
+                request.system_prompt
+                if request.system_prompt is not None
+                else self._config.system_prompt_translation
+            )
+            translation_task = self._resolve_translation_prompt(
+                translation_prompt,
+                output_language=output_language,
             )
             if request.include_explanation:
                 translation_task += DEFAULT_EXPLANATION_ADDENDUM
@@ -625,6 +637,16 @@ class AIModel:
             )
 
         return parts
+
+    @staticmethod
+    def _resolve_translation_prompt(
+        prompt: str,
+        *,
+        output_language: str,
+    ) -> str:
+        """Expand the supported output-language token without treating other braces as format syntax."""
+
+        return prompt.replace("{output_language}", output_language)
 
     async def _call_with_retry(
         self,

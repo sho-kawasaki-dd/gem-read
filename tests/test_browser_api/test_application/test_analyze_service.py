@@ -117,6 +117,7 @@ def _build_command(
     cache_name: str | None = None,
     images: list[str] | None = None,
     custom_prompt: str | None = None,
+    system_prompt: str | None = None,
     text: str = "Selected text",
 ):
     return AnalyzeTranslateCommand(
@@ -126,6 +127,7 @@ def _build_command(
         mode=mode,
         cache_name=cache_name,
         custom_prompt=custom_prompt,
+        system_prompt=system_prompt,
         selection_metadata={"url": "https://example.com/article"},
     )
 
@@ -221,6 +223,29 @@ class TestAnalyzeService:
         request = gateway.requests[0]
         assert request.mode.value == "custom_prompt"
         assert request.custom_prompt == "Summarize this"
+
+    @pytest.mark.asyncio
+    async def test_forwards_system_prompt_to_ai_request(self) -> None:
+        gateway = StubAIGateway(
+            result=AnalysisResult(raw_response="translated"),
+            requests=[],
+        )
+        service = AnalyzeService(
+            ai_gateway=gateway,
+            config=_build_browser_api_config(),
+        )
+
+        await service.analyze_translate(
+            _build_command(
+                mode="translation_with_explanation",
+                system_prompt="Shared system instructions.",
+            )
+        )
+
+        request = gateway.requests[0]
+        assert request.mode.value == "translation"
+        assert request.include_explanation is True
+        assert request.system_prompt == "Shared system instructions."
 
     @pytest.mark.asyncio
     async def test_forwards_explicit_cache_name_to_ai_request(self) -> None:

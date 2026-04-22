@@ -118,6 +118,26 @@ Keeping routers thin provides three benefits:
 - the browser API can evolve its fallback behavior without changing request parsing code
 - reuse of desktop-side AI assets stays concentrated inside adapters and services
 
+### Browser API Config Boundary
+
+`browser_api` no longer depends on the desktop `AppConfig` shape directly.
+
+- `adapters/config_gateway.py` loads desktop config once and maps it into `BrowserApiConfig`
+- `application/services/analyze_service.py` depends only on the smaller browser-API-specific config surface
+- `AIModel` still keeps the desktop-facing `AppConfig` contract for the main application and is reused through the adapter boundary
+
+This split keeps browser API behavior aligned with desktop defaults without letting desktop-only settings leak across the Local API boundary.
+
+### Shared System Prompt Transport
+
+The browser extension sends the popup's shared system prompt as an independent `system_prompt` field.
+
+- transport keeps action mode and shared prompt separate
+- application service normalizes `translation_with_explanation` into `AnalysisMode.TRANSLATION + include_explanation=True`
+- `AIModel._build_contents()` merges `system_prompt` into the request body header, not `system_instruction`
+
+That design preserves context-cache reuse because the cache only stores article text plus static formatting rules. Request-specific translation instructions and custom-prompt context stay outside the cache and can change between runs without forcing cache recreation.
+
 ### Why Mock Mode Exists
 
 Mock mode is intentional, not a temporary hack.
