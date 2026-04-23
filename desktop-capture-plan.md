@@ -181,16 +181,16 @@ class DesktopCaptureConfig:
 
 目標：Kindle の画面上の選択領域を Gemini に画像として渡し、翻訳が返ってくることを確認する。
 
-- [ ] `desktop_capture` パッケージ骨格を作成（`config.py` に `DesktopCaptureConfig` を定義）
-- [ ] `app.py`：起動直後に `ctypes.windll.shcore.SetProcessDpiAwareness(2)` を呼び **Per-Monitor DPI Aware V2** を強制する。これを省くと PySide6 が返す論理ピクセル座標と mss が撮影する物理ピクセル画像のスケールが乖離し、crop 位置がずれるバグが発生する
-- [ ] `capture/overlay.py`：PySide6 の透過フルスクリーンウィンドウで矩形ドラッグ選択。マルチモニター環境ではスクリーンごとに `QScreen.devicePixelRatio()` を取得し、論理座標を物理座標へ変換してから `CaptureRequest.crop_rect` に渡す
-- [ ] `capture/screenshot.py`：`mss` で全画面キャプチャ → crop + リサイズ（前処理は Phase 2 で追加）
-- [ ] `adapters/ai_gateway.py`：`DesktopCaptureConfig` を `AIModel` 向け入力へ橋渡しする adapter を追加
-- [ ] `presenter.py`：crop 画像を `AnalysisRequest(text="", images=[...])` に詰めて adapter 経由で `AIModel.analyze` を呼ぶ
-- [ ] `result_window.py`：翻訳結果を表示する最小限のウィンドウ
-- [ ] `capture/hotkey.py`：`ctypes.windll.user32.RegisterHotKey` でグローバルホットキー（例: `Ctrl+Shift+G`）を登録
-- [ ] `capture/trigger_panel.py`：`Capture now` / `Capture in 3s` / `Capture in 5s` の代替起動 UI を追加
-- [ ] `pyproject.toml` に `mss` を追加（ホットキーは標準ライブラリで実装）
+- [x] `desktop_capture` パッケージ骨格を作成（`config.py` に `DesktopCaptureConfig` を定義）
+- [x] `app.py`：起動直後に `ctypes.windll.shcore.SetProcessDpiAwareness(2)` を呼び **Per-Monitor DPI Aware V2** を強制する。これを省くと PySide6 が返す論理ピクセル座標と mss が撮影する物理ピクセル画像のスケールが乖離し、crop 位置がずれるバグが発生する
+- [x] `capture/overlay.py`：PySide6 の透過フルスクリーンウィンドウで矩形ドラッグ選択。マルチモニター環境ではスクリーンごとに `QScreen.devicePixelRatio()` を取得し、論理座標を物理座標へ変換してから `CaptureRequest.crop_rect` に渡す
+- [x] `capture/screenshot.py`：`mss` で全画面キャプチャ → crop + リサイズ（前処理は Phase 2 で追加）
+- [x] `adapters/ai_gateway.py`：`DesktopCaptureConfig` を `AIModel` 向け入力へ橋渡しする adapter を追加
+- [x] `presenter.py`：crop 画像を `AnalysisRequest(text="", images=[...])` に詰めて adapter 経由で `AIModel.analyze` を呼ぶ
+- [x] `result_window.py`：翻訳結果を表示する最小限のウィンドウ
+- [x] `capture/hotkey.py`：`ctypes.windll.user32.RegisterHotKey` でグローバルホットキー（例: `Ctrl+Shift+G`）を登録
+- [x] `capture/trigger_panel.py`：`Capture now` / `Capture in 3s` / `Capture in 5s` の代替起動 UI を追加
+- [x] `pyproject.toml` に `mss` を追加（ホットキーは標準ライブラリで実装）
 - [ ] **実機確認:** `RegisterHotKey` が登録できるか、競合時に遅延キャプチャへフォールバックできるか、mss で Kindle 画面がキャプチャできるか検証する
 
 > **注意:** `RegisterHotKey` はキーボード hook より検知リスクが低いが、予約済みキーや他アプリとの競合で登録に失敗することがある。その場合は trigger panel からの即時/遅延キャプチャを使う。
