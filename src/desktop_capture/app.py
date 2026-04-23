@@ -6,16 +6,17 @@ import ctypes
 import logging
 
 import dotenv
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QWidget
 
 from pdf_epub_reader.infrastructure.event_loop import run_app
 
 from desktop_capture.config import DesktopCaptureConfig, load_config
+from desktop_capture.contracts import CaptureFlowState
+from desktop_capture.result_window import DesktopCaptureResultWindow
 
 logger = logging.getLogger(__name__)
 
-_bootstrap_window: QWidget | None = None
+_bootstrap_window: DesktopCaptureResultWindow | None = None
 
 
 def main() -> None:
@@ -44,26 +45,14 @@ async def _app_main() -> None:
     _bootstrap_window.show()
 
 
-def _create_bootstrap_window(config: DesktopCaptureConfig) -> QWidget:
-    window = QWidget()
-    window.setWindowTitle("Desktop Capture")
-    window.resize(480, 220)
-
-    title_label = QLabel("Desktop Capture bootstrap is ready.")
-    title_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-
-    summary_label = QLabel(
-        "Phase 1A initialized the standalone app shell.\n\n"
+def _create_bootstrap_window(config: DesktopCaptureConfig) -> DesktopCaptureResultWindow:
+    window = DesktopCaptureResultWindow()
+    window.show_status(CaptureFlowState.IDLE, "Desktop capture bootstrap is ready.")
+    window.set_body_text(
+        "Phase 1 bootstrap summary\n\n"
         f"Capture backend: {config.capture_backend}\n"
         f"OCR backend: {config.ocr_backend}\n"
         f"Default delayed capture: {config.delayed_capture_seconds}s\n"
         f"Hotkey: {config.hotkey or 'not configured'}"
     )
-    summary_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-
-    layout = QVBoxLayout()
-    layout.addWidget(title_label)
-    layout.addWidget(summary_label)
-    layout.addStretch()
-    window.setLayout(layout)
     return window
