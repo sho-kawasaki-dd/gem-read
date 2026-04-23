@@ -113,6 +113,7 @@ class OcrGateway(Protocol):
 - 追加モデルファイル不要。OS に標準搭載
 - 対応言語は OS にインストール済みの言語パックに依存
 - 行ごとの bounding box と信頼度を回収し、横書き本文とルビ候補を判別できる材料を `OcrResult` に残す
+- **非同期ブリッジング注意：** `pywinrt` が返す `IAsyncOperation` は Python 標準の `asyncio.Future` とは別物。バージョンによっては `await engine.recognize_async(bitmap)` がそのまま動けるが、`qasync` イベントループ上でブロックまたは例外になる場合がある。その際は `asyncio.to_thread()` で同期ラッパーに切り替える。
 
 ### RapidOCR 実装
 
@@ -181,7 +182,8 @@ class DesktopCaptureConfig:
 目標：Kindle の画面上の選択領域を Gemini に画像として渡し、翻訳が返ってくることを確認する。
 
 - [ ] `desktop_capture` パッケージ骨格を作成（`config.py` に `DesktopCaptureConfig` を定義）
-- [ ] `capture/overlay.py`：PySide6 の透過フルスクリーンウィンドウで矩形ドラッグ選択
+- [ ] `app.py`：起動直後に `ctypes.windll.shcore.SetProcessDpiAwareness(2)` を呼び **Per-Monitor DPI Aware V2** を強制する。これを省くと PySide6 が返す論理ピクセル座標と mss が撮影する物理ピクセル画像のスケールが乖離し、crop 位置がずれるバグが発生する
+- [ ] `capture/overlay.py`：PySide6 の透過フルスクリーンウィンドウで矩形ドラッグ選択。マルチモニター環境ではスクリーンごとに `QScreen.devicePixelRatio()` を取得し、論理座標を物理座標へ変換してから `CaptureRequest.crop_rect` に渡す
 - [ ] `capture/screenshot.py`：`mss` で全画面キャプチャ → crop + リサイズ（前処理は Phase 2 で追加）
 - [ ] `adapters/ai_gateway.py`：`DesktopCaptureConfig` を `AIModel` 向け入力へ橋渡しする adapter を追加
 - [ ] `presenter.py`：crop 画像を `AnalysisRequest(text="", images=[...])` に詰めて adapter 経由で `AIModel.analyze` を呼ぶ
@@ -201,7 +203,6 @@ class DesktopCaptureConfig:
 
   ```python
   from dataclasses import dataclass
-  from pathlib import Path
   from typing import Literal, Protocol
 
   @dataclass(frozen=True)
@@ -215,11 +216,10 @@ class DesktopCaptureConfig:
   class CaptureRequest:
       monitor_index: int | None = None
       crop_rect: CaptureRect | None = None
-      output_path: Path | None = None
 
   @dataclass(frozen=True)
   class CaptureResult:
-      image_path: Path
+      image_bytes: bytes  # メモリ上で受け渡し（一時ファイル不使用）
       image_width: int
       image_height: int
       backend: Literal["mss", "wgc"]
@@ -234,10 +234,10 @@ class DesktopCaptureConfig:
 
 - [ ] `capture/screenshot.py` を `MssCaptureGateway` として `CaptureGateway` に準拠させリファクタ
 - [ ] `capture/wgc_backend.py`：外部 `capture-helper.exe` を `subprocess` で呼び出す WGC クライアント実装
-- [ ] `capture-helper/`：C# などで WGC を扱う helper プロジェクトを追加し、PNG 保存 + JSON メタデータ返却を行う
+- [ ] `capture-helper/`：C# などで WGC を扱う helper プロジェクトを追加し、PNG バイト列を **標準出力（stdout）** に書き込み、JSON メタデータを **標準エラー出力（stderr）** に返す（`Console.OpenStandardOutput()` に PNG を流し込み、`Console.Error` にメタデータを出力）
 - [ ] `presenter.py` に真っ黒画像チェックを追加。DRM 検知時はユーザーへ通知し WGC helper への切り替えを促す
 - [ ] `DesktopCaptureConfig` に `capture_backend: Literal["mss", "wgc"] = "mss"` を有効化
-- [ ] helper との I/O はまず一時 PNG + JSON を採用し、標準出力バイナリは PoC でのみ検証する
+- [ ] helper との I/O は **標準出力（stdout）バイナリ + 標準エラー出力（stderr）JSON** を本番採用とする。一時 PNG + JSON はゴミファイルリスク・ディスク I/O オーバーヘッド・クリーンアップロジックの追加実装が必要になるため採用しない。名前付きパイプ（Named Pipes）は同一 helper プロセスを複数回使い回す必要が生じた場合の追加選択肢として保留する
 - [ ] Phase 1 の PoC 結果で mss が問題なければ本フェーズはスキップ可
 
 ### Phase 2 — OCR 前処理の追加
@@ -245,7 +245,7 @@ class DesktopCaptureConfig:
 目標：テキストを OCR で抽出し、画像は補助入力として添付することで解析精度を上げる。
 
 - [ ] `ocr/gateway.py`：`OcrGateway` プロトコル定義
-- [ ] `ocr/windows_ocr.py`：**`pywinrt`** 経由の Windows OCR API 実装
+- [ ] `ocr/windows_ocr.py`：**`pywinrt`** 経由の Windows OCR API 実装。`qasync` イベントループ上で `await recognize_async()` が正常動作するか検証し、問題が出る場合は `asyncio.to_thread()` で同期ラッパーに切り替える
 - [ ] `ocr/factory.py`：ファクトリ実装（`DesktopCaptureConfig.ocr_backend` を参照）
 - [ ] `capture/screenshot.py` に画像前処理を追加
   - 背景色に依存しない二値化・コントラスト調整（セピア・ナイトモード対応）
@@ -308,6 +308,9 @@ class DesktopCaptureConfig:
 | RapidOCR の日本語精度が用途に不十分             | Windows OCR との並走テストで比較し、モデルを差し替えるか PaddleOCR に切り替え                             |
 | ルビ混じりで OCR テキストが崩れる               | bounding box ベースでルビ候補を落とし、残差は `DesktopCaptureConfig.system_prompt` で Gemini に補正させる |
 | 縦書き文書で OCR 品質が大きく落ちる             | Phase 2 では横書き前提に限定し、縦書き検知時は未対応メッセージを出して誤解析を避ける                      |
+| DPI スケーリングによる crop 座標ずれ            | 起動エントリ（`app.py`）で `SetProcessDpiAwareness(2)` を呼び Per-Monitor DPI Aware V2 を強制。マルチモニター環境では `QScreen.devicePixelRatio()` で論理→物理座標変換を行い `CaptureRequest.crop_rect` に渡す |
+| `pywinrt` の非同期処理が `qasync` で動かない    | `IAsyncOperation` は `asyncio.Future` とは別物。`await recognize_async()` で例外・ブロックが出る場合は `asyncio.to_thread()` で同期ラッパーに切り替える                                                     |
+| WGC helper との I/O でゴミファイルが残る        | 一時ファイルを使わず stdout バイナリ + stderr JSON を本番採用。Python 側がクラッシュしてもディスクに残骸が生じない                                                                                            |
 
 ---
 
