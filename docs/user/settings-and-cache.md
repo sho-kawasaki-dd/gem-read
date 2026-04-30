@@ -4,7 +4,7 @@ These settings apply regardless of whether you launch Gem Read with `.\gem-read_
 
 ## Settings Dialog
 
-The settings dialog is split into three tabs.
+The settings dialog is split into four tabs.
 
 ### Rendering
 
@@ -28,11 +28,28 @@ The settings dialog is split into three tabs.
 - Translation system prompt
 - Context cache TTL
 
+### Export
+
+- Export folder
+- Include explanation
+- Include selected source text
+- Include raw response
+- Include document metadata
+- Include usage metrics
+- Include YAML frontmatter
+
+Desktop export defaults keep `Include explanation` and `Include selected source text` enabled. Raw response, document metadata, usage metrics, and YAML frontmatter stay off until you enable them.
+
+If the export folder is blank, Gem Read does not open a Save As dialog. The export request is skipped and the main status bar shows an `Export folder is not configured` message instead.
+
+When export succeeds, Gem Read writes one Markdown file into the configured folder using the current document title plus a UTC timestamp. If the document has no title metadata, Gem Read falls back to the opened file basename. Missing export folders are created automatically.
+
 ## UI Language vs AI Output Language
 
 These are separate settings.
 
 - UI language changes menus, buttons, and visible application text.
+- UI language also changes the localized labels inside exported Markdown files.
 - AI output language changes the language requested from Gemini.
 
 ## Browser Extension Popup Settings

@@ -28,11 +28,12 @@ This README reflects the implementation state of version 1.0.0.
 - 選択領域のテキスト送信と画像付きマルチモーダル送信
 - Gemini モデルの切り替え
 - 翻訳、解説付き翻訳、カスタムプロンプト解析
+- アクティブな AI 結果の Markdown 保存
 - Context Cache の作成、削除、TTL 更新、一覧確認
 - Markdown、LaTeX 数式、化学式の表示
 - 目次パネルからのページ移動
 - 日本語 / English の UI 切替
-- レンダリング、検出、AI 設定をまとめた設定ダイアログ
+- レンダリング、検出、AI、Export 設定をまとめた設定ダイアログ
 
 English:
 
@@ -42,11 +43,12 @@ English:
 - Text-only and image-assisted multimodal Gemini requests
 - Gemini model switching
 - Translation, translation with explanation, and custom prompt analysis
+- Manual Markdown export of the active AI result
 - Context cache creation, deletion, TTL update, and listing
 - Markdown, LaTeX math, and chemical formula rendering
 - Page navigation from the table-of-contents panel
 - Japanese / English UI switching
-- Unified settings dialog for rendering, detection, and AI options
+- Unified settings dialog for rendering, detection, AI, and export options
 
 ## 動作要件 / Requirements
 
@@ -161,14 +163,14 @@ On Windows PowerShell, you can also use the launcher script from the repository 
 - AI 機能は環境変数 `GEMINI_API_KEY` を使います
 - ユーザー設定は OS 標準の設定ディレクトリに JSON で保存されます
 - UI 表示言語と AI 出力言語は別設定です
-- 設定ダイアログでは、レンダリング形式、JPEG 品質、DPI、ページキャッシュ数、自動画像検出、自動数式検出、モデル選択、翻訳プロンプト、出力言語、キャッシュ TTL を変更できます
+- 設定ダイアログでは、レンダリング形式、JPEG 品質、DPI、ページキャッシュ数、自動画像検出、自動数式検出、モデル選択、翻訳プロンプト、出力言語、キャッシュ TTL、Markdown export フォルダ、export 内容の toggle を変更できます
 
 English:
 
 - AI features use the `GEMINI_API_KEY` environment variable
 - User settings are stored as JSON in the OS-standard configuration directory
 - UI language and AI output language are separate settings
-- The settings dialog lets you change render format, JPEG quality, DPI, page cache size, automatic image detection, automatic math detection, model selection, translation prompt, output language, and cache TTL
+- The settings dialog lets you change render format, JPEG quality, DPI, page cache size, automatic image detection, automatic math detection, model selection, translation prompt, output language, cache TTL, the Markdown export folder, and export content toggles
 
 ## 使い方 / Usage
 
@@ -179,8 +181,18 @@ English:
 3. ドキュメント上をドラッグして範囲選択します。
 4. 複数選択したい場合は `Ctrl+ドラッグ` で追加します。
 5. サイドパネルでモデルを選び、翻訳、解説付き翻訳、またはカスタム解析を実行します。
-6. 必要に応じてキャッシュを作成し、キャッシュ管理ダイアログで状態や TTL を確認します。
-7. 目次パネル、設定ダイアログ、表示言語ダイアログを使って表示や挙動を調整します。
+6. 成功した結果が表示されたタブをアクティブにした状態で `Export Markdown` を押すと、その結果を設定済みフォルダへ保存できます。
+7. 必要に応じてキャッシュを作成し、キャッシュ管理ダイアログで状態や TTL を確認します。
+8. 目次パネル、設定ダイアログ、表示言語ダイアログを使って表示や挙動を調整します。
+
+Desktop Markdown export の要点:
+
+- Export 対象はサイドパネルのアクティブタブにある最新の成功結果だけです
+- Export ボタンは成功結果があるときだけ有効になります
+- 保存先フォルダは Settings の Export タブで設定します
+- 保存時にフォルダが存在しなければ自動作成します
+- ファイル名は `{document-title}_{YYYYMMDDTHHMMSS}.md` の UTC タイムスタンプ形式です
+- Save As ダイアログはなく、保存結果はメインウィンドウの status bar に表示されます
 
 主なショートカット:
 

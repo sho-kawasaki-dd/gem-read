@@ -34,10 +34,31 @@ From the side panel you can:
 - Run translation
 - Run translation with explanation
 - Submit a custom prompt
+- Export the active successful result as Markdown
 - Choose whether to force sending the selected region as an image
 - Switch the active Gemini model for the current request
 
 When the selection includes cropped image content, the request can be sent as multimodal input.
+
+The export button is shared by the Translation tab and the Custom Prompt tab. It only becomes available when the currently active tab has a successful result.
+
+## Export Markdown Results
+
+1. Open Settings and configure the export folder in the `Export` tab.
+2. Run `Translate`, `Translate with Explanation`, or `Submit` from the custom prompt tab.
+3. Leave the tab with the result you want to save active.
+4. Click `Export Markdown`.
+
+Desktop export behavior:
+
+- The export target is the active tab only. Switching tabs changes which result can be exported.
+- Failed results and placeholders cannot be exported.
+- The export folder is created automatically if it does not exist.
+- If no export folder is configured, Gem Read does not open a file dialog. It shows a status-bar message and skips the export.
+- The filename format is `{sanitized_title}_{YYYYMMDDTHHMMSS}.md` using a UTC timestamp.
+- The document title falls back to the opened file basename when the source document has no title metadata.
+- The exported Markdown headings follow the current UI language.
+- The main window status bar reports success or failure, and the current AI result text stays visible even if export fails.
 
 ## Useful Shortcuts
 
