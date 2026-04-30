@@ -69,6 +69,13 @@ _STATIC_SYSTEM_INSTRUCTION = (
     "- Write chemical formulas using the LaTeX \\ce{} command."
 )
 
+_PLOTLY_JSON_REQUEST_INSTRUCTION = (
+    "If the response contains data or formulas that can be visualized, "
+    "output the Plotly figure specification as a JSON fenced code block "
+    "(```json ... ```). Provide only the pure JSON; do not include Python "
+    "execution code."
+)
+
 
 class AIModel:
     """Gemini API を利用した AI 解析 Model。
@@ -620,6 +627,11 @@ class AIModel:
                 f"Translate only the text enclosed in <selection> tags below. "
                 f"You may use the article context to inform terminology and style, "
                 f"but your output must contain only the translation of the selected text."
+            )
+
+        if request.request_plotly_json:
+            prompt_header = (
+                f"{prompt_header}\n\n{_PLOTLY_JSON_REQUEST_INSTRUCTION}"
             )
 
         # プロンプトヘッダー（言語指示 + タスク指示）

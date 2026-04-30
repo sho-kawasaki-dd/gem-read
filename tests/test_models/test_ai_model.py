@@ -668,6 +668,39 @@ class TestExplanationMode:
         assert result.explanation is None
 
 
+class TestPlotlyPromptInjection:
+    """Step 6: request_plotly_json による contents ヘッダー注入を検証する。"""
+
+    def test_build_contents_appends_plotly_instruction_for_translation(self) -> None:
+        model = _build_model(output_language="English")
+
+        contents = model._build_contents(
+            AnalysisRequest(
+                text="Hello world",
+                mode=AnalysisMode.TRANSLATION,
+                request_plotly_json=True,
+            )
+        )
+
+        assert "Respond in English." in contents[0]
+        assert "Plotly figure specification as a JSON fenced code block" in contents[0]
+        assert "<selection>\nHello world\n</selection>" == contents[1]
+
+    def test_build_contents_does_not_append_plotly_instruction_by_default(self) -> None:
+        model = _build_model(output_language="English")
+
+        contents = model._build_contents(
+            AnalysisRequest(
+                text="Explain this",
+                mode=AnalysisMode.CUSTOM_PROMPT,
+                custom_prompt="Summarize",
+            )
+        )
+
+        assert "USER_TASK" in contents[0]
+        assert "Plotly figure specification as a JSON fenced code block" not in contents[0]
+
+
 # ======================================================================
 # Phase 7: Context Caching テスト群
 # ======================================================================
