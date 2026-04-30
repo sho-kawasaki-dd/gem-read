@@ -103,6 +103,7 @@ class SettingsDialogTexts:
     detection_tab_text: str
     ai_tab_text: str
     export_tab_text: str
+    visualization_tab_text: str
     image_format_label: str
     jpeg_quality_label: str
     default_dpi_label: str
@@ -125,6 +126,8 @@ class SettingsDialogTexts:
     export_include_document_metadata_text: str
     export_include_usage_metrics_text: str
     export_include_yaml_frontmatter_text: str
+    plotly_multi_spec_prompt_text: str
+    plotly_multi_spec_first_only_text: str
     minutes_suffix: str
     reset_defaults_button_text: str
     ok_button_text: str

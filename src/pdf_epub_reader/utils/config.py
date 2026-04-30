@@ -80,6 +80,10 @@ DEFAULT_EXPORT_INCLUDE_DOCUMENT_METADATA = False
 DEFAULT_EXPORT_INCLUDE_USAGE_METRICS = False
 DEFAULT_EXPORT_INCLUDE_YAML_FRONTMATTER = False
 
+# --- Plotly visualization デフォルト設定 ---
+DEFAULT_PLOTLY_VISUALIZATION_ENABLED = False
+DEFAULT_PLOTLY_MULTI_SPEC_MODE: Literal["prompt", "first_only"] = "prompt"
+
 # --- バリデーション定数 (Phase 5: 設定ダイアログ) ---
 DPI_MIN = 72
 DPI_MAX = 600
@@ -94,6 +98,7 @@ CACHE_TTL_MIN = 1
 CACHE_TTL_MAX = 1440
 
 UiLanguage = Literal["ja", "en"]
+PlotlyMultiSpecMode = Literal["prompt", "first_only"]
 
 
 def _get_system_locale_name() -> str | None:
@@ -134,6 +139,15 @@ def normalize_export_folder(value: str | None) -> str:
     if value is None:
         return ""
     return value.strip()
+
+
+def normalize_plotly_multi_spec_mode(
+    value: str | None,
+) -> PlotlyMultiSpecMode:
+    """複数 Plotly spec の扱い設定を既知の値へ正規化する。"""
+    if value == "first_only":
+        return "first_only"
+    return "prompt"
 
 
 def get_default_ui_language(locale_name: str | None = None) -> UiLanguage:
@@ -212,10 +226,19 @@ class AppConfig:
         DEFAULT_EXPORT_INCLUDE_YAML_FRONTMATTER
     )
 
+    # Phase 9: Plotly visualization 設定
+    plotly_visualization_enabled: bool = DEFAULT_PLOTLY_VISUALIZATION_ENABLED
+    plotly_multi_spec_mode: PlotlyMultiSpecMode = (
+        DEFAULT_PLOTLY_MULTI_SPEC_MODE
+    )
+
     def __post_init__(self) -> None:
         self.ui_language = normalize_ui_language(self.ui_language)
         self.gemini_model_name = normalize_model_name(self.gemini_model_name)
         self.export_folder = normalize_export_folder(self.export_folder)
+        self.plotly_multi_spec_mode = normalize_plotly_multi_spec_mode(
+            self.plotly_multi_spec_mode
+        )
         normalized_models: list[str] = []
         for name in self.selected_models:
             normalized = normalize_model_name(name)

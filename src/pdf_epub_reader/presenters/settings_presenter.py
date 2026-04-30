@@ -112,6 +112,7 @@ class SettingsPresenter:
         self._view.set_export_include_yaml_frontmatter(
             config.export_include_yaml_frontmatter
         )
+        self._view.set_plotly_multi_spec_mode(config.plotly_multi_spec_mode)
 
     def _read_config_from_view(self) -> AppConfig:
         """ダイアログの現在値から AppConfig を生成する。
@@ -140,6 +141,8 @@ class SettingsPresenter:
             export_include_document_metadata=self._view.get_export_include_document_metadata(),
             export_include_usage_metrics=self._view.get_export_include_usage_metrics(),
             export_include_yaml_frontmatter=self._view.get_export_include_yaml_frontmatter(),
+            plotly_visualization_enabled=self._config.plotly_visualization_enabled,
+            plotly_multi_spec_mode=self._view.get_plotly_multi_spec_mode(),
             ui_language=self._config.ui_language,
             # ダイアログ対象外のフィールドは既存値を引き継ぐ
             window_width=self._config.window_width,

@@ -447,6 +447,7 @@ class MockSettingsDialogView:
             "export_include_document_metadata": False,
             "export_include_usage_metrics": False,
             "export_include_yaml_frontmatter": False,
+            "plotly_multi_spec_mode": "prompt",
         }
         # exec_dialog が返す固定値。True = OK、False = Cancel。
         self._exec_return: bool = True
@@ -552,6 +553,9 @@ class MockSettingsDialogView:
     def get_export_include_yaml_frontmatter(self) -> bool:
         return self._values["export_include_yaml_frontmatter"]
 
+    def get_plotly_multi_spec_mode(self) -> str:
+        return self._values["plotly_multi_spec_mode"]
+
     # --- Phase 6: AI Models タブ Setters ---
 
     def set_gemini_model_name(self, value: str) -> None:
@@ -601,6 +605,10 @@ class MockSettingsDialogView:
     def set_export_include_yaml_frontmatter(self, value: bool) -> None:
         self.calls.append(("set_export_include_yaml_frontmatter", (value,)))
         self._values["export_include_yaml_frontmatter"] = value
+
+    def set_plotly_multi_spec_mode(self, value: str) -> None:
+        self.calls.append(("set_plotly_multi_spec_mode", (value,)))
+        self._values["plotly_multi_spec_mode"] = value
 
     def set_available_models_for_selection(
         self, models: list[tuple[str, str]]

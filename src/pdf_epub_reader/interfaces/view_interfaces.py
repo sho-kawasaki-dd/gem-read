@@ -27,6 +27,7 @@ from pdf_epub_reader.dto import (
     SidePanelTexts,
     ToCEntry,
 )
+from pdf_epub_reader.utils.config import PlotlyMultiSpecMode
 
 
 @runtime_checkable
@@ -482,6 +483,10 @@ class ISettingsDialogView(Protocol):
         """YAML frontmatter を export に含めるかを取得する。"""
         ...
 
+    def get_plotly_multi_spec_mode(self) -> PlotlyMultiSpecMode:
+        """複数 Plotly spec の扱い設定を取得する。"""
+        ...
+
     # --- Phase 6: AI Models タブ Setters ---
 
     def set_gemini_model_name(self, value: str) -> None:
@@ -532,6 +537,10 @@ class ISettingsDialogView(Protocol):
 
     def set_export_include_yaml_frontmatter(self, value: bool) -> None:
         """YAML frontmatter を export に含めるかを設定する。"""
+        ...
+
+    def set_plotly_multi_spec_mode(self, value: PlotlyMultiSpecMode) -> None:
+        """複数 Plotly spec の扱い設定を反映する。"""
         ...
 
     def set_available_models_for_selection(

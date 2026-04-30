@@ -82,12 +82,17 @@ class TestTranslationService:
         texts = service.build_settings_dialog_texts("en")
 
         assert texts.export_tab_text == "Export"
+        assert texts.visualization_tab_text == "Visualization"
         assert texts.export_folder_label == "Export Folder:"
         assert texts.export_browse_button_text == "Browse..."
         assert texts.export_include_explanation_text == "Include explanation"
         assert (
             texts.export_include_yaml_frontmatter_text
             == "Include YAML frontmatter"
+        )
+        assert (
+            texts.plotly_multi_spec_prompt_text
+            == "When multiple Plotly specs are found, ask which one to open"
         )
 
     def test_build_markdown_export_texts_returns_localized_labels(self) -> None:

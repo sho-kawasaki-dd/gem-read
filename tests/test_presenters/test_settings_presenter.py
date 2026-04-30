@@ -479,3 +479,53 @@ class TestFetchModels:
         assert len(error_calls) == 1
         assert "Failed to fetch the model list" in error_calls[0][0]
         assert "Network error" in error_calls[0][0]
+
+
+class TestPlotlyVisualizationSettings:
+    def test_populate_sets_plotly_visualization_fields(
+        self, mock_settings_view: MockSettingsDialogView
+    ) -> None:
+        config = AppConfig(
+            plotly_visualization_enabled=True,
+            plotly_multi_spec_mode="first_only",
+        )
+        mock_settings_view._exec_return = True
+
+        presenter = SettingsPresenter(mock_settings_view, config)
+        with patch(
+            "pdf_epub_reader.presenters.settings_presenter.save_config"
+        ):
+            presenter.show()
+
+        assert mock_settings_view.get_calls("set_plotly_multi_spec_mode")[0] == (
+            "first_only",
+        )
+
+    def test_read_config_includes_plotly_multi_spec_mode_and_preserves_toggle(
+        self, mock_settings_view: MockSettingsDialogView
+    ) -> None:
+        config = AppConfig(
+            plotly_visualization_enabled=True,
+            plotly_multi_spec_mode="prompt",
+        )
+        presenter = SettingsPresenter(mock_settings_view, config)
+        mock_settings_view._values["plotly_multi_spec_mode"] = "first_only"
+
+        result = presenter._read_config_from_view()
+
+        assert result.plotly_visualization_enabled is True
+        assert result.plotly_multi_spec_mode == "first_only"
+
+    def test_reset_sets_plotly_visualization_defaults(
+        self, mock_settings_view: MockSettingsDialogView
+    ) -> None:
+        config = AppConfig(plotly_multi_spec_mode="first_only")
+        presenter = SettingsPresenter(mock_settings_view, config)
+        mock_settings_view.calls.clear()
+
+        mock_settings_view.simulate_reset_defaults()
+
+        defaults = AppConfig()
+        assert mock_settings_view.get_calls("set_plotly_multi_spec_mode")[-1] == (
+            defaults.plotly_multi_spec_mode,
+        )

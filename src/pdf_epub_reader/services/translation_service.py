@@ -173,6 +173,7 @@ class TranslationService:
             detection_tab_text=self.translate("settings.tab.detection", language),
             ai_tab_text=self.translate("settings.tab.ai", language),
             export_tab_text=self.translate("settings.tab.export", language),
+            visualization_tab_text=self.translate("settings.tab.visualization", language),
             image_format_label=self.translate("settings.render.image_format", language),
             jpeg_quality_label=self.translate("settings.render.jpeg_quality", language),
             default_dpi_label=self.translate("settings.render.default_dpi", language),
@@ -206,6 +207,12 @@ class TranslationService:
             ),
             export_include_yaml_frontmatter_text=self.translate(
                 "settings.export.include_yaml_frontmatter", language
+            ),
+            plotly_multi_spec_prompt_text=self.translate(
+                "settings.visualization.plotly_multi_spec_prompt", language
+            ),
+            plotly_multi_spec_first_only_text=self.translate(
+                "settings.visualization.plotly_multi_spec_first_only", language
             ),
             minutes_suffix=self.translate("common.minutes_suffix", language),
             reset_defaults_button_text=self.translate("settings.button.reset_defaults", language),

@@ -117,3 +117,29 @@ class TestMarkdownExportConfig:
         assert loaded.export_include_document_metadata is True
         assert loaded.export_include_usage_metrics is True
         assert loaded.export_include_yaml_frontmatter is True
+
+
+class TestPlotlyVisualizationConfig:
+    def test_plotly_fields_use_expected_defaults(self) -> None:
+        config = AppConfig()
+
+        assert config.plotly_visualization_enabled is False
+        assert config.plotly_multi_spec_mode == "prompt"
+
+    def test_plotly_fields_round_trip_and_mode_is_normalized(self, tmp_path) -> None:
+        config_path = tmp_path / "config.json"
+        config = AppConfig(
+            plotly_visualization_enabled=True,
+            plotly_multi_spec_mode="first_only",
+        )
+
+        save_config(config, config_path)
+        loaded = load_config(config_path)
+
+        assert loaded.plotly_visualization_enabled is True
+        assert loaded.plotly_multi_spec_mode == "first_only"
+
+    def test_invalid_plotly_mode_falls_back_to_prompt(self) -> None:
+        config = AppConfig(plotly_multi_spec_mode="invalid")
+
+        assert config.plotly_multi_spec_mode == "prompt"

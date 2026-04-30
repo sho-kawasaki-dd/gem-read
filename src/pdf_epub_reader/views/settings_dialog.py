@@ -3,12 +3,13 @@
 ISettingsDialogView Protocol を満たすモーダル QDialog。
 OK / Cancel で一括適用し、「Reset to Defaults」でデフォルト復帰する。
 
-4 タブ構成:
+5 タブ構成:
 - Rendering: Image Format, JPEG Quality, Default DPI, Page Cache Size
 - Detection: Auto-detect embedded images, Auto-detect math fonts
 - AI Models: Default Model, Available Models (Fetch), Output Language,
              System Prompt Translation
 - Export: Export folder and Markdown section toggles
+- Visualization: Plotly 複数 spec の扱い
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from typing import Literal
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -30,6 +32,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QRadioButton,
     QSpinBox,
     QTabWidget,
     QTextEdit,
@@ -48,6 +51,7 @@ from pdf_epub_reader.utils.config import (
     JPEG_QUALITY_MIN,
     PAGE_CACHE_MAX,
     PAGE_CACHE_MIN,
+    PlotlyMultiSpecMode,
 )
 
 
@@ -227,6 +231,27 @@ class SettingsDialog(QDialog):
 
         self._tabs.addTab(export_tab, "")
 
+        # --- Visualization タブ ---
+        visualization_tab = QWidget()
+        visualization_layout = QVBoxLayout(visualization_tab)
+
+        self._plotly_multi_spec_group = QButtonGroup(self)
+        self._plotly_multi_spec_prompt_radio = QRadioButton("")
+        self._plotly_multi_spec_first_only_radio = QRadioButton("")
+        self._plotly_multi_spec_group.addButton(
+            self._plotly_multi_spec_prompt_radio
+        )
+        self._plotly_multi_spec_group.addButton(
+            self._plotly_multi_spec_first_only_radio
+        )
+        visualization_layout.addWidget(self._plotly_multi_spec_prompt_radio)
+        visualization_layout.addWidget(
+            self._plotly_multi_spec_first_only_radio
+        )
+        visualization_layout.addStretch()
+
+        self._tabs.addTab(visualization_tab, "")
+
         # --- ボタン行 ---
         button_layout = QHBoxLayout()
 
@@ -329,6 +354,11 @@ class SettingsDialog(QDialog):
     def get_export_include_yaml_frontmatter(self) -> bool:
         return self._export_include_yaml_frontmatter_check.isChecked()
 
+    def get_plotly_multi_spec_mode(self) -> PlotlyMultiSpecMode:
+        if self._plotly_multi_spec_first_only_radio.isChecked():
+            return "first_only"
+        return "prompt"
+
     # =========================================================================
     # ISettingsDialogView — Setters
     # =========================================================================
@@ -423,6 +453,12 @@ class SettingsDialog(QDialog):
 
     def set_export_include_yaml_frontmatter(self, value: bool) -> None:
         self._export_include_yaml_frontmatter_check.setChecked(value)
+
+    def set_plotly_multi_spec_mode(self, value: PlotlyMultiSpecMode) -> None:
+        if value == "first_only":
+            self._plotly_multi_spec_first_only_radio.setChecked(True)
+            return
+        self._plotly_multi_spec_prompt_radio.setChecked(True)
 
     def set_available_models_for_selection(
         self, models: list[tuple[str, str]]
@@ -522,6 +558,13 @@ class SettingsDialog(QDialog):
             texts.export_include_yaml_frontmatter_text
         )
         self._tabs.setTabText(3, texts.export_tab_text)
+        self._plotly_multi_spec_prompt_radio.setText(
+            texts.plotly_multi_spec_prompt_text
+        )
+        self._plotly_multi_spec_first_only_radio.setText(
+            texts.plotly_multi_spec_first_only_text
+        )
+        self._tabs.setTabText(4, texts.visualization_tab_text)
         self._reset_button.setText(texts.reset_defaults_button_text)
         self._button_box.button(QDialogButtonBox.StandardButton.Ok).setText(
             texts.ok_button_text

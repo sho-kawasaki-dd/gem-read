@@ -39,12 +39,21 @@ class TestSettingsDialogTranslations:
         assert dialog._tabs.tabText(1) == "Detection"
         assert dialog._tabs.tabText(2) == "AI Models"
         assert dialog._tabs.tabText(3) == "Export"
+        assert dialog._tabs.tabText(4) == "Visualization"
         assert "Fetch Models" in _button_texts(dialog)
         assert "Browse..." in _button_texts(dialog)
         assert "Reset to Defaults" in _button_texts(dialog)
         assert "High-quality downscale (Lanczos)" in _checkbox_texts(dialog)
         assert "Include explanation" in _checkbox_texts(dialog)
         assert "Include YAML frontmatter" in _checkbox_texts(dialog)
+        assert (
+            dialog._plotly_multi_spec_prompt_radio.text()
+            == "When multiple Plotly specs are found, ask which one to open"
+        )
+        assert (
+            dialog._plotly_multi_spec_first_only_radio.text()
+            == "When multiple Plotly specs are found, open only the first one"
+        )
 
         dialog.set_fetch_models_loading(True)
 
