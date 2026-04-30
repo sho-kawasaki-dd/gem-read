@@ -244,6 +244,16 @@ class MockMainView:
         return [args for name, args in self.calls if name == method_name]
 
 
+class MockPlotWindow:
+    """PlotWindow の代替として使う軽量 mock。"""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    def show_figure_html(self, html: str, title: str) -> None:
+        self.calls.append((html, title))
+
+
 class MockSidePanelView:
     """ISidePanelView を満たすテスト用ダミー実装。"""
 

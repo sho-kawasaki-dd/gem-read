@@ -16,6 +16,7 @@ from tests.mocks.mock_views import (
     MockCacheDialogView,
     MockLanguageDialogView,
     MockMainView,
+    MockPlotWindow,
     MockSettingsDialogView,
     MockSidePanelView,
 )
@@ -1793,14 +1794,6 @@ class TestMarkdownExportFlow:
         assert "Failed to export Markdown:" in status_message
 
 
-class _DummyPlotWindow:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
-
-    def show_figure_html(self, html: str, title: str) -> None:
-        self.calls.append((html, title))
-
-
 class TestPlotlyRenderFlow:
     def test_single_plotly_spec_renders_immediately(
         self,
@@ -1812,10 +1805,10 @@ class TestPlotlyRenderFlow:
         panel = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
-        created_windows: list[_DummyPlotWindow] = []
+        created_windows: list[MockPlotWindow] = []
 
-        def build_window() -> _DummyPlotWindow:
-            window = _DummyPlotWindow()
+        def build_window() -> MockPlotWindow:
+            window = MockPlotWindow()
             created_windows.append(window)
             return window
 
@@ -1857,11 +1850,11 @@ class TestPlotlyRenderFlow:
         panel = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
-        created_windows: list[_DummyPlotWindow] = []
+        created_windows: list[MockPlotWindow] = []
         mock_main_view._plotly_picker_return = 1
 
-        def build_window() -> _DummyPlotWindow:
-            window = _DummyPlotWindow()
+        def build_window() -> MockPlotWindow:
+            window = MockPlotWindow()
             created_windows.append(window)
             return window
 
@@ -1910,11 +1903,11 @@ class TestPlotlyRenderFlow:
         panel = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
-        created_windows: list[_DummyPlotWindow] = []
+        created_windows: list[MockPlotWindow] = []
         mock_main_view._plotly_picker_return = 1
 
-        def build_window() -> _DummyPlotWindow:
-            window = _DummyPlotWindow()
+        def build_window() -> MockPlotWindow:
+            window = MockPlotWindow()
             created_windows.append(window)
             return window
 
@@ -1957,10 +1950,10 @@ class TestPlotlyRenderFlow:
         panel = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
-        created_windows: list[_DummyPlotWindow] = []
+        created_windows: list[MockPlotWindow] = []
 
-        def build_window() -> _DummyPlotWindow:
-            window = _DummyPlotWindow()
+        def build_window() -> MockPlotWindow:
+            window = MockPlotWindow()
             created_windows.append(window)
             return window
 
