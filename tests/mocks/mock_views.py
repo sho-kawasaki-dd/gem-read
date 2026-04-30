@@ -237,6 +237,7 @@ class MockSidePanelView:
 
         self._on_translate_requested: Callable[[bool], None] | None = None
         self._on_custom_prompt_submitted: Callable[[str], None] | None = None
+        self._on_export_requested: Callable[[], None] | None = None
         self._on_tab_changed: Callable[[str], None] | None = None
         self._on_force_image_toggled: Callable[[bool], None] | None = None
         self._on_selection_delete_requested: (
@@ -269,6 +270,9 @@ class MockSidePanelView:
     def update_result_text(self, text: str) -> None:
         self.calls.append(("update_result_text", (text,)))
 
+    def set_export_enabled(self, enabled: bool) -> None:
+        self.calls.append(("set_export_enabled", (enabled,)))
+
     def show_loading(self, loading: bool) -> None:
         self.calls.append(("show_loading", (loading,)))
 
@@ -290,6 +294,9 @@ class MockSidePanelView:
         self, cb: Callable[[str], None]
     ) -> None:
         self._on_custom_prompt_submitted = cb
+
+    def set_on_export_requested(self, cb: Callable[[], None]) -> None:
+        self._on_export_requested = cb
 
     def set_on_tab_changed(self, cb: Callable[[str], None]) -> None:
         self._on_tab_changed = cb
@@ -366,6 +373,14 @@ class MockSidePanelView:
     def simulate_custom_prompt_submitted(self, prompt: str) -> None:
         if self._on_custom_prompt_submitted:
             self._on_custom_prompt_submitted(prompt)
+
+    def simulate_export_requested(self) -> None:
+        if self._on_export_requested:
+            self._on_export_requested()
+
+    def simulate_tab_changed(self, mode: str) -> None:
+        if self._on_tab_changed:
+            self._on_tab_changed(mode)
 
     def simulate_force_image_toggled(self, checked: bool) -> None:
         if self._on_force_image_toggled:

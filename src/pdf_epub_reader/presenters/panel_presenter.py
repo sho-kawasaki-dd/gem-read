@@ -10,11 +10,12 @@ from __future__ import annotations
 import asyncio
 
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from pdf_epub_reader.dto import (
     AnalysisMode,
     AnalysisRequest,
+    AnalysisResult,
     CacheStatus,
     RectCoords,
     SelectionContent,
@@ -30,6 +31,17 @@ from pdf_epub_reader.utils.exceptions import (
     AIKeyMissingError,
     AIRateLimitError,
 )
+
+
+@dataclass(frozen=True)
+class ExportState:
+    """現在 export 可能な AI 結果のスナップショット。"""
+
+    result: AnalysisResult
+    action_mode: AnalysisMode
+    include_explanation: bool
+    model_name: str
+    selection_snapshot: SelectionSnapshot
 
 
 class PanelPresenter:
@@ -53,6 +65,8 @@ class PanelPresenter:
         self._ui_language = normalize_ui_language(ui_language, fallback="en")
         self._selection_snapshot = SelectionSnapshot()
         self._force_include_image: bool = False
+        self._active_tab_mode = AnalysisMode.TRANSLATION
+        self._export_states: dict[AnalysisMode, ExportState] = {}
         # Phase 6: リクエスト単位のモデル選択
         self._available_models: list[str] = []
         self._current_model: str = ""
@@ -60,6 +74,7 @@ class PanelPresenter:
             Callable[[str], None] | None
         ) = None
         self._on_clear_selections_handler: Callable[[], None] | None = None
+        self._on_export_requested_handler: Callable[[], None] | None = None
         # Phase 7: キャッシュ状態と MainPresenter 向けコールバック
         self._cache_status = CacheStatus()
         self._on_cache_create_handler: Callable[[], None] | None = None
@@ -71,6 +86,8 @@ class PanelPresenter:
         # 実際の処理内容は Presenter 側に閉じ込める。
         self._view.set_on_translate_requested(self._on_translate_requested)
         self._view.set_on_custom_prompt_submitted(self._on_custom_prompt_submitted)
+        self._view.set_on_export_requested(self._fire_export_requested)
+        self._view.set_on_tab_changed(self._on_tab_changed)
         self._view.set_on_force_image_toggled(self._on_force_image_toggled)
         self._view.set_on_selection_delete_requested(
             self._fire_selection_delete_requested
@@ -89,6 +106,7 @@ class PanelPresenter:
                 self._ui_language
             )
         )
+        self._refresh_export_enabled()
 
     # --- Public API (called by MainPresenter) ---
 
@@ -100,6 +118,11 @@ class PanelPresenter:
         ソースとして使う。
         """
         return self._force_include_image
+
+    @property
+    def export_state(self) -> ExportState | None:
+        """現在アクティブなタブに対応する export 状態を返す。"""
+        return self._export_states.get(self._active_tab_mode)
 
     def set_selected_text(self, text: str) -> None:
         """現在の解析対象テキストを更新し、View にも反映する。
@@ -150,6 +173,7 @@ class PanelPresenter:
         AI 解析入力の組み立ては Phase 5 でこの状態に寄せる。
         """
         self._selection_snapshot = self._normalized_snapshot(snapshot)
+        self._clear_export_states()
         self._view.set_selection_snapshot(self._selection_snapshot)
         self._view.set_combined_selection_preview(
             self._build_analysis_text()
@@ -193,6 +217,7 @@ class PanelPresenter:
         self._view.set_selection_snapshot(self._selection_snapshot)
         self._view.set_combined_selection_preview(self._build_analysis_text())
         self.update_cache_status(self._cache_status)
+        self._refresh_export_enabled()
 
     def get_current_model(self) -> str:
         """サイドパネルで現在選択中のモデル名を返す。
@@ -221,6 +246,12 @@ class PanelPresenter:
     ) -> None:
         """MainPresenter が登録する全選択クリアハンドラ。"""
         self._on_clear_selections_handler = cb
+
+    def set_on_export_requested_handler(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """MainPresenter が登録する export 要求ハンドラ。"""
+        self._on_export_requested_handler = cb
 
     def set_on_cache_invalidate_handler(
         self, cb: Callable[[], None]
@@ -280,6 +311,14 @@ class PanelPresenter:
         """「画像としても送信」チェックボックスの状態変更を記録する。"""
         self._force_include_image = checked
 
+    def _on_tab_changed(self, mode: str) -> None:
+        """アクティブタブ変更に応じて export 可能状態を更新する。"""
+        if mode == AnalysisMode.CUSTOM_PROMPT.value:
+            self._active_tab_mode = AnalysisMode.CUSTOM_PROMPT
+        else:
+            self._active_tab_mode = AnalysisMode.TRANSLATION
+        self._refresh_export_enabled()
+
     def _on_model_changed(self, model_name: str) -> None:
         """モデルプルダウンの変更を内部状態に反映する。
 
@@ -320,10 +359,13 @@ class PanelPresenter:
 
     async def _do_translate(self, include_explanation: bool) -> None:
         """翻訳モードで AI 解析を実行し、結果を View に返す。"""
+        self._active_tab_mode = AnalysisMode.TRANSLATION
         analysis_text = self._build_analysis_text()
         if not analysis_text:
+            self._refresh_export_enabled()
             return
         if not self._current_model:
+            self._refresh_export_enabled()
             self._view.update_result_text(
                 self._translate("presenter.panel.model_unset")
             )
@@ -343,15 +385,23 @@ class PanelPresenter:
             if include_explanation and result.explanation:
                 display += "\n\n---\n\n" + result.explanation
             self._view.update_result_text(display)
+            self._store_export_state(
+                action_mode=AnalysisMode.TRANSLATION,
+                result=result,
+                include_explanation=include_explanation,
+            )
         except AIKeyMissingError:
+            self._invalidate_export_state(AnalysisMode.TRANSLATION)
             self._view.update_result_text(
                 self._translate("presenter.panel.api_key_missing")
             )
         except AIRateLimitError:
+            self._invalidate_export_state(AnalysisMode.TRANSLATION)
             self._view.update_result_text(
                 self._translate("presenter.panel.rate_limit")
             )
         except AIAPIError as exc:
+            self._invalidate_export_state(AnalysisMode.TRANSLATION)
             self._view.update_result_text(
                 self._translate(
                     "presenter.panel.api_error",
@@ -367,10 +417,13 @@ class PanelPresenter:
 
     async def _do_custom_prompt(self, prompt: str) -> None:
         """カスタムプロンプトモードで AI 解析を実行する。"""
+        self._active_tab_mode = AnalysisMode.CUSTOM_PROMPT
         analysis_text = self._build_analysis_text()
         if not analysis_text:
+            self._refresh_export_enabled()
             return
         if not self._current_model:
+            self._refresh_export_enabled()
             self._view.update_result_text(
                 self._translate("presenter.panel.model_unset")
             )
@@ -386,15 +439,23 @@ class PanelPresenter:
             )
             result = await self._ai_model.analyze(request)
             self._view.update_result_text(result.raw_response)
+            self._store_export_state(
+                action_mode=AnalysisMode.CUSTOM_PROMPT,
+                result=result,
+                include_explanation=False,
+            )
         except AIKeyMissingError:
+            self._invalidate_export_state(AnalysisMode.CUSTOM_PROMPT)
             self._view.update_result_text(
                 self._translate("presenter.panel.api_key_missing")
             )
         except AIRateLimitError:
+            self._invalidate_export_state(AnalysisMode.CUSTOM_PROMPT)
             self._view.update_result_text(
                 self._translate("presenter.panel.rate_limit")
             )
         except AIAPIError as exc:
+            self._invalidate_export_state(AnalysisMode.CUSTOM_PROMPT)
             self._view.update_result_text(
                 self._translate(
                     "presenter.panel.api_error",
@@ -428,6 +489,13 @@ class PanelPresenter:
         """View の全消去要求を MainPresenter のハンドラに中継する。"""
         if self._on_clear_selections_handler:
             self._on_clear_selections_handler()
+
+    def _fire_export_requested(self) -> None:
+        """View の export 要求を MainPresenter のハンドラに中継する。"""
+        if self.export_state is None:
+            return
+        if self._on_export_requested_handler:
+            self._on_export_requested_handler()
 
     # --- Private helpers ---
 
@@ -467,6 +535,33 @@ class PanelPresenter:
             self._ui_language,
             **kwargs,
         )
+
+    def _store_export_state(
+        self,
+        *,
+        action_mode: AnalysisMode,
+        result: AnalysisResult,
+        include_explanation: bool,
+    ) -> None:
+        self._export_states[action_mode] = ExportState(
+            result=result,
+            action_mode=action_mode,
+            include_explanation=include_explanation,
+            model_name=self._current_model,
+            selection_snapshot=self._selection_snapshot,
+        )
+        self._refresh_export_enabled()
+
+    def _invalidate_export_state(self, action_mode: AnalysisMode) -> None:
+        self._export_states.pop(action_mode, None)
+        self._refresh_export_enabled()
+
+    def _clear_export_states(self) -> None:
+        self._export_states.clear()
+        self._refresh_export_enabled()
+
+    def _refresh_export_enabled(self) -> None:
+        self._view.set_export_enabled(self.export_state is not None)
 
     def _collect_images(self) -> list[bytes]:
         """現在の選択スナップショットから cropped_image を順序通り収集する。"""

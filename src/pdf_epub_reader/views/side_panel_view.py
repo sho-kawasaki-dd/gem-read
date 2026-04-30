@@ -358,6 +358,7 @@ class SidePanelView(QWidget):
         # --- コールバック保持用 ---
         self._on_translate_requested: Callable[[bool], None] | None = None
         self._on_custom_prompt_submitted: Callable[[str], None] | None = None
+        self._on_export_requested: Callable[[], None] | None = None
         self._on_tab_changed: Callable[[str], None] | None = None
         self._on_force_image_toggled: Callable[[bool], None] | None = None
         self._on_selection_delete_requested: (
@@ -462,6 +463,14 @@ class SidePanelView(QWidget):
         self._tab_widget.currentChanged.connect(self._handle_tab_changed)
         ai_layout.addWidget(self._tab_widget, 1)
 
+        export_row = QHBoxLayout()
+        export_row.addStretch(1)
+        self._export_btn = QPushButton("")
+        self._export_btn.setEnabled(False)
+        self._export_btn.clicked.connect(self._fire_export_requested)
+        export_row.addWidget(self._export_btn)
+        ai_layout.addLayout(export_row)
+
         # --- 翻訳タブ ---
         translation_tab = QWidget()
         translation_layout = QVBoxLayout(translation_tab)
@@ -533,6 +542,7 @@ class SidePanelView(QWidget):
             self._translate_btn,
             self._explain_btn,
             self._submit_btn,
+            self._export_btn,
             self._cache_toggle_btn,
         ]
 
@@ -566,6 +576,10 @@ class SidePanelView(QWidget):
         else:
             self._custom_result_has_content = True
             self._custom_result.setHtml(html, self._katex_base_url)
+
+    def set_export_enabled(self, enabled: bool) -> None:
+        """共有 export ボタンの有効/無効を切り替える。"""
+        self._export_btn.setEnabled(enabled)
 
     def set_selection_snapshot(self, snapshot: SelectionSnapshot) -> None:
         """複数選択一覧のスナップショットを表示に反映する。"""
@@ -615,6 +629,7 @@ class SidePanelView(QWidget):
         self._ai_section.set_title(self._text("ai_section_title"))
         self._translate_btn.setText(self._text("translation_button_text"))
         self._explain_btn.setText(self._text("translation_explain_button_text"))
+        self._export_btn.setText(self._text("export_button_text"))
         self._tab_widget.setTabText(0, self._text("translation_tab_text"))
         self._prompt_edit.setPlaceholderText(self._text("custom_prompt_placeholder"))
         self._submit_btn.setText(self._text("custom_submit_button_text"))
@@ -644,6 +659,10 @@ class SidePanelView(QWidget):
     ) -> None:
         """カスタムプロンプト送信時に呼ばれるコールバックを登録する。"""
         self._on_custom_prompt_submitted = cb
+
+    def set_on_export_requested(self, cb: Callable[[], None]) -> None:
+        """共有 export ボタン押下時に呼ばれるコールバックを登録する。"""
+        self._on_export_requested = cb
 
     def set_on_tab_changed(self, cb: Callable[[str], None]) -> None:
         """タブ切り替え時に呼ばれるコールバックを登録する。"""
@@ -859,6 +878,11 @@ class SidePanelView(QWidget):
             self._on_custom_prompt_submitted(
                 self._prompt_edit.toPlainText()
             )
+
+    def _fire_export_requested(self) -> None:
+        """共有 export ボタンのクリックをコールバックに変換する。"""
+        if self._on_export_requested:
+            self._on_export_requested()
 
     def _fire_force_image_toggled(self, checked: bool) -> None:
         """チェックボックスの切り替えをコールバックに変換する。"""

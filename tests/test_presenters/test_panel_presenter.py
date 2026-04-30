@@ -101,6 +101,10 @@ class TestTranslationFlow:
         result_calls = mock_side_panel_view.get_calls("update_result_text")
         assert len(result_calls) == 1
         assert "Hello world" in result_calls[0][0]
+        assert panel_presenter.export_state is not None
+        assert panel_presenter.export_state.action_mode == AnalysisMode.TRANSLATION
+        assert panel_presenter.export_state.include_explanation is False
+        assert mock_side_panel_view.get_calls("set_export_enabled")[-1] == (True,)
 
     @pytest.mark.asyncio
     async def test_translate_with_explanation(
@@ -121,6 +125,8 @@ class TestTranslationFlow:
         result_calls = mock_side_panel_view.get_calls("update_result_text")
         result_text = result_calls[0][0]
         assert "Mock explanation" in result_text
+        assert panel_presenter.export_state is not None
+        assert panel_presenter.export_state.include_explanation is True
 
     @pytest.mark.asyncio
     async def test_translate_without_selected_text_is_noop(
@@ -158,6 +164,8 @@ class TestCustomPromptFlow:
 
         result_calls = mock_side_panel_view.get_calls("update_result_text")
         assert len(result_calls) == 1
+        assert panel_presenter.export_state is not None
+        assert panel_presenter.export_state.action_mode == AnalysisMode.CUSTOM_PROMPT
 
 
 class TestLoadingState:
@@ -219,6 +227,7 @@ class TestSelectionSnapshot:
         )
         assert len(combined_calls) == 1
         assert combined_calls[0][0] == "選択 1 / ページ 2\n\nSelected!"
+        assert mock_side_panel_view.get_calls("set_export_enabled")[-1] == (False,)
 
     def test_set_selection_snapshot_renumbers_after_deletion(
         self,
@@ -460,6 +469,7 @@ class TestErrorHandling:
         result_calls = mock_side_panel_view.get_calls("update_result_text")
         assert len(result_calls) == 1
         assert "API キー" in result_calls[0][0]
+        assert presenter.export_state is None
 
     @pytest.mark.asyncio
     async def test_rate_limit_shows_error_in_view(
@@ -482,6 +492,7 @@ class TestErrorHandling:
         result_calls = mock_side_panel_view.get_calls("update_result_text")
         assert len(result_calls) == 1
         assert "レート制限" in result_calls[0][0]
+        assert presenter.export_state is None
 
     @pytest.mark.asyncio
     async def test_api_error_shows_details_in_view(
@@ -506,6 +517,7 @@ class TestErrorHandling:
         result_calls = mock_side_panel_view.get_calls("update_result_text")
         assert len(result_calls) == 1
         assert "Something went wrong" in result_calls[0][0]
+        assert presenter.export_state is None
 
     @pytest.mark.asyncio
     async def test_custom_prompt_key_missing_shows_error(
@@ -695,6 +707,81 @@ class TestSelectionHandlers:
         mock_side_panel_view.simulate_clear_selections_requested()
 
         assert called == ["cleared"]
+
+
+class TestExportState:
+    def test_export_button_stays_disabled_until_success(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        assert panel_presenter.export_state is None
+        assert mock_side_panel_view.get_calls("set_export_enabled")[-1] == (False,)
+
+    @pytest.mark.asyncio
+    async def test_active_tab_controls_shared_export_button(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello world"))
+        )
+        await panel_presenter._do_translate(include_explanation=False)
+
+        assert panel_presenter.export_state is not None
+        assert panel_presenter.export_state.action_mode == AnalysisMode.TRANSLATION
+
+        mock_side_panel_view.simulate_tab_changed("custom_prompt")
+
+        assert panel_presenter.export_state is None
+        assert mock_side_panel_view.get_calls("set_export_enabled")[-1] == (False,)
+
+        mock_side_panel_view.simulate_tab_changed("translation")
+
+        assert panel_presenter.export_state is not None
+        assert panel_presenter.export_state.action_mode == AnalysisMode.TRANSLATION
+        assert mock_side_panel_view.get_calls("set_export_enabled")[-1] == (True,)
+
+    @pytest.mark.asyncio
+    async def test_selection_change_invalidates_export_state(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello world"))
+        )
+        await panel_presenter._do_translate(include_explanation=False)
+
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 1, "Changed selection"))
+        )
+
+        assert panel_presenter.export_state is None
+        assert mock_side_panel_view.get_calls("set_export_enabled")[-1] == (False,)
+
+    def test_export_request_handler_called_only_when_active_state_exists(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        called: list[str] = []
+        panel_presenter.set_on_export_requested_handler(
+            lambda: called.append("export")
+        )
+
+        mock_side_panel_view.simulate_export_requested()
+        assert called == []
+
+        panel_presenter._store_export_state(
+            action_mode=AnalysisMode.TRANSLATION,
+            result=AnalysisResult(translated_text="Done", raw_response="Done"),
+            include_explanation=False,
+        )
+        mock_side_panel_view.simulate_export_requested()
+
+        assert called == ["export"]
 
     def test_update_cache_status_active(
         self,
