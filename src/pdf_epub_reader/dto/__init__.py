@@ -28,6 +28,7 @@ from pdf_epub_reader.dto.ui_text_dto import (
     CacheDialogTexts,
     LanguageDialogTexts,
     MainWindowTexts,
+    MarkdownExportTexts,
     SettingsDialogTexts,
     SidePanelTexts,
 )
@@ -43,6 +44,7 @@ __all__ = [
     "DocumentInfo",
     "LanguageDialogTexts",
     "MainWindowTexts",
+    "MarkdownExportTexts",
     "ModelInfo",
     "PageData",
     "RectCoords",

@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import json
 
-from pdf_epub_reader.utils.config import AppConfig, load_config, save_config
+from pdf_epub_reader.utils.config import (
+    AppConfig,
+    load_config,
+    save_config,
+)
 
 
 class TestUiLanguageConfig:
@@ -77,3 +81,39 @@ class TestAiModelConfig:
 
         assert config.gemini_model_name == ""
         assert config.selected_models == ["models/a", "models/b"]
+
+
+class TestMarkdownExportConfig:
+    def test_export_fields_use_expected_defaults(self) -> None:
+        config = AppConfig()
+
+        assert config.export_folder == ""
+        assert config.export_include_explanation is True
+        assert config.export_include_selection_list is True
+        assert config.export_include_raw_response is False
+        assert config.export_include_document_metadata is False
+        assert config.export_include_usage_metrics is False
+        assert config.export_include_yaml_frontmatter is False
+
+    def test_export_folder_is_trimmed_and_round_trips(self, tmp_path) -> None:
+        config_path = tmp_path / "config.json"
+        config = AppConfig(
+            export_folder="  C:/exports/markdown  ",
+            export_include_explanation=False,
+            export_include_selection_list=False,
+            export_include_raw_response=True,
+            export_include_document_metadata=True,
+            export_include_usage_metrics=True,
+            export_include_yaml_frontmatter=True,
+        )
+
+        save_config(config, config_path)
+        loaded = load_config(config_path)
+
+        assert loaded.export_folder == "C:/exports/markdown"
+        assert loaded.export_include_explanation is False
+        assert loaded.export_include_selection_list is False
+        assert loaded.export_include_raw_response is True
+        assert loaded.export_include_document_metadata is True
+        assert loaded.export_include_usage_metrics is True
+        assert loaded.export_include_yaml_frontmatter is True

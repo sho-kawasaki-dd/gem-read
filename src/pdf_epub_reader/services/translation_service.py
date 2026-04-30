@@ -10,6 +10,7 @@ from pdf_epub_reader.dto import (
     CacheDialogTexts,
     LanguageDialogTexts,
     MainWindowTexts,
+    MarkdownExportTexts,
     SettingsDialogTexts,
     SidePanelTexts,
 )
@@ -115,6 +116,7 @@ class TranslationService:
             custom_tab_text=self.translate("side.custom.tab", language),
             custom_prompt_placeholder=self.translate("side.custom.prompt_placeholder", language),
             custom_submit_button_text=self.translate("side.custom.submit", language),
+            export_button_text=self.translate("side.export.button", language),
             custom_placeholder_text=self.translate("side.custom.placeholder", language),
             cache_status_placeholder=self.translate("side.cache.status_placeholder", language),
             cache_create_button_text=self.translate("side.cache.create", language),
@@ -137,6 +139,7 @@ class TranslationService:
             rendering_tab_text=self.translate("settings.tab.rendering", language),
             detection_tab_text=self.translate("settings.tab.detection", language),
             ai_tab_text=self.translate("settings.tab.ai", language),
+            export_tab_text=self.translate("settings.tab.export", language),
             image_format_label=self.translate("settings.render.image_format", language),
             jpeg_quality_label=self.translate("settings.render.jpeg_quality", language),
             default_dpi_label=self.translate("settings.render.default_dpi", language),
@@ -151,10 +154,93 @@ class TranslationService:
             output_language_label=self.translate("settings.ai.output_language", language),
             translation_prompt_label=self.translate("settings.ai.translation_prompt", language),
             cache_ttl_label=self.translate("settings.ai.cache_ttl", language),
+            export_folder_label=self.translate("settings.export.folder", language),
+            export_browse_button_text=self.translate("settings.export.browse", language),
+            export_include_explanation_text=self.translate(
+                "settings.export.include_explanation", language
+            ),
+            export_include_selection_list_text=self.translate(
+                "settings.export.include_selection_list", language
+            ),
+            export_include_raw_response_text=self.translate(
+                "settings.export.include_raw_response", language
+            ),
+            export_include_document_metadata_text=self.translate(
+                "settings.export.include_document_metadata", language
+            ),
+            export_include_usage_metrics_text=self.translate(
+                "settings.export.include_usage_metrics", language
+            ),
+            export_include_yaml_frontmatter_text=self.translate(
+                "settings.export.include_yaml_frontmatter", language
+            ),
             minutes_suffix=self.translate("common.minutes_suffix", language),
             reset_defaults_button_text=self.translate("settings.button.reset_defaults", language),
             ok_button_text=self.translate("common.ok", language),
             cancel_button_text=self.translate("common.cancel", language),
+        )
+
+    def build_markdown_export_texts(self, language: str) -> MarkdownExportTexts:
+        return MarkdownExportTexts(
+            success_message_template=self.translate(
+                "export.status.success", language
+            ),
+            failure_message_template=self.translate(
+                "export.status.failure", language
+            ),
+            folder_unset_message=self.translate(
+                "export.status.folder_unset", language
+            ),
+            exported_at_label=self.translate("export.field.exported_at", language),
+            action_label=self.translate("export.field.action", language),
+            model_label=self.translate("export.field.model", language),
+            source_document_label=self.translate(
+                "export.field.source_document", language
+            ),
+            source_file_label=self.translate("export.field.source_file", language),
+            selections_section_title=self.translate(
+                "export.section.selections", language
+            ),
+            ai_response_section_title=self.translate(
+                "export.section.ai_response", language
+            ),
+            explanation_section_title=self.translate(
+                "export.section.explanation", language
+            ),
+            raw_response_section_title=self.translate(
+                "export.section.raw_response", language
+            ),
+            document_metadata_section_title=self.translate(
+                "export.section.document_metadata", language
+            ),
+            usage_metrics_section_title=self.translate(
+                "export.section.usage_metrics", language
+            ),
+            document_title_label=self.translate(
+                "export.metadata.document_title", language
+            ),
+            file_name_label=self.translate("export.metadata.file_name", language),
+            selection_count_label=self.translate(
+                "export.metadata.selection_count", language
+            ),
+            prompt_tokens_label=self.translate(
+                "export.metrics.prompt_tokens", language
+            ),
+            cached_tokens_label=self.translate(
+                "export.metrics.cached_tokens", language
+            ),
+            candidates_tokens_label=self.translate(
+                "export.metrics.candidates_tokens", language
+            ),
+            total_tokens_label=self.translate(
+                "export.metrics.total_tokens", language
+            ),
+            action_translation_label=self.translate(
+                "export.action.translation", language
+            ),
+            action_custom_prompt_label=self.translate(
+                "export.action.custom_prompt", language
+            ),
         )
 
     def build_cache_dialog_texts(self, language: str) -> CacheDialogTexts:

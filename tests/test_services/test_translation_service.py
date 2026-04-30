@@ -50,3 +50,35 @@ class TestTranslationService:
         assert english.open_action_text == "&Open..."
         assert japanese.file_menu_title == "ファイル"
         assert japanese.open_action_text == "開く..."
+
+    def test_build_side_panel_texts_includes_export_button_label(self) -> None:
+        service = TranslationService()
+
+        texts = service.build_side_panel_texts("ja")
+
+        assert texts.export_button_text == "Markdown 保存"
+
+    def test_build_settings_dialog_texts_includes_export_tab_fields(self) -> None:
+        service = TranslationService()
+
+        texts = service.build_settings_dialog_texts("en")
+
+        assert texts.export_tab_text == "Export"
+        assert texts.export_folder_label == "Export Folder:"
+        assert texts.export_browse_button_text == "Browse..."
+        assert texts.export_include_explanation_text == "Include explanation"
+        assert (
+            texts.export_include_yaml_frontmatter_text
+            == "Include YAML frontmatter"
+        )
+
+    def test_build_markdown_export_texts_returns_localized_labels(self) -> None:
+        service = TranslationService()
+
+        texts = service.build_markdown_export_texts("ja")
+
+        assert texts.success_message_template == "Markdown を {file_path} に保存しました"
+        assert texts.folder_unset_message == "エクスポートフォルダが設定されていません"
+        assert texts.ai_response_section_title == "AI 応答"
+        assert texts.document_title_label == "文書タイトル"
+        assert texts.action_custom_prompt_label == "カスタムプロンプト"

@@ -61,6 +61,7 @@ class SidePanelTexts:
     custom_tab_text: str
     custom_prompt_placeholder: str
     custom_submit_button_text: str
+    export_button_text: str
     custom_placeholder_text: str
     cache_status_placeholder: str
     cache_create_button_text: str
@@ -85,6 +86,7 @@ class SettingsDialogTexts:
     rendering_tab_text: str
     detection_tab_text: str
     ai_tab_text: str
+    export_tab_text: str
     image_format_label: str
     jpeg_quality_label: str
     default_dpi_label: str
@@ -99,10 +101,47 @@ class SettingsDialogTexts:
     output_language_label: str
     translation_prompt_label: str
     cache_ttl_label: str
+    export_folder_label: str
+    export_browse_button_text: str
+    export_include_explanation_text: str
+    export_include_selection_list_text: str
+    export_include_raw_response_text: str
+    export_include_document_metadata_text: str
+    export_include_usage_metrics_text: str
+    export_include_yaml_frontmatter_text: str
     minutes_suffix: str
     reset_defaults_button_text: str
     ok_button_text: str
     cancel_button_text: str
+
+
+@dataclass(frozen=True)
+class MarkdownExportTexts:
+    """Markdown export 用の UI 文言と Markdown ラベル。"""
+
+    success_message_template: str
+    failure_message_template: str
+    folder_unset_message: str
+    exported_at_label: str
+    action_label: str
+    model_label: str
+    source_document_label: str
+    source_file_label: str
+    selections_section_title: str
+    ai_response_section_title: str
+    explanation_section_title: str
+    raw_response_section_title: str
+    document_metadata_section_title: str
+    usage_metrics_section_title: str
+    document_title_label: str
+    file_name_label: str
+    selection_count_label: str
+    prompt_tokens_label: str
+    cached_tokens_label: str
+    candidates_tokens_label: str
+    total_tokens_label: str
+    action_translation_label: str
+    action_custom_prompt_label: str
 
 
 @dataclass(frozen=True)

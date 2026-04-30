@@ -71,6 +71,15 @@ DEFAULT_EXPLANATION_ADDENDUM = (
     "\n翻訳の後に「---」区切り線を入れ、その下に専門用語・概念・背景知識の解説を付けてください。"
 )
 
+# --- Markdown export デフォルト設定 ---
+DEFAULT_EXPORT_FOLDER = ""
+DEFAULT_EXPORT_INCLUDE_EXPLANATION = True
+DEFAULT_EXPORT_INCLUDE_SELECTION_LIST = True
+DEFAULT_EXPORT_INCLUDE_RAW_RESPONSE = False
+DEFAULT_EXPORT_INCLUDE_DOCUMENT_METADATA = False
+DEFAULT_EXPORT_INCLUDE_USAGE_METRICS = False
+DEFAULT_EXPORT_INCLUDE_YAML_FRONTMATTER = False
+
 # --- バリデーション定数 (Phase 5: 設定ダイアログ) ---
 DPI_MIN = 72
 DPI_MAX = 600
@@ -115,6 +124,13 @@ def normalize_ui_language(
 
 def normalize_model_name(value: str | None) -> str:
     """AI モデル名の未設定値を空文字に正規化する。"""
+    if value is None:
+        return ""
+    return value.strip()
+
+
+def normalize_export_folder(value: str | None) -> str:
+    """Markdown export の保存先フォルダを空文字またはトリム済み文字列に正規化する。"""
     if value is None:
         return ""
     return value.strip()
@@ -183,9 +199,23 @@ class AppConfig:
     # サーバー側キャッシュの有効期間（分）。設定ダイアログの AI Models タブで変更可能。
     cache_ttl_minutes: int = DEFAULT_CACHE_TTL_MINUTES
 
+    # Phase 8: Markdown export 設定
+    export_folder: str = DEFAULT_EXPORT_FOLDER
+    export_include_explanation: bool = DEFAULT_EXPORT_INCLUDE_EXPLANATION
+    export_include_selection_list: bool = DEFAULT_EXPORT_INCLUDE_SELECTION_LIST
+    export_include_raw_response: bool = DEFAULT_EXPORT_INCLUDE_RAW_RESPONSE
+    export_include_document_metadata: bool = (
+        DEFAULT_EXPORT_INCLUDE_DOCUMENT_METADATA
+    )
+    export_include_usage_metrics: bool = DEFAULT_EXPORT_INCLUDE_USAGE_METRICS
+    export_include_yaml_frontmatter: bool = (
+        DEFAULT_EXPORT_INCLUDE_YAML_FRONTMATTER
+    )
+
     def __post_init__(self) -> None:
         self.ui_language = normalize_ui_language(self.ui_language)
         self.gemini_model_name = normalize_model_name(self.gemini_model_name)
+        self.export_folder = normalize_export_folder(self.export_folder)
         normalized_models: list[str] = []
         for name in self.selected_models:
             normalized = normalize_model_name(name)
