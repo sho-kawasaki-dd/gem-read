@@ -891,6 +891,58 @@ class TestSettingsFlow:
         update_calls = mock_document_model.get_calls("update_config")
         assert len(update_calls) == 0
 
+    def test_initializes_plotly_toggle_from_config(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        config = AppConfig(
+            ui_language="en",
+            plotly_visualization_enabled=True,
+        )
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+
+        MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=config,
+        )
+
+        assert mock_side_panel_view.get_calls("set_plotly_toggle_checked")[-1] == (
+            True,
+        )
+
+    def test_plotly_toggle_change_updates_config_and_saves(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        from unittest.mock import patch
+
+        config = AppConfig(plotly_visualization_enabled=False)
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=config,
+        )
+
+        with patch("pdf_epub_reader.presenters.main_presenter.save_config") as mock_save:
+            mock_side_panel_view.simulate_plotly_toggled(True)
+
+        assert config.plotly_visualization_enabled is True
+        mock_save.assert_called_once_with(config)
+
     @pytest.mark.asyncio
     async def test_dpi_change_triggers_reload_layout(
         self,

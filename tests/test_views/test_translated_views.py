@@ -187,6 +187,9 @@ class TestSidePanelTranslations:
         assert panel._translate_btn.text() == "Translate"
         assert panel._explain_btn.text() == "Translate with Explanation"
         assert panel._export_btn.text() == "Export Markdown"
+        assert panel._plotly_toggle_btn.toolTip() == (
+            "Request Plotly JSON when the response can be visualized"
+        )
         assert panel._submit_btn.text() == "Submit"
         assert panel._tab_widget.tabText(0) == "Translation"
         assert panel._tab_widget.tabText(1) == "Custom Prompt"
@@ -199,6 +202,9 @@ class TestSidePanelTranslations:
         assert panel._translate_btn.text() == "翻訳"
         assert panel._explain_btn.text() == "解説付き翻訳"
         assert panel._export_btn.text() == "Markdown 保存"
+        assert panel._plotly_toggle_btn.toolTip() == (
+            "可視化可能な応答では Plotly JSON の出力を要求します"
+        )
         assert panel._submit_btn.text() == "送信"
         assert panel._tab_widget.tabText(0) == "翻訳"
         assert panel._tab_widget.tabText(1) == "カスタムプロンプト"

@@ -320,6 +320,42 @@ class TestForceImageToggle:
         assert panel_presenter.force_include_image is False
 
 
+class TestPlotlyToggle:
+    """Step 5: Plotly 可視化トグルの状態管理を検証する。"""
+
+    def test_initial_plotly_enabled_is_false(
+        self,
+        panel_presenter: PanelPresenter,
+    ) -> None:
+        assert panel_presenter._plotly_enabled is False
+
+    def test_set_plotly_enabled_propagates_to_view(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        panel_presenter.set_plotly_enabled(True)
+
+        assert panel_presenter._plotly_enabled is True
+        assert mock_side_panel_view.get_calls("set_plotly_toggle_checked")[-1] == (
+            True,
+        )
+
+    def test_toggle_updates_state_and_notifies_handler(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        observed: list[bool] = []
+        panel_presenter.set_on_plotly_toggle_changed_handler(observed.append)
+
+        mock_side_panel_view.simulate_plotly_toggled(True)
+        mock_side_panel_view.simulate_plotly_toggled(False)
+
+        assert panel_presenter._plotly_enabled is False
+        assert observed == [True, False]
+
+
 class TestMultimodalAnalysis:
     """Phase 4: AI 解析時の画像添付を検証する。"""
 

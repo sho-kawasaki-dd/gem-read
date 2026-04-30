@@ -65,6 +65,7 @@ class PanelPresenter:
         self._ui_language = normalize_ui_language(ui_language, fallback="en")
         self._selection_snapshot = SelectionSnapshot()
         self._force_include_image: bool = False
+        self._plotly_enabled: bool = False
         self._active_tab_mode = AnalysisMode.TRANSLATION
         self._export_states: dict[AnalysisMode, ExportState] = {}
         # Phase 6: リクエスト単位のモデル選択
@@ -75,6 +76,7 @@ class PanelPresenter:
         ) = None
         self._on_clear_selections_handler: Callable[[], None] | None = None
         self._on_export_requested_handler: Callable[[], None] | None = None
+        self._on_plotly_toggle_changed_handler: Callable[[bool], None] | None = None
         # Phase 7: キャッシュ状態と MainPresenter 向けコールバック
         self._cache_status = CacheStatus()
         self._on_cache_create_handler: Callable[[], None] | None = None
@@ -89,6 +91,7 @@ class PanelPresenter:
         self._view.set_on_export_requested(self._fire_export_requested)
         self._view.set_on_tab_changed(self._on_tab_changed)
         self._view.set_on_force_image_toggled(self._on_force_image_toggled)
+        self._view.set_on_plotly_toggled(self._on_plotly_toggled)
         self._view.set_on_selection_delete_requested(
             self._fire_selection_delete_requested
         )
@@ -253,6 +256,17 @@ class PanelPresenter:
         """MainPresenter が登録する export 要求ハンドラ。"""
         self._on_export_requested_handler = cb
 
+    def set_on_plotly_toggle_changed_handler(
+        self, cb: Callable[[bool], None]
+    ) -> None:
+        """MainPresenter が登録する Plotly トグル変更ハンドラ。"""
+        self._on_plotly_toggle_changed_handler = cb
+
+    def set_plotly_enabled(self, enabled: bool) -> None:
+        """永続化済み Plotly トグル状態を View と内部状態へ反映する。"""
+        self._plotly_enabled = enabled
+        self._view.set_plotly_toggle_checked(enabled)
+
     def set_on_cache_invalidate_handler(
         self, cb: Callable[[], None]
     ) -> None:
@@ -310,6 +324,12 @@ class PanelPresenter:
     def _on_force_image_toggled(self, checked: bool) -> None:
         """「画像としても送信」チェックボックスの状態変更を記録する。"""
         self._force_include_image = checked
+
+    def _on_plotly_toggled(self, checked: bool) -> None:
+        """Plotly 可視化トグルの状態変更を記録して MainPresenter に通知する。"""
+        self._plotly_enabled = checked
+        if self._on_plotly_toggle_changed_handler is not None:
+            self._on_plotly_toggle_changed_handler(checked)
 
     def _on_tab_changed(self, mode: str) -> None:
         """アクティブタブ変更に応じて export 可能状態を更新する。"""

@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTabWidget,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -361,6 +362,7 @@ class SidePanelView(QWidget):
         self._on_export_requested: Callable[[], None] | None = None
         self._on_tab_changed: Callable[[str], None] | None = None
         self._on_force_image_toggled: Callable[[bool], None] | None = None
+        self._on_plotly_toggled: Callable[[bool], None] | None = None
         self._on_selection_delete_requested: (
             Callable[[str], None] | None
         ) = None
@@ -459,6 +461,16 @@ class SidePanelView(QWidget):
         self._progress_bar.setVisible(False)
         ai_layout.addWidget(self._progress_bar)
 
+        action_row = QHBoxLayout()
+        self._plotly_toggle_btn = QToolButton()
+        self._plotly_toggle_btn.setText("📊")
+        self._plotly_toggle_btn.setCheckable(True)
+        self._plotly_toggle_btn.setChecked(False)
+        self._plotly_toggle_btn.toggled.connect(self._fire_plotly_toggled)
+        action_row.addWidget(self._plotly_toggle_btn)
+        action_row.addStretch(1)
+        ai_layout.addLayout(action_row)
+
         self._tab_widget = QTabWidget()
         self._tab_widget.currentChanged.connect(self._handle_tab_changed)
         ai_layout.addWidget(self._tab_widget, 1)
@@ -539,6 +551,7 @@ class SidePanelView(QWidget):
         # ローディング中に無効化する全ボタンのリスト
         self._all_buttons = [
             self._clear_selections_btn,
+            self._plotly_toggle_btn,
             self._translate_btn,
             self._explain_btn,
             self._submit_btn,
@@ -627,6 +640,7 @@ class SidePanelView(QWidget):
         )
         self._force_image_checkbox.setText(self._text("selection_force_image_text"))
         self._ai_section.set_title(self._text("ai_section_title"))
+        self._plotly_toggle_btn.setToolTip(self._text("plotly_toggle_tooltip"))
         self._translate_btn.setText(self._text("translation_button_text"))
         self._explain_btn.setText(self._text("translation_explain_button_text"))
         self._export_btn.setText(self._text("export_button_text"))
@@ -673,6 +687,12 @@ class SidePanelView(QWidget):
     ) -> None:
         """「画像としても送信」チェックボックスの切り替えコールバックを登録する。"""
         self._on_force_image_toggled = cb
+
+    def set_on_plotly_toggled(
+        self, cb: Callable[[bool], None]
+    ) -> None:
+        """Plotly 可視化トグルの切り替えコールバックを登録する。"""
+        self._on_plotly_toggled = cb
 
     def set_on_selection_delete_requested(
         self, cb: Callable[[str], None]
@@ -729,6 +749,12 @@ class SidePanelView(QWidget):
         """モデル選択プルダウンの有効/無効を切り替える。"""
         self._model_combo.setEnabled(enabled and self._model_combo.count() > 0)
         self._sync_model_combo_placeholder()
+
+    def set_plotly_toggle_checked(self, checked: bool) -> None:
+        """Plotly 可視化トグルのチェック状態を反映する。"""
+        self._plotly_toggle_btn.blockSignals(True)
+        self._plotly_toggle_btn.setChecked(checked)
+        self._plotly_toggle_btn.blockSignals(False)
 
     # --- Phase 7: キャッシュ操作 ---
 
@@ -888,6 +914,10 @@ class SidePanelView(QWidget):
         """チェックボックスの切り替えをコールバックに変換する。"""
         if self._on_force_image_toggled:
             self._on_force_image_toggled(checked)
+
+    def _fire_plotly_toggled(self, checked: bool) -> None:
+        if self._on_plotly_toggled:
+            self._on_plotly_toggled(checked)
 
     def _fire_model_changed(self, model_name: str) -> None:
         """モデルプルダウンの変更をコールバックに変換する。"""

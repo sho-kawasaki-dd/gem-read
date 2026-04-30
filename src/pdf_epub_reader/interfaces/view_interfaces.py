@@ -245,6 +245,11 @@ class ISidePanelView(Protocol):
         ときに Presenter へ通知する。
         """
         ...
+    def set_on_plotly_toggled(
+        self, cb: Callable[[bool], None]
+    ) -> None:
+        """Plotly 可視化トグルの切り替えコールバックを登録する。"""
+        ...
     def set_on_selection_delete_requested(
         self, cb: Callable[[str], None]
     ) -> None:
@@ -272,6 +277,10 @@ class ISidePanelView(Protocol):
 
         モデル未設定時に disabled にし、プレースホルダーを表示する。
         """
+        ...
+
+    def set_plotly_toggle_checked(self, checked: bool) -> None:
+        """Plotly 可視化トグルのチェック状態を反映する。"""
         ...
 
     def set_on_model_changed(

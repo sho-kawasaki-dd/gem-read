@@ -240,6 +240,7 @@ class MockSidePanelView:
         self._on_export_requested: Callable[[], None] | None = None
         self._on_tab_changed: Callable[[str], None] | None = None
         self._on_force_image_toggled: Callable[[bool], None] | None = None
+        self._on_plotly_toggled: Callable[[bool], None] | None = None
         self._on_selection_delete_requested: (
             Callable[[str], None] | None
         ) = None
@@ -306,6 +307,11 @@ class MockSidePanelView:
     ) -> None:
         self._on_force_image_toggled = cb
 
+    def set_on_plotly_toggled(
+        self, cb: Callable[[bool], None]
+    ) -> None:
+        self._on_plotly_toggled = cb
+
     def set_on_selection_delete_requested(
         self, cb: Callable[[str], None]
     ) -> None:
@@ -329,6 +335,9 @@ class MockSidePanelView:
 
     def set_model_combo_enabled(self, enabled: bool) -> None:
         self.calls.append(("set_model_combo_enabled", (enabled,)))
+
+    def set_plotly_toggle_checked(self, checked: bool) -> None:
+        self.calls.append(("set_plotly_toggle_checked", (checked,)))
 
     # --- Phase 7: キャッシュ操作 ---
 
@@ -385,6 +394,10 @@ class MockSidePanelView:
     def simulate_force_image_toggled(self, checked: bool) -> None:
         if self._on_force_image_toggled:
             self._on_force_image_toggled(checked)
+
+    def simulate_plotly_toggled(self, checked: bool) -> None:
+        if self._on_plotly_toggled:
+            self._on_plotly_toggled(checked)
 
     def simulate_selection_delete_requested(self, selection_id: str) -> None:
         if self._on_selection_delete_requested:
