@@ -42,6 +42,7 @@ class AnalysisRequest:
     images: list[bytes] = field(default_factory=list)
     model_name: str | None = None
     cache_name: str | None = None
+    request_plotly_json: bool = False
 
 
 @dataclass(frozen=True)

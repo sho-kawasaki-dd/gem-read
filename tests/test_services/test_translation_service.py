@@ -57,6 +57,24 @@ class TestTranslationService:
         texts = service.build_side_panel_texts("ja")
 
         assert texts.export_button_text == "Markdown 保存"
+        assert (
+            texts.plotly_toggle_tooltip
+            == "可視化可能な応答では Plotly JSON の出力を要求します"
+        )
+
+    def test_build_plotly_texts_returns_localized_dialog_and_status_texts(self) -> None:
+        service = TranslationService()
+
+        texts = service.build_plotly_texts("en")
+
+        assert texts.multi_select_dialog_title == "Choose Plotly Visualization"
+        assert texts.multi_select_cancel_button_text == "Cancel"
+        assert texts.spec_fallback_title_template == "Plot {index}"
+        assert (
+            texts.restore_failed_message_template
+            == "Failed to restore the Plotly figure: {details}"
+        )
+        assert texts.window_title_template == "Plotly Visualization - {title}"
 
     def test_build_settings_dialog_texts_includes_export_tab_fields(self) -> None:
         service = TranslationService()

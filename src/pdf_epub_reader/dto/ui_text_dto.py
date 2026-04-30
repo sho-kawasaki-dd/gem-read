@@ -53,6 +53,7 @@ class SidePanelTexts:
     selection_preview_label: str
     selection_preview_placeholder: str
     selection_force_image_text: str
+    plotly_toggle_tooltip: str
     ai_section_title: str
     translation_button_text: str
     translation_explain_button_text: str
@@ -76,6 +77,21 @@ class SidePanelTexts:
     selection_card_extracting_text: str
     selection_card_extract_failed_text: str
     selection_card_no_text: str
+
+
+@dataclass(frozen=True)
+class PlotlyTexts:
+    """Plotly 可視化まわりで使う静的文言。"""
+
+    multi_select_dialog_title: str
+    multi_select_dialog_label: str
+    multi_select_cancel_button_text: str
+    spec_fallback_title_template: str
+    render_success_message_template: str
+    extraction_failed_message: str
+    restore_failed_message_template: str
+    invalid_json_message_template: str
+    window_title_template: str
 
 
 @dataclass(frozen=True)

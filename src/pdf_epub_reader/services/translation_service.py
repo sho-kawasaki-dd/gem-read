@@ -11,6 +11,7 @@ from pdf_epub_reader.dto import (
     LanguageDialogTexts,
     MainWindowTexts,
     MarkdownExportTexts,
+    PlotlyTexts,
     SettingsDialogTexts,
     SidePanelTexts,
 )
@@ -108,6 +109,7 @@ class TranslationService:
             selection_preview_label=self.translate("side.selection.preview_label", language),
             selection_preview_placeholder=self.translate("side.selection.preview_placeholder", language),
             selection_force_image_text=self.translate("side.selection.force_image", language),
+            plotly_toggle_tooltip=self.translate("side.plotly_toggle_tooltip", language),
             ai_section_title=self.translate("side.section.ai", language),
             translation_button_text=self.translate("side.translation.button", language),
             translation_explain_button_text=self.translate("side.translation.explain_button", language),
@@ -131,6 +133,37 @@ class TranslationService:
             selection_card_extracting_text=self.translate("side.selection.card.extracting", language),
             selection_card_extract_failed_text=self.translate("side.selection.card.extract_failed", language),
             selection_card_no_text=self.translate("side.selection.card.no_text", language),
+        )
+
+    def build_plotly_texts(self, language: str) -> PlotlyTexts:
+        return PlotlyTexts(
+            multi_select_dialog_title=self.translate(
+                "plotly.dialog.multi_select.title", language
+            ),
+            multi_select_dialog_label=self.translate(
+                "plotly.dialog.multi_select.label", language
+            ),
+            multi_select_cancel_button_text=self.translate(
+                "plotly.dialog.multi_select.cancel", language
+            ),
+            spec_fallback_title_template=self.translate(
+                "plotly.spec.fallback_title", language
+            ),
+            render_success_message_template=self.translate(
+                "plotly.status.render_success", language
+            ),
+            extraction_failed_message=self.translate(
+                "plotly.status.extraction_failed", language
+            ),
+            restore_failed_message_template=self.translate(
+                "plotly.status.restore_failed", language
+            ),
+            invalid_json_message_template=self.translate(
+                "plotly.status.invalid_json", language
+            ),
+            window_title_template=self.translate(
+                "plotly.window.title", language
+            ),
         )
 
     def build_settings_dialog_texts(self, language: str) -> SettingsDialogTexts:

@@ -13,6 +13,7 @@ from pdf_epub_reader.dto.ai_dto import (
     CacheStatus,
     ModelInfo,
 )
+from pdf_epub_reader.dto.plot_dto import PlotlySpec
 from pdf_epub_reader.dto.document_dto import (
     DocumentInfo,
     PageData,
@@ -29,6 +30,7 @@ from pdf_epub_reader.dto.ui_text_dto import (
     LanguageDialogTexts,
     MainWindowTexts,
     MarkdownExportTexts,
+    PlotlyTexts,
     SettingsDialogTexts,
     SidePanelTexts,
 )
@@ -47,6 +49,8 @@ __all__ = [
     "MarkdownExportTexts",
     "ModelInfo",
     "PageData",
+    "PlotlySpec",
+    "PlotlyTexts",
     "RectCoords",
     "SettingsDialogTexts",
     "SelectionContent",
