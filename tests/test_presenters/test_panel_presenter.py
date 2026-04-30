@@ -356,6 +356,110 @@ class TestPlotlyToggle:
         assert observed == [True, False]
 
 
+class TestPlotlyRenderFlow:
+    """Step 10: Plotly spec 抽出と render handler push を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_translate_with_plotly_disabled_does_not_emit_render_request(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello world"))
+        )
+        mock_ai_model.analyze = AsyncMock(
+            return_value=AnalysisResult(
+                translated_text="done",
+                raw_response=(
+                    "## Plot\n\n"
+                    "```json\n"
+                    '{"data": [], "layout": {}}\n'
+                    "```"
+                ),
+            )
+        )
+        rendered: list[list] = []
+        panel_presenter.set_on_plotly_render_handler(rendered.append)
+
+        await panel_presenter._do_translate(include_explanation=False)
+
+        request = mock_ai_model.analyze.await_args.args[0]
+        assert request.request_plotly_json is False
+        assert rendered == []
+        assert panel_presenter._latest_plotly_specs == []
+
+    @pytest.mark.asyncio
+    async def test_translate_with_plotly_enabled_emits_render_request(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_ai_model: MockAIModel,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello world"))
+        )
+        mock_side_panel_view.simulate_plotly_toggled(True)
+        mock_ai_model.analyze = AsyncMock(
+            return_value=AnalysisResult(
+                translated_text="done",
+                raw_response=(
+                    "## Velocity Plot\n\n"
+                    "```json\n"
+                    '{"data": [{"type": "scatter"}], "layout": {}}\n'
+                    "```"
+                ),
+            )
+        )
+        rendered: list[list] = []
+        panel_presenter.set_on_plotly_render_handler(rendered.append)
+
+        await panel_presenter._do_translate(include_explanation=False)
+
+        request = mock_ai_model.analyze.await_args.args[0]
+        assert request.request_plotly_json is True
+        assert len(rendered) == 1
+        assert len(rendered[0]) == 1
+        assert rendered[0][0].title == "Velocity Plot"
+        assert panel_presenter._latest_plotly_specs == rendered[0]
+
+    @pytest.mark.asyncio
+    async def test_ai_failure_resets_plotly_specs(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        presenter = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter.set_available_models(["models/gemini-2.0-flash"])
+        presenter.set_selected_model("models/gemini-2.0-flash")
+        presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello"))
+        )
+        presenter.set_plotly_enabled(True)
+        presenter._latest_plotly_specs = [object()]  # type: ignore[list-item]
+        mock_ai_model.analyze = AsyncMock(
+            side_effect=AIAPIError("Something went wrong", status_code=500)
+        )
+
+        await presenter._do_translate(include_explanation=False)
+
+        assert presenter._latest_plotly_specs == []
+
+    def test_selection_snapshot_reset_clears_plotly_specs(
+        self,
+        panel_presenter: PanelPresenter,
+    ) -> None:
+        panel_presenter._latest_plotly_specs = [object()]  # type: ignore[list-item]
+
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Changed"))
+        )
+
+        assert panel_presenter._latest_plotly_specs == []
+
+
 class TestMultimodalAnalysis:
     """Phase 4: AI 解析時の画像添付を検証する。"""
 

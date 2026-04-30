@@ -17,6 +17,7 @@ from pdf_epub_reader.dto import (
     AnalysisRequest,
     AnalysisResult,
     CacheStatus,
+    PlotlySpec,
     RectCoords,
     SelectionContent,
     SelectionSlot,
@@ -24,6 +25,7 @@ from pdf_epub_reader.dto import (
 )
 from pdf_epub_reader.interfaces.model_interfaces import IAIModel
 from pdf_epub_reader.interfaces.view_interfaces import ISidePanelView
+from pdf_epub_reader.services.plotly_extraction_service import extract_plotly_specs
 from pdf_epub_reader.services.translation_service import TranslationService
 from pdf_epub_reader.utils.config import normalize_model_name, normalize_ui_language
 from pdf_epub_reader.utils.exceptions import (
@@ -66,6 +68,7 @@ class PanelPresenter:
         self._selection_snapshot = SelectionSnapshot()
         self._force_include_image: bool = False
         self._plotly_enabled: bool = False
+        self._latest_plotly_specs: list[PlotlySpec] = []
         self._active_tab_mode = AnalysisMode.TRANSLATION
         self._export_states: dict[AnalysisMode, ExportState] = {}
         # Phase 6: リクエスト単位のモデル選択
@@ -77,6 +80,9 @@ class PanelPresenter:
         self._on_clear_selections_handler: Callable[[], None] | None = None
         self._on_export_requested_handler: Callable[[], None] | None = None
         self._on_plotly_toggle_changed_handler: Callable[[bool], None] | None = None
+        self._on_plotly_render_handler: (
+            Callable[[list[PlotlySpec]], None] | None
+        ) = None
         # Phase 7: キャッシュ状態と MainPresenter 向けコールバック
         self._cache_status = CacheStatus()
         self._on_cache_create_handler: Callable[[], None] | None = None
@@ -177,6 +183,7 @@ class PanelPresenter:
         """
         self._selection_snapshot = self._normalized_snapshot(snapshot)
         self._clear_export_states()
+        self._reset_plotly_specs()
         self._view.set_selection_snapshot(self._selection_snapshot)
         self._view.set_combined_selection_preview(
             self._build_analysis_text()
@@ -261,6 +268,12 @@ class PanelPresenter:
     ) -> None:
         """MainPresenter が登録する Plotly トグル変更ハンドラ。"""
         self._on_plotly_toggle_changed_handler = cb
+
+    def set_on_plotly_render_handler(
+        self, cb: Callable[[list[PlotlySpec]], None]
+    ) -> None:
+        """MainPresenter が登録する Plotly 描画要求ハンドラ。"""
+        self._on_plotly_render_handler = cb
 
     def set_plotly_enabled(self, enabled: bool) -> None:
         """永続化済み Plotly トグル状態を View と内部状態へ反映する。"""
@@ -398,6 +411,7 @@ class PanelPresenter:
                 include_explanation=include_explanation,
                 images=self._collect_images(),
                 model_name=self._current_model,
+                request_plotly_json=self._plotly_enabled,
             )
             result = await self._ai_model.analyze(request)
 
@@ -410,17 +424,21 @@ class PanelPresenter:
                 result=result,
                 include_explanation=include_explanation,
             )
+            self._handle_plotly_response(request, result)
         except AIKeyMissingError:
+            self._reset_plotly_specs()
             self._invalidate_export_state(AnalysisMode.TRANSLATION)
             self._view.update_result_text(
                 self._translate("presenter.panel.api_key_missing")
             )
         except AIRateLimitError:
+            self._reset_plotly_specs()
             self._invalidate_export_state(AnalysisMode.TRANSLATION)
             self._view.update_result_text(
                 self._translate("presenter.panel.rate_limit")
             )
         except AIAPIError as exc:
+            self._reset_plotly_specs()
             self._invalidate_export_state(AnalysisMode.TRANSLATION)
             self._view.update_result_text(
                 self._translate(
@@ -456,6 +474,7 @@ class PanelPresenter:
                 custom_prompt=prompt,
                 images=self._collect_images(),
                 model_name=self._current_model,
+                request_plotly_json=self._plotly_enabled,
             )
             result = await self._ai_model.analyze(request)
             self._view.update_result_text(result.raw_response)
@@ -464,17 +483,21 @@ class PanelPresenter:
                 result=result,
                 include_explanation=False,
             )
+            self._handle_plotly_response(request, result)
         except AIKeyMissingError:
+            self._reset_plotly_specs()
             self._invalidate_export_state(AnalysisMode.CUSTOM_PROMPT)
             self._view.update_result_text(
                 self._translate("presenter.panel.api_key_missing")
             )
         except AIRateLimitError:
+            self._reset_plotly_specs()
             self._invalidate_export_state(AnalysisMode.CUSTOM_PROMPT)
             self._view.update_result_text(
                 self._translate("presenter.panel.rate_limit")
             )
         except AIAPIError as exc:
+            self._reset_plotly_specs()
             self._invalidate_export_state(AnalysisMode.CUSTOM_PROMPT)
             self._view.update_result_text(
                 self._translate(
@@ -582,6 +605,23 @@ class PanelPresenter:
 
     def _refresh_export_enabled(self) -> None:
         self._view.set_export_enabled(self.export_state is not None)
+
+    def _handle_plotly_response(
+        self,
+        request: AnalysisRequest,
+        result: AnalysisResult,
+    ) -> None:
+        if not request.request_plotly_json:
+            self._reset_plotly_specs()
+            return
+
+        specs = extract_plotly_specs(result.raw_response)
+        self._latest_plotly_specs = specs
+        if specs and self._on_plotly_render_handler is not None:
+            self._on_plotly_render_handler(specs)
+
+    def _reset_plotly_specs(self) -> None:
+        self._latest_plotly_specs = []
 
     def _collect_images(self) -> list[bytes]:
         """現在の選択スナップショットから cropped_image を順序通り収集する。"""
