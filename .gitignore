@@ -6,6 +6,18 @@ dist/
 wheels/
 *.egg-info
 
+# Visual Studio / .NET generated files
+.vs/
+**/bin/
+**/obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Capture helper publish output
+capture-helper/artifacts/publish/
+
 # Virtual environments
 .venv
 
