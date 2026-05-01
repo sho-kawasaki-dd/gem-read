@@ -132,7 +132,16 @@ class SandboxExecutor:
 
         if process.returncode == 0:
             # runner は stdout を素通しするので、最後の有効 JSON 行を採用する。
-            return self._extract_json_output(stdout)
+            try:
+                return self._extract_json_output(stdout)
+            except SandboxOutputError:
+                # exit 0 でも JSON がなかった場合は stdout/stderr をログへ残す。
+                self._write_stderr_log(
+                    f"[exit 0 — no valid JSON in stdout]\n\n"
+                    f"--- stdout ---\n{stdout}\n\n"
+                    f"--- stderr ---\n{stderr}"
+                )
+                raise
 
         stderr_log_path = self._write_stderr_log(stderr)
         if process.returncode == 3:
