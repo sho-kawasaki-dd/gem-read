@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
+import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +32,12 @@ from pdf_epub_reader.services.plotly_sandbox.venv_provisioner import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Windows では DLL 検索パスが必要なため最小限の環境変数を引き継ぐ。
+# それ以外のキー（PYTHONPATH 等）は渡さずホスト環境からの汚染を防ぐ。
+_WINDOWS_REQUIRED_ENV_KEYS: frozenset[str] = frozenset(
+    {"SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "PATH"}
+)
 
 
 class SandboxExecutor:
@@ -96,7 +104,15 @@ class SandboxExecutor:
                     str(code_path),
                 ],
                 cwd=temp_dir,
-                env={},
+                env=(
+                    {
+                        k: v
+                        for k, v in os.environ.items()
+                        if k.upper() in _WINDOWS_REQUIRED_ENV_KEYS
+                    }
+                    if sys.platform.startswith("win")
+                    else {}
+                ),
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
