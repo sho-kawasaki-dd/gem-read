@@ -683,7 +683,8 @@ class TestPlotlyPromptInjection:
         )
 
         assert "Respond in English." in contents[0]
-        assert "Plotly figure specification as a JSON fenced code block" in contents[0]
+        assert "Visualization mode is enabled for this request" in contents[0]
+        assert "return exactly one fenced json code block" in contents[0]
         assert "<selection>\nHello world\n</selection>" == contents[1]
 
     def test_build_contents_appends_python_instruction_for_python_mode(self) -> None:
@@ -698,6 +699,8 @@ class TestPlotlyPromptInjection:
             )
         )
 
+        assert "Visualization mode is enabled for this request" in contents[0]
+        assert "return exactly one fenced python code block" in contents[0]
         assert "Allowed imports: only plotly, numpy, pandas, scipy, sympy, math, statistics, datetime, json." in contents[0]
         assert "print(fig.to_json())" in contents[0]
 
@@ -713,7 +716,7 @@ class TestPlotlyPromptInjection:
         )
 
         assert "USER_TASK" in contents[0]
-        assert "Plotly figure specification as a JSON fenced code block" not in contents[0]
+        assert "Visualization mode is enabled for this request" not in contents[0]
         assert "print(fig.to_json())" not in contents[0]
 
 

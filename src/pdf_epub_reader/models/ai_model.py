@@ -70,23 +70,42 @@ _STATIC_SYSTEM_INSTRUCTION = (
 )
 
 _PLOTLY_JSON_REQUEST_INSTRUCTION = (
-    "If the response contains data or formulas that can be visualized, "
-    "output the Plotly figure specification as a JSON fenced code block "
-    "(```json ... ```). Provide only the pure JSON; do not include Python "
-    "execution code."
+    "Visualization mode is enabled for this request. Treat visualization as "
+    "mandatory, not optional.\n\n"
+    "If the selected content contains any formula, quantitative relationship, "
+    "trend, comparison, distribution, time series, table, or any concept that "
+    "can reasonably be visualized, you MUST include Plotly visualization "
+    "block(s) in addition to your normal answer.\n\n"
+    "If there is one clearly dominant visualization, return exactly one fenced "
+    "json code block.\n"
+    "If there are multiple clearly distinct visualizations that should not be "
+    "merged, return one fenced json code block per visualization, up to 3 blocks, "
+    "ordered by importance.\n\n"
+    "Each code block must contain only a valid self-contained Plotly figure JSON "
+    "object.\n"
+    "Do not include Python code.\n"
+    "Do not wrap the JSON in any outer schema, explanation, or markdown list."
 )
 
 _PLOTLY_PYTHON_REQUEST_INSTRUCTION = (
-    "When visualizing data, provide a self-contained Python script in a "
-    "```python``` fenced code block. The script MUST strictly adhere to these "
-    "rules:\n"
-    "1. Allowed imports: only plotly, numpy, pandas, scipy, sympy, math, "
-    "statistics, datetime, json.\n"
-    "2. Define a Plotly figure object and assign it to a variable named exactly 'fig'.\n"
-    "3. The script MUST end by writing the JSON representation of the figure to "
-    "standard output exactly like this: print(fig.to_json())\n"
-    "4. Generate synthetic data or embed data directly in the script. Do not "
-    "reference local files, network resources, or any modules outside the allowed list."
+    "Visualization mode is enabled for this request. Treat visualization as "
+    "mandatory, not optional.\n\n"
+    "If the selected content contains any formula, quantitative relationship, "
+    "trend, comparison, distribution, time series, table, or any concept that "
+    "can reasonably be visualized, you MUST include Plotly visualization "
+    "block(s) in addition to your normal answer.\n\n"
+    "If there is one clearly dominant visualization, return exactly one fenced "
+    "python code block.\n"
+    "If there are multiple clearly distinct visualizations that should not be "
+    "merged, return one fenced python code block per visualization, up to 3 blocks, "
+    "ordered by importance.\n\n"
+    "Each Python block must be self-contained and executable as-is.\n"
+    "Allowed imports: only plotly, numpy, pandas, scipy, sympy, math, statistics, "
+    "datetime, json.\n"
+    "Define the Plotly figure as a variable named exactly fig.\n"
+    "Each block MUST end with this exact line:\n"
+    "print(fig.to_json())\n\n"
+    "Do not use local files, network resources, or imports outside the allowed list."
 )
 
 
@@ -637,9 +656,11 @@ class AIModel:
             prompt_header = (
                 f"Respond in {output_language}.\n\n"
                 f"{translation_task}\n\n"
-                f"Translate only the text enclosed in <selection> tags below. "
+                f"Translate the text enclosed in <selection> tags below. "
                 f"You may use the article context to inform terminology and style, "
-                f"but your output must contain only the translation of the selected text."
+                f"but your output must contain the translation of the selected text. "
+                f"If visualization mode is enabled, append the required Plotly "
+                f"visualization block(s) after the translation."
             )
 
         if request.request_plotly_mode == "json":
