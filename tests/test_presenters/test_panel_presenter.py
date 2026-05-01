@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -209,6 +210,47 @@ class TestLoadingState:
         assert len(loading_calls) == 2
         assert loading_calls[0] == (True,)
         assert loading_calls[1] == (False,)
+
+
+class TestRequestLifecycle:
+    """Phase 1: active request tracking と cancel を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_translate_request_can_be_cancelled_via_active_task(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        panel_presenter.set_available_models(["models/gemini-2.0-flash"])
+        panel_presenter.set_selected_model("models/gemini-2.0-flash")
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Test"))
+        )
+
+        started = asyncio.Event()
+
+        async def _analyze(request):
+            started.set()
+            await asyncio.Event().wait()
+
+        mock_ai_model.analyze = AsyncMock(side_effect=_analyze)
+
+        panel_presenter._on_translate_requested(include_explanation=False)
+        await started.wait()
+
+        active_task = panel_presenter._active_analysis_task
+        assert active_task is not None
+        assert not active_task.done()
+
+        panel_presenter.cancel_active_request()
+
+        with pytest.raises(asyncio.CancelledError):
+            await active_task
+
+        assert panel_presenter._active_analysis_task is None
+        assert mock_side_panel_view.get_calls("show_loading") == [(True,), (False,)]
+        assert mock_side_panel_view.get_calls("update_result_text") == []
 
 
 class TestSelectionSnapshot:
@@ -425,6 +467,7 @@ class TestPlotlyRenderFlow:
         assert request.request_plotly_mode == "json"
         assert len(rendered) == 1
         assert rendered[0].origin_mode == "json"
+        assert rendered[0].ai_response_elapsed_s is None
         assert len(rendered[0].specs) == 1
         assert rendered[0].specs[0].title == "Velocity Plot"
         assert panel_presenter._latest_plotly_specs == rendered[0].specs

@@ -38,3 +38,4 @@ class PlotlyRenderRequest:
 
     specs: list[PlotlySpec]
     origin_mode: Literal["json", "python"]
+    ai_response_elapsed_s: float | None = None

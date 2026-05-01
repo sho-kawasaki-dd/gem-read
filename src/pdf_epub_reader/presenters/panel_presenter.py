@@ -29,6 +29,7 @@ from pdf_epub_reader.interfaces.view_interfaces import ISidePanelView
 from pdf_epub_reader.services.plotly_extraction_service import extract_plotly_specs
 from pdf_epub_reader.services.translation_service import TranslationService
 from pdf_epub_reader.utils.config import (
+    PlotlyVisualizationMode,
     normalize_model_name,
     normalize_plotly_visualization_mode,
     normalize_ui_language,
@@ -72,13 +73,16 @@ class PanelPresenter:
         self._ui_language = normalize_ui_language(ui_language, fallback="en")
         self._selection_snapshot = SelectionSnapshot()
         self._force_include_image: bool = False
-        self._plotly_mode = normalize_plotly_visualization_mode("off")
+        self._plotly_mode: PlotlyVisualizationMode = (
+            normalize_plotly_visualization_mode("off")
+        )
         self._latest_plotly_specs: list[PlotlySpec] = []
         self._active_tab_mode = AnalysisMode.TRANSLATION
         self._export_states: dict[AnalysisMode, ExportState] = {}
         # Phase 6: リクエスト単位のモデル選択
         self._available_models: list[str] = []
         self._current_model: str = ""
+        self._active_analysis_task: asyncio.Task[None] | None = None
         self._on_selection_delete_handler: (
             Callable[[str], None] | None
         ) = None
@@ -88,6 +92,12 @@ class PanelPresenter:
         self._on_plotly_render_handler: (
             Callable[[PlotlyRenderRequest], None] | None
         ) = None
+        self._on_ai_request_started_handler: Callable[[], None] | None = None
+        self._on_ai_request_finished_handler: (
+            Callable[[float], None] | None
+        ) = None
+        self._on_ai_request_cancelled_handler: Callable[[], None] | None = None
+        self._on_ai_request_failed_handler: Callable[[], None] | None = None
         # Phase 7: キャッシュ状態と MainPresenter 向けコールバック
         self._cache_status = CacheStatus()
         self._on_cache_create_handler: Callable[[], None] | None = None
@@ -280,6 +290,30 @@ class PanelPresenter:
         """MainPresenter が登録する Plotly 描画要求ハンドラ。"""
         self._on_plotly_render_handler = cb
 
+    def set_on_ai_request_started_handler(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """MainPresenter が登録する AI request 開始ハンドラ。"""
+        self._on_ai_request_started_handler = cb
+
+    def set_on_ai_request_finished_handler(
+        self, cb: Callable[[float], None]
+    ) -> None:
+        """MainPresenter が登録する AI request 完了ハンドラ。"""
+        self._on_ai_request_finished_handler = cb
+
+    def set_on_ai_request_cancelled_handler(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """MainPresenter が登録する AI request cancel ハンドラ。"""
+        self._on_ai_request_cancelled_handler = cb
+
+    def set_on_ai_request_failed_handler(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """MainPresenter が登録する AI request failure ハンドラ。"""
+        self._on_ai_request_failed_handler = cb
+
     def set_plotly_mode(self, mode: str) -> None:
         """Plotly mode を保持しつつ、サイドパネル UI へ反映する。
 
@@ -399,125 +433,135 @@ class PanelPresenter:
 
         # ボタンクリック自体は同期イベントなので、その場で await せず
         # タスク化して UI スレッドをふさがないようにする。
-        asyncio.ensure_future(self._do_translate(include_explanation))
+        self._active_analysis_task = asyncio.ensure_future(
+            self._do_translate(include_explanation)
+        )
 
     async def _do_translate(self, include_explanation: bool) -> None:
         """翻訳モードで AI 解析を実行し、結果を View に返す。"""
         self._active_tab_mode = AnalysisMode.TRANSLATION
-        analysis_text = self._build_analysis_text()
-        if not analysis_text:
-            self._refresh_export_enabled()
-            return
-        if not self._current_model:
-            self._refresh_export_enabled()
-            self._view.update_result_text(
-                self._translate("presenter.panel.model_unset")
-            )
-            return
-        self._view.show_loading(True)
         try:
-            request = AnalysisRequest(
-                text=analysis_text,
-                mode=AnalysisMode.TRANSLATION,
-                include_explanation=include_explanation,
-                images=self._collect_images(),
-                model_name=self._current_model,
-                request_plotly_mode=self._plotly_mode,
-            )
-            result = await self._ai_model.analyze(request)
-
-            display = result.translated_text or result.raw_response
-            if include_explanation and result.explanation:
-                display += "\n\n---\n\n" + result.explanation
-            self._view.update_result_text(display)
-            self._store_export_state(
-                action_mode=AnalysisMode.TRANSLATION,
-                result=result,
-                include_explanation=include_explanation,
-            )
-            self._handle_plotly_response(request, result)
-        except AIKeyMissingError:
-            self._reset_plotly_specs()
-            self._invalidate_export_state(AnalysisMode.TRANSLATION)
-            self._view.update_result_text(
-                self._translate("presenter.panel.api_key_missing")
-            )
-        except AIRateLimitError:
-            self._reset_plotly_specs()
-            self._invalidate_export_state(AnalysisMode.TRANSLATION)
-            self._view.update_result_text(
-                self._translate("presenter.panel.rate_limit")
-            )
-        except AIAPIError as exc:
-            self._reset_plotly_specs()
-            self._invalidate_export_state(AnalysisMode.TRANSLATION)
-            self._view.update_result_text(
-                self._translate(
-                    "presenter.panel.api_error",
-                    message=exc.message,
+            analysis_text = self._build_analysis_text()
+            if not analysis_text:
+                self._refresh_export_enabled()
+                return
+            if not self._current_model:
+                self._refresh_export_enabled()
+                self._view.update_result_text(
+                    self._translate("presenter.panel.model_unset")
                 )
-            )
+                return
+            self._view.show_loading(True)
+            try:
+                request = AnalysisRequest(
+                    text=analysis_text,
+                    mode=AnalysisMode.TRANSLATION,
+                    include_explanation=include_explanation,
+                    images=self._collect_images(),
+                    model_name=self._current_model,
+                    request_plotly_mode=self._plotly_mode,
+                )
+                result = await self._ai_model.analyze(request)
+
+                display = result.translated_text or result.raw_response
+                if include_explanation and result.explanation:
+                    display += "\n\n---\n\n" + result.explanation
+                self._view.update_result_text(display)
+                self._store_export_state(
+                    action_mode=AnalysisMode.TRANSLATION,
+                    result=result,
+                    include_explanation=include_explanation,
+                )
+                self._handle_plotly_response(request, result)
+            except AIKeyMissingError:
+                self._reset_plotly_specs()
+                self._invalidate_export_state(AnalysisMode.TRANSLATION)
+                self._view.update_result_text(
+                    self._translate("presenter.panel.api_key_missing")
+                )
+            except AIRateLimitError:
+                self._reset_plotly_specs()
+                self._invalidate_export_state(AnalysisMode.TRANSLATION)
+                self._view.update_result_text(
+                    self._translate("presenter.panel.rate_limit")
+                )
+            except AIAPIError as exc:
+                self._reset_plotly_specs()
+                self._invalidate_export_state(AnalysisMode.TRANSLATION)
+                self._view.update_result_text(
+                    self._translate(
+                        "presenter.panel.api_error",
+                        message=exc.message,
+                    )
+                )
+            finally:
+                self._view.show_loading(False)
         finally:
-            self._view.show_loading(False)
+            self._clear_active_analysis_task_if_current()
 
     def _on_custom_prompt_submitted(self, prompt: str) -> None:
         """カスタムプロンプト送信を受け取り、非同期処理を開始する。"""
-        asyncio.ensure_future(self._do_custom_prompt(prompt))
+        self._active_analysis_task = asyncio.ensure_future(
+            self._do_custom_prompt(prompt)
+        )
 
     async def _do_custom_prompt(self, prompt: str) -> None:
         """カスタムプロンプトモードで AI 解析を実行する。"""
         self._active_tab_mode = AnalysisMode.CUSTOM_PROMPT
-        analysis_text = self._build_analysis_text()
-        if not analysis_text:
-            self._refresh_export_enabled()
-            return
-        if not self._current_model:
-            self._refresh_export_enabled()
-            self._view.update_result_text(
-                self._translate("presenter.panel.model_unset")
-            )
-            return
-        self._view.show_loading(True)
         try:
-            request = AnalysisRequest(
-                text=analysis_text,
-                mode=AnalysisMode.CUSTOM_PROMPT,
-                custom_prompt=prompt,
-                images=self._collect_images(),
-                model_name=self._current_model,
-                request_plotly_mode=self._plotly_mode,
-            )
-            result = await self._ai_model.analyze(request)
-            self._view.update_result_text(result.raw_response)
-            self._store_export_state(
-                action_mode=AnalysisMode.CUSTOM_PROMPT,
-                result=result,
-                include_explanation=False,
-            )
-            self._handle_plotly_response(request, result)
-        except AIKeyMissingError:
-            self._reset_plotly_specs()
-            self._invalidate_export_state(AnalysisMode.CUSTOM_PROMPT)
-            self._view.update_result_text(
-                self._translate("presenter.panel.api_key_missing")
-            )
-        except AIRateLimitError:
-            self._reset_plotly_specs()
-            self._invalidate_export_state(AnalysisMode.CUSTOM_PROMPT)
-            self._view.update_result_text(
-                self._translate("presenter.panel.rate_limit")
-            )
-        except AIAPIError as exc:
-            self._reset_plotly_specs()
-            self._invalidate_export_state(AnalysisMode.CUSTOM_PROMPT)
-            self._view.update_result_text(
-                self._translate(
-                    "presenter.panel.api_error",
-                    message=exc.message,
+            analysis_text = self._build_analysis_text()
+            if not analysis_text:
+                self._refresh_export_enabled()
+                return
+            if not self._current_model:
+                self._refresh_export_enabled()
+                self._view.update_result_text(
+                    self._translate("presenter.panel.model_unset")
                 )
-            )
+                return
+            self._view.show_loading(True)
+            try:
+                request = AnalysisRequest(
+                    text=analysis_text,
+                    mode=AnalysisMode.CUSTOM_PROMPT,
+                    custom_prompt=prompt,
+                    images=self._collect_images(),
+                    model_name=self._current_model,
+                    request_plotly_mode=self._plotly_mode,
+                )
+                result = await self._ai_model.analyze(request)
+                self._view.update_result_text(result.raw_response)
+                self._store_export_state(
+                    action_mode=AnalysisMode.CUSTOM_PROMPT,
+                    result=result,
+                    include_explanation=False,
+                )
+                self._handle_plotly_response(request, result)
+            except AIKeyMissingError:
+                self._reset_plotly_specs()
+                self._invalidate_export_state(AnalysisMode.CUSTOM_PROMPT)
+                self._view.update_result_text(
+                    self._translate("presenter.panel.api_key_missing")
+                )
+            except AIRateLimitError:
+                self._reset_plotly_specs()
+                self._invalidate_export_state(AnalysisMode.CUSTOM_PROMPT)
+                self._view.update_result_text(
+                    self._translate("presenter.panel.rate_limit")
+                )
+            except AIAPIError as exc:
+                self._reset_plotly_specs()
+                self._invalidate_export_state(AnalysisMode.CUSTOM_PROMPT)
+                self._view.update_result_text(
+                    self._translate(
+                        "presenter.panel.api_error",
+                        message=exc.message,
+                    )
+                )
+            finally:
+                self._view.show_loading(False)
         finally:
-            self._view.show_loading(False)
+            self._clear_active_analysis_task_if_current()
 
     def _fire_cache_create(self) -> None:
         """View のキャッシュ作成ボタンを MainPresenter のハンドラに中継する。"""
@@ -617,6 +661,15 @@ class PanelPresenter:
     def _refresh_export_enabled(self) -> None:
         self._view.set_export_enabled(self.export_state is not None)
 
+    def cancel_active_request(self) -> None:
+        """進行中の AI request task を cancel する。"""
+        if self._active_analysis_task is not None:
+            self._active_analysis_task.cancel()
+
+    def _clear_active_analysis_task_if_current(self) -> None:
+        if self._active_analysis_task is asyncio.current_task():
+            self._active_analysis_task = None
+
     def _handle_plotly_response(
         self,
         request: AnalysisRequest,
@@ -643,6 +696,7 @@ class PanelPresenter:
                 PlotlyRenderRequest(
                     specs=selected_specs,
                     origin_mode=request.request_plotly_mode,
+                    ai_response_elapsed_s=None,
                 )
             )
 
