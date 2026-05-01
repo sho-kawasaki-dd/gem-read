@@ -63,4 +63,10 @@ def parse_spec(spec: PlotlySpec) -> Figure:
 
 def figure_to_html(fig: Figure) -> str:
     """Figure をオフライン表示用の完全 HTML に変換する。"""
-    return to_html(fig, include_plotlyjs="inline", full_html=True)
+    return to_html(
+        fig,
+        include_plotlyjs="inline",
+        full_html=True,
+        default_width="100%",
+        default_height="100vh",
+    )

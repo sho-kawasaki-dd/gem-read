@@ -72,3 +72,4 @@ class TestPlotlyRenderService:
         assert html.lstrip().startswith("<html>")
         assert "Plotly.newPlot" in html
         assert 'src="https://cdn.plot.ly' not in html
+        assert 'style="height:100vh; width:100%;"' in html

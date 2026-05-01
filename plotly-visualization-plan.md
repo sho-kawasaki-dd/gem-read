@@ -32,6 +32,10 @@ LLM 応答の Python を直接 `exec` することは、PDF 本文経由の prom
 6. PanelPresenter / MainPresenter: AI 成功後に push 型でレンダーハンドラを呼ぶ。
 7. 設定: `plotly_visualization_enabled`（トグル永続化）と `plotly_multi_spec_mode` のみ。
 
+補足:
+- `plotly.io.to_html(include_plotlyjs="inline")` は Plotly.js を含むため HTML が 2 MB を超えやすい。`QWebEngineView.setHtml()` は Qt/Chromium 側の制限で 2 MB 超の content を安定表示できないため、Phase 1 では **一時 HTML ファイルへ書き出して `QWebEngineView.load()` で読む**方式を採る。
+- Plotly の `to_html()` 既定値は `default_height="100%"` で、親要素の高さが未確定な埋め込み先ではグラフ領域が潰れて見えることがある。Phase 1 の描画 service では **`default_height="100vh"` を明示**して初期表示の空白を避ける。
+
 ### Phase 2: Sandboxed Python（オプション）
 
 - `subprocess` 隔離 runner（`-I -S`、空 env、timeout、import allow-list）。
@@ -87,10 +91,10 @@ LLM 応答の Python を直接 `exec` することは、PDF 本文経由の prom
 
 8. **描画 service（pure）**: `src/pdf_epub_reader/services/plotly_render_service.py` を新設。
    - `parse_spec(spec: PlotlySpec) -> Figure` … `plotly.io.from_json` を呼ぶ。失敗は構造化 `PlotlyRenderError` を投げる。
-   - `figure_to_html(fig: Figure) -> str` … `plotly.io.to_html(fig, include_plotlyjs="inline", full_html=True)`。**`include_plotlyjs="inline"` を強制**してオフライン動作を保証する。
+   - `figure_to_html(fig: Figure) -> str` … `plotly.io.to_html(fig, include_plotlyjs="inline", full_html=True, default_height="100vh")`。**`include_plotlyjs="inline"` を強制**してオフライン動作を保証し、既定高さを明示して初期表示の空白を避ける。
 
 9. **PlotWindow**: `src/pdf_epub_reader/views/plot_window.py` を新設。
-   - `QWebEngineView` を内包する独立ウィンドウ（`QWidget`）。`setHtml(html, baseUrl=QUrl())` で読み込み。
+   - `QWebEngineView` を内包する独立ウィンドウ（`QWidget`）。**`setHtml()` ではなく一時 HTML ファイルを書き出して `load(QUrl.fromLocalFile(...))` で読み込む**。`include_plotlyjs="inline"` の HTML は 2 MB を超えやすく、Qt WebEngine の `setHtml()` 制限を回避するため。
    - 親ウィンドウからは `show_figure_html(html: str, title: str)` のみを公開。
    - 既存の `result_window.py`（desktop_capture）に倣ってモードレス、複数同時表示可。
    - 閉じても AI 結果表示には影響しない。
