@@ -9,7 +9,7 @@ OK / Cancel で一括適用し、「Reset to Defaults」でデフォルト復帰
 - AI Models: Default Model, Available Models (Fetch), Output Language,
              System Prompt Translation
 - Export: Export folder and Markdown section toggles
-- Visualization: Plotly 複数 spec の扱い
+- Visualization: Plotly sandbox timeout と複数 spec の扱い
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -52,6 +53,8 @@ from pdf_epub_reader.utils.config import (
     PAGE_CACHE_MAX,
     PAGE_CACHE_MIN,
     PlotlyMultiSpecMode,
+    PLOTLY_SANDBOX_TIMEOUT_MAX,
+    PLOTLY_SANDBOX_TIMEOUT_MIN,
 )
 
 
@@ -233,7 +236,20 @@ class SettingsDialog(QDialog):
 
         # --- Visualization タブ ---
         visualization_tab = QWidget()
-        visualization_layout = QVBoxLayout(visualization_tab)
+        visualization_layout = QFormLayout(visualization_tab)
+
+        self._plotly_timeout_label = QLabel("")
+        self._plotly_timeout_spin = QDoubleSpinBox()
+        self._plotly_timeout_spin.setRange(
+            PLOTLY_SANDBOX_TIMEOUT_MIN,
+            PLOTLY_SANDBOX_TIMEOUT_MAX,
+        )
+        self._plotly_timeout_spin.setDecimals(1)
+        self._plotly_timeout_spin.setSingleStep(1.0)
+        visualization_layout.addRow(
+            self._plotly_timeout_label,
+            self._plotly_timeout_spin,
+        )
 
         self._plotly_multi_spec_group = QButtonGroup(self)
         self._plotly_multi_spec_prompt_radio = QRadioButton("")
@@ -244,11 +260,10 @@ class SettingsDialog(QDialog):
         self._plotly_multi_spec_group.addButton(
             self._plotly_multi_spec_first_only_radio
         )
-        visualization_layout.addWidget(self._plotly_multi_spec_prompt_radio)
-        visualization_layout.addWidget(
+        visualization_layout.addRow(self._plotly_multi_spec_prompt_radio)
+        visualization_layout.addRow(
             self._plotly_multi_spec_first_only_radio
         )
-        visualization_layout.addStretch()
 
         self._tabs.addTab(visualization_tab, "")
 
@@ -354,6 +369,9 @@ class SettingsDialog(QDialog):
     def get_export_include_yaml_frontmatter(self) -> bool:
         return self._export_include_yaml_frontmatter_check.isChecked()
 
+    def get_plotly_sandbox_timeout_s(self) -> float:
+        return self._plotly_timeout_spin.value()
+
     def get_plotly_multi_spec_mode(self) -> PlotlyMultiSpecMode:
         if self._plotly_multi_spec_first_only_radio.isChecked():
             return "first_only"
@@ -453,6 +471,9 @@ class SettingsDialog(QDialog):
 
     def set_export_include_yaml_frontmatter(self, value: bool) -> None:
         self._export_include_yaml_frontmatter_check.setChecked(value)
+
+    def set_plotly_sandbox_timeout_s(self, value: float) -> None:
+        self._plotly_timeout_spin.setValue(value)
 
     def set_plotly_multi_spec_mode(self, value: PlotlyMultiSpecMode) -> None:
         if value == "first_only":
@@ -558,6 +579,10 @@ class SettingsDialog(QDialog):
             texts.export_include_yaml_frontmatter_text
         )
         self._tabs.setTabText(3, texts.export_tab_text)
+        self._plotly_timeout_label.setText(texts.plotly_timeout_label)
+        self._plotly_timeout_spin.setSuffix(
+            f" {texts.plotly_timeout_suffix_seconds}"
+        )
         self._plotly_multi_spec_prompt_radio.setText(
             texts.plotly_multi_spec_prompt_text
         )

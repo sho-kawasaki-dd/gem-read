@@ -499,6 +499,7 @@ class MockSettingsDialogView:
             "export_include_document_metadata": False,
             "export_include_usage_metrics": False,
             "export_include_yaml_frontmatter": False,
+            "plotly_sandbox_timeout_s": 10.0,
             "plotly_multi_spec_mode": "prompt",
         }
         # exec_dialog が返す固定値。True = OK、False = Cancel。
@@ -605,6 +606,9 @@ class MockSettingsDialogView:
     def get_export_include_yaml_frontmatter(self) -> bool:
         return self._values["export_include_yaml_frontmatter"]
 
+    def get_plotly_sandbox_timeout_s(self) -> float:
+        return self._values["plotly_sandbox_timeout_s"]
+
     def get_plotly_multi_spec_mode(self) -> str:
         return self._values["plotly_multi_spec_mode"]
 
@@ -657,6 +661,10 @@ class MockSettingsDialogView:
     def set_export_include_yaml_frontmatter(self, value: bool) -> None:
         self.calls.append(("set_export_include_yaml_frontmatter", (value,)))
         self._values["export_include_yaml_frontmatter"] = value
+
+    def set_plotly_sandbox_timeout_s(self, value: float) -> None:
+        self.calls.append(("set_plotly_sandbox_timeout_s", (value,)))
+        self._values["plotly_sandbox_timeout_s"] = value
 
     def set_plotly_multi_spec_mode(self, value: str) -> None:
         self.calls.append(("set_plotly_multi_spec_mode", (value,)))

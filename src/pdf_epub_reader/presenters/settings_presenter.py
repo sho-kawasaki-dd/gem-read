@@ -17,6 +17,11 @@ from pdf_epub_reader.interfaces.model_interfaces import IAIModel
 from pdf_epub_reader.interfaces.view_interfaces import ISettingsDialogView
 from pdf_epub_reader.services.translation_service import TranslationService
 from pdf_epub_reader.utils.config import AppConfig, save_config
+from pdf_epub_reader.utils.config import (
+    AppConfig,
+    normalize_plotly_sandbox_timeout_s,
+    save_config,
+)
 from pdf_epub_reader.utils.exceptions import AIError
 
 logger = logging.getLogger(__name__)
@@ -112,6 +117,9 @@ class SettingsPresenter:
         self._view.set_export_include_yaml_frontmatter(
             config.export_include_yaml_frontmatter
         )
+        self._view.set_plotly_sandbox_timeout_s(
+            config.plotly_sandbox_timeout_s
+        )
         self._view.set_plotly_multi_spec_mode(config.plotly_multi_spec_mode)
 
     def _read_config_from_view(self) -> AppConfig:
@@ -142,6 +150,9 @@ class SettingsPresenter:
             export_include_usage_metrics=self._view.get_export_include_usage_metrics(),
             export_include_yaml_frontmatter=self._view.get_export_include_yaml_frontmatter(),
             plotly_visualization_mode=self._config.plotly_visualization_mode,
+            plotly_sandbox_timeout_s=normalize_plotly_sandbox_timeout_s(
+                self._view.get_plotly_sandbox_timeout_s()
+            ),
             plotly_multi_spec_mode=self._view.get_plotly_multi_spec_mode(),
             ui_language=self._config.ui_language,
             # ダイアログ対象外のフィールドは既存値を引き継ぐ

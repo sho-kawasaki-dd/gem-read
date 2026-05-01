@@ -54,6 +54,8 @@ class TestSettingsDialogTranslations:
             dialog._plotly_multi_spec_first_only_radio.text()
             == "When multiple Plotly specs are found, open only the first one"
         )
+        assert dialog._plotly_timeout_label.text() == "Plotly sandbox timeout:"
+        assert dialog._plotly_timeout_spin.suffix() == " sec"
 
         dialog.set_fetch_models_loading(True)
 
