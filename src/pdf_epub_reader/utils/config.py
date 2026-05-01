@@ -81,8 +81,11 @@ DEFAULT_EXPORT_INCLUDE_USAGE_METRICS = False
 DEFAULT_EXPORT_INCLUDE_YAML_FRONTMATTER = False
 
 # --- Plotly visualization デフォルト設定 ---
-DEFAULT_PLOTLY_VISUALIZATION_ENABLED = False
+DEFAULT_PLOTLY_VISUALIZATION_MODE: Literal["off", "json", "python"] = "off"
 DEFAULT_PLOTLY_MULTI_SPEC_MODE: Literal["prompt", "first_only"] = "prompt"
+DEFAULT_PLOTLY_SANDBOX_TIMEOUT_S = 10.0
+PLOTLY_SANDBOX_TIMEOUT_MIN = 1.0
+PLOTLY_SANDBOX_TIMEOUT_MAX = 120.0
 
 # --- バリデーション定数 (Phase 5: 設定ダイアログ) ---
 DPI_MIN = 72
@@ -98,6 +101,7 @@ CACHE_TTL_MIN = 1
 CACHE_TTL_MAX = 1440
 
 UiLanguage = Literal["ja", "en"]
+PlotlyVisualizationMode = Literal["off", "json", "python"]
 PlotlyMultiSpecMode = Literal["prompt", "first_only"]
 
 
@@ -148,6 +152,40 @@ def normalize_plotly_multi_spec_mode(
     if value == "first_only":
         return "first_only"
     return "prompt"
+
+
+def normalize_plotly_visualization_mode(
+    value: str | bool | None,
+) -> PlotlyVisualizationMode:
+    """Plotly 可視化モードを既知の値へ正規化する。"""
+    if value is True:
+        return "json"
+    if value in {"json", "python"}:
+        return value
+    return "off"
+
+
+def normalize_plotly_sandbox_timeout_s(value: float | int | None) -> float:
+    """Sandbox 実行 timeout を許容範囲へ clamp する。"""
+    if value is None:
+        return DEFAULT_PLOTLY_SANDBOX_TIMEOUT_S
+    try:
+        timeout_s = float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_PLOTLY_SANDBOX_TIMEOUT_S
+    if timeout_s < PLOTLY_SANDBOX_TIMEOUT_MIN:
+        return PLOTLY_SANDBOX_TIMEOUT_MIN
+    if timeout_s > PLOTLY_SANDBOX_TIMEOUT_MAX:
+        return PLOTLY_SANDBOX_TIMEOUT_MAX
+    return timeout_s
+
+
+def normalize_plotly_sandbox_log_dir(value: str | None) -> str | None:
+    """Sandbox stderr ログ保存先を空文字/None なら未設定として扱う。"""
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def get_default_ui_language(locale_name: str | None = None) -> UiLanguage:
@@ -227,17 +265,30 @@ class AppConfig:
     )
 
     # Phase 9: Plotly visualization 設定
-    plotly_visualization_enabled: bool = DEFAULT_PLOTLY_VISUALIZATION_ENABLED
+    plotly_visualization_mode: PlotlyVisualizationMode = (
+        DEFAULT_PLOTLY_VISUALIZATION_MODE
+    )
     plotly_multi_spec_mode: PlotlyMultiSpecMode = (
         DEFAULT_PLOTLY_MULTI_SPEC_MODE
     )
+    plotly_sandbox_timeout_s: float = DEFAULT_PLOTLY_SANDBOX_TIMEOUT_S
+    plotly_sandbox_log_dir: str | None = None
 
     def __post_init__(self) -> None:
         self.ui_language = normalize_ui_language(self.ui_language)
         self.gemini_model_name = normalize_model_name(self.gemini_model_name)
         self.export_folder = normalize_export_folder(self.export_folder)
+        self.plotly_visualization_mode = normalize_plotly_visualization_mode(
+            self.plotly_visualization_mode
+        )
         self.plotly_multi_spec_mode = normalize_plotly_multi_spec_mode(
             self.plotly_multi_spec_mode
+        )
+        self.plotly_sandbox_timeout_s = normalize_plotly_sandbox_timeout_s(
+            self.plotly_sandbox_timeout_s
+        )
+        self.plotly_sandbox_log_dir = normalize_plotly_sandbox_log_dir(
+            self.plotly_sandbox_log_dir
         )
         normalized_models: list[str] = []
         for name in self.selected_models:
@@ -275,6 +326,13 @@ def load_config(path: Path | None = None) -> AppConfig:
 
     try:
         data = json.loads(config_path.read_text(encoding="utf-8"))
+        if (
+            "plotly_visualization_mode" not in data
+            and "plotly_visualization_enabled" in data
+        ):
+            data["plotly_visualization_mode"] = normalize_plotly_visualization_mode(
+                data.get("plotly_visualization_enabled")
+            )
         # JSON に含まれないフィールドはデフォルト値で補完されるため、
         # 設定項目が増えても古い設定ファイルがそのまま使える。
         known_fields = {f.name for f in AppConfig.__dataclass_fields__.values()}

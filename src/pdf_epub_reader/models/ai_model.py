@@ -76,6 +76,19 @@ _PLOTLY_JSON_REQUEST_INSTRUCTION = (
     "execution code."
 )
 
+_PLOTLY_PYTHON_REQUEST_INSTRUCTION = (
+    "When visualizing data, provide a self-contained Python script in a "
+    "```python``` fenced code block. The script MUST strictly adhere to these "
+    "rules:\n"
+    "1. Allowed imports: only plotly, numpy, pandas, scipy, sympy, math, "
+    "statistics, datetime, json.\n"
+    "2. Define a Plotly figure object and assign it to a variable named exactly 'fig'.\n"
+    "3. The script MUST end by writing the JSON representation of the figure to "
+    "standard output exactly like this: print(fig.to_json())\n"
+    "4. Generate synthetic data or embed data directly in the script. Do not "
+    "reference local files, network resources, or any modules outside the allowed list."
+)
+
 
 class AIModel:
     """Gemini API を利用した AI 解析 Model。
@@ -629,9 +642,13 @@ class AIModel:
                 f"but your output must contain only the translation of the selected text."
             )
 
-        if request.request_plotly_json:
+        if request.request_plotly_mode == "json":
             prompt_header = (
                 f"{prompt_header}\n\n{_PLOTLY_JSON_REQUEST_INSTRUCTION}"
+            )
+        elif request.request_plotly_mode == "python":
+            prompt_header = (
+                f"{prompt_header}\n\n{_PLOTLY_PYTHON_REQUEST_INSTRUCTION}"
             )
 
         # プロンプトヘッダー（言語指示 + タスク指示）

@@ -109,7 +109,10 @@ class TranslationService:
             selection_preview_label=self.translate("side.selection.preview_label", language),
             selection_preview_placeholder=self.translate("side.selection.preview_placeholder", language),
             selection_force_image_text=self.translate("side.selection.force_image", language),
-            plotly_toggle_tooltip=self.translate("side.plotly_toggle_tooltip", language),
+            plotly_toggle_tooltip=self.translate("side.plotly_toggle_tooltip.json", language),
+            plotly_toggle_tooltip_off=self.translate("side.plotly_toggle_tooltip.off", language),
+            plotly_toggle_tooltip_json=self.translate("side.plotly_toggle_tooltip.json", language),
+            plotly_toggle_tooltip_python=self.translate("side.plotly_toggle_tooltip.python", language),
             ai_section_title=self.translate("side.section.ai", language),
             translation_button_text=self.translate("side.translation.button", language),
             translation_explain_button_text=self.translate("side.translation.explain_button", language),
@@ -164,6 +167,36 @@ class TranslationService:
             window_title_template=self.translate(
                 "plotly.window.title", language
             ),
+            sandbox_running_message=self.translate(
+                "plotly.status.sandbox_running", language
+            ),
+            sandbox_timeout_message=self.translate(
+                "plotly.status.sandbox_timeout", language
+            ),
+            sandbox_runtime_error_message=self.translate(
+                "plotly.status.sandbox_runtime_error", language
+            ),
+            sandbox_static_check_error_message=self.translate(
+                "plotly.status.sandbox_static_check_error", language
+            ),
+            sandbox_cancelled_message=self.translate(
+                "plotly.status.sandbox_cancelled", language
+            ),
+            sandbox_provisioning_message=self.translate(
+                "plotly.status.sandbox_provisioning", language
+            ),
+            sandbox_provisioning_failed_message=self.translate(
+                "plotly.status.sandbox_provisioning_failed", language
+            ),
+            sandbox_provisioning_failed_offline_message=self.translate(
+                "plotly.status.sandbox_provisioning_failed_offline", language
+            ),
+            sandbox_fallback_to_json_message=self.translate(
+                "plotly.status.sandbox_fallback_to_json", language
+            ),
+            sandbox_cancel_link_text=self.translate(
+                "plotly.sandbox.cancel_link", language
+            ),
         )
 
     def build_settings_dialog_texts(self, language: str) -> SettingsDialogTexts:
@@ -213,6 +246,12 @@ class TranslationService:
             ),
             plotly_multi_spec_first_only_text=self.translate(
                 "settings.visualization.plotly_multi_spec_first_only", language
+            ),
+            plotly_timeout_label=self.translate(
+                "settings.visualization.plotly_timeout", language
+            ),
+            plotly_timeout_suffix_seconds=self.translate(
+                "settings.visualization.plotly_timeout_seconds", language
             ),
             minutes_suffix=self.translate("common.minutes_suffix", language),
             reset_defaults_button_text=self.translate("settings.button.reset_defaults", language),

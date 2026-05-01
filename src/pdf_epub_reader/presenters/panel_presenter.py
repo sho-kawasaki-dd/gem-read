@@ -27,7 +27,11 @@ from pdf_epub_reader.interfaces.model_interfaces import IAIModel
 from pdf_epub_reader.interfaces.view_interfaces import ISidePanelView
 from pdf_epub_reader.services.plotly_extraction_service import extract_plotly_specs
 from pdf_epub_reader.services.translation_service import TranslationService
-from pdf_epub_reader.utils.config import normalize_model_name, normalize_ui_language
+from pdf_epub_reader.utils.config import (
+    normalize_model_name,
+    normalize_plotly_visualization_mode,
+    normalize_ui_language,
+)
 from pdf_epub_reader.utils.exceptions import (
     AIAPIError,
     AIKeyMissingError,
@@ -68,6 +72,7 @@ class PanelPresenter:
         self._selection_snapshot = SelectionSnapshot()
         self._force_include_image: bool = False
         self._plotly_enabled: bool = False
+        self._plotly_mode = normalize_plotly_visualization_mode("off")
         self._latest_plotly_specs: list[PlotlySpec] = []
         self._active_tab_mode = AnalysisMode.TRANSLATION
         self._export_states: dict[AnalysisMode, ExportState] = {}
@@ -278,7 +283,18 @@ class PanelPresenter:
     def set_plotly_enabled(self, enabled: bool) -> None:
         """永続化済み Plotly トグル状態を View と内部状態へ反映する。"""
         self._plotly_enabled = enabled
+        if not enabled:
+            self._plotly_mode = "off"
+        elif self._plotly_mode == "off":
+            self._plotly_mode = "json"
         self._view.set_plotly_toggle_checked(enabled)
+
+    def set_plotly_mode(self, mode: str) -> None:
+        """Plotly mode を保持しつつ、現行の boolean UI へ反映する。"""
+        normalized = normalize_plotly_visualization_mode(mode)
+        self._plotly_mode = normalized
+        self._plotly_enabled = normalized != "off"
+        self._view.set_plotly_toggle_checked(self._plotly_enabled)
 
     def set_on_cache_invalidate_handler(
         self, cb: Callable[[], None]
@@ -341,6 +357,11 @@ class PanelPresenter:
     def _on_plotly_toggled(self, checked: bool) -> None:
         """Plotly 可視化トグルの状態変更を記録して MainPresenter に通知する。"""
         self._plotly_enabled = checked
+        if checked:
+            if self._plotly_mode == "off":
+                self._plotly_mode = "json"
+        else:
+            self._plotly_mode = "off"
         if self._on_plotly_toggle_changed_handler is not None:
             self._on_plotly_toggle_changed_handler(checked)
 
@@ -411,7 +432,7 @@ class PanelPresenter:
                 include_explanation=include_explanation,
                 images=self._collect_images(),
                 model_name=self._current_model,
-                request_plotly_json=self._plotly_enabled,
+                request_plotly_mode=self._plotly_mode,
             )
             result = await self._ai_model.analyze(request)
 
@@ -474,7 +495,7 @@ class PanelPresenter:
                 custom_prompt=prompt,
                 images=self._collect_images(),
                 model_name=self._current_model,
-                request_plotly_json=self._plotly_enabled,
+                request_plotly_mode=self._plotly_mode,
             )
             result = await self._ai_model.analyze(request)
             self._view.update_result_text(result.raw_response)
@@ -611,7 +632,7 @@ class PanelPresenter:
         request: AnalysisRequest,
         result: AnalysisResult,
     ) -> None:
-        if not request.request_plotly_json:
+        if request.request_plotly_mode == "off":
             self._reset_plotly_specs()
             return
 

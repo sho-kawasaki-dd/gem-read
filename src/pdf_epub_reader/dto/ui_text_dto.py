@@ -54,6 +54,9 @@ class SidePanelTexts:
     selection_preview_placeholder: str
     selection_force_image_text: str
     plotly_toggle_tooltip: str
+    plotly_toggle_tooltip_off: str
+    plotly_toggle_tooltip_json: str
+    plotly_toggle_tooltip_python: str
     ai_section_title: str
     translation_button_text: str
     translation_explain_button_text: str
@@ -92,6 +95,16 @@ class PlotlyTexts:
     restore_failed_message_template: str
     invalid_json_message_template: str
     window_title_template: str
+    sandbox_running_message: str
+    sandbox_timeout_message: str
+    sandbox_runtime_error_message: str
+    sandbox_static_check_error_message: str
+    sandbox_cancelled_message: str
+    sandbox_provisioning_message: str
+    sandbox_provisioning_failed_message: str
+    sandbox_provisioning_failed_offline_message: str
+    sandbox_fallback_to_json_message: str
+    sandbox_cancel_link_text: str
 
 
 @dataclass(frozen=True)
@@ -128,6 +141,8 @@ class SettingsDialogTexts:
     export_include_yaml_frontmatter_text: str
     plotly_multi_spec_prompt_text: str
     plotly_multi_spec_first_only_text: str
+    plotly_timeout_label: str
+    plotly_timeout_suffix_seconds: str
     minutes_suffix: str
     reset_defaults_button_text: str
     ok_button_text: str

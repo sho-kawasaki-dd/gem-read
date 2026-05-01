@@ -669,7 +669,7 @@ class TestExplanationMode:
 
 
 class TestPlotlyPromptInjection:
-    """Step 6: request_plotly_json による contents ヘッダー注入を検証する。"""
+    """Step 6: request_plotly_mode による contents ヘッダー注入を検証する。"""
 
     def test_build_contents_appends_plotly_instruction_for_translation(self) -> None:
         model = _build_model(output_language="English")
@@ -678,13 +678,28 @@ class TestPlotlyPromptInjection:
             AnalysisRequest(
                 text="Hello world",
                 mode=AnalysisMode.TRANSLATION,
-                request_plotly_json=True,
+                request_plotly_mode="json",
             )
         )
 
         assert "Respond in English." in contents[0]
         assert "Plotly figure specification as a JSON fenced code block" in contents[0]
         assert "<selection>\nHello world\n</selection>" == contents[1]
+
+    def test_build_contents_appends_python_instruction_for_python_mode(self) -> None:
+        model = _build_model(output_language="English")
+
+        contents = model._build_contents(
+            AnalysisRequest(
+                text="Plot this",
+                mode=AnalysisMode.CUSTOM_PROMPT,
+                custom_prompt="Visualize",
+                request_plotly_mode="python",
+            )
+        )
+
+        assert "Allowed imports: only plotly, numpy, pandas, scipy, sympy, math, statistics, datetime, json." in contents[0]
+        assert "print(fig.to_json())" in contents[0]
 
     def test_build_contents_does_not_append_plotly_instruction_by_default(self) -> None:
         model = _build_model(output_language="English")
@@ -699,6 +714,7 @@ class TestPlotlyPromptInjection:
 
         assert "USER_TASK" in contents[0]
         assert "Plotly figure specification as a JSON fenced code block" not in contents[0]
+        assert "print(fig.to_json())" not in contents[0]
 
 
 # ======================================================================

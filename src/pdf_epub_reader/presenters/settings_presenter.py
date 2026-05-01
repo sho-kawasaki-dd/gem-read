@@ -141,7 +141,7 @@ class SettingsPresenter:
             export_include_document_metadata=self._view.get_export_include_document_metadata(),
             export_include_usage_metrics=self._view.get_export_include_usage_metrics(),
             export_include_yaml_frontmatter=self._view.get_export_include_yaml_frontmatter(),
-            plotly_visualization_enabled=self._config.plotly_visualization_enabled,
+            plotly_visualization_mode=self._config.plotly_visualization_mode,
             plotly_multi_spec_mode=self._view.get_plotly_multi_spec_mode(),
             ui_language=self._config.ui_language,
             # ダイアログ対象外のフィールドは既存値を引き継ぐ

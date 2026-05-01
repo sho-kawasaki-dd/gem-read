@@ -486,7 +486,7 @@ class TestPlotlyVisualizationSettings:
         self, mock_settings_view: MockSettingsDialogView
     ) -> None:
         config = AppConfig(
-            plotly_visualization_enabled=True,
+            plotly_visualization_mode="json",
             plotly_multi_spec_mode="first_only",
         )
         mock_settings_view._exec_return = True
@@ -505,7 +505,7 @@ class TestPlotlyVisualizationSettings:
         self, mock_settings_view: MockSettingsDialogView
     ) -> None:
         config = AppConfig(
-            plotly_visualization_enabled=True,
+            plotly_visualization_mode="json",
             plotly_multi_spec_mode="prompt",
         )
         presenter = SettingsPresenter(mock_settings_view, config)
@@ -513,7 +513,7 @@ class TestPlotlyVisualizationSettings:
 
         result = presenter._read_config_from_view()
 
-        assert result.plotly_visualization_enabled is True
+        assert result.plotly_visualization_mode == "json"
         assert result.plotly_multi_spec_mode == "first_only"
 
     def test_reset_sets_plotly_visualization_defaults(

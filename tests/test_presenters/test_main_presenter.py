@@ -902,7 +902,7 @@ class TestSettingsFlow:
     ) -> None:
         config = AppConfig(
             ui_language="en",
-            plotly_visualization_enabled=True,
+            plotly_visualization_mode="json",
         )
         panel = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
@@ -928,7 +928,7 @@ class TestSettingsFlow:
     ) -> None:
         from unittest.mock import patch
 
-        config = AppConfig(plotly_visualization_enabled=False)
+        config = AppConfig(plotly_visualization_mode="off")
         panel = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
         )
@@ -942,7 +942,7 @@ class TestSettingsFlow:
         with patch("pdf_epub_reader.presenters.main_presenter.save_config") as mock_save:
             mock_side_panel_view.simulate_plotly_toggled(True)
 
-        assert config.plotly_visualization_enabled is True
+        assert config.plotly_visualization_mode == "json"
         mock_save.assert_called_once_with(config)
 
     @pytest.mark.asyncio

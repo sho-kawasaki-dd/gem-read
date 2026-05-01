@@ -61,6 +61,11 @@ class TestTranslationService:
             texts.plotly_toggle_tooltip
             == "可視化可能な応答では Plotly JSON の出力を要求します"
         )
+        assert texts.plotly_toggle_tooltip_off == "Plotly 可視化は無効です"
+        assert (
+            texts.plotly_toggle_tooltip_python
+            == "可視化可能な応答では sandboxed Plotly Python の出力を要求します"
+        )
 
     def test_build_plotly_texts_returns_localized_dialog_and_status_texts(self) -> None:
         service = TranslationService()
@@ -75,6 +80,8 @@ class TestTranslationService:
             == "Failed to restore the Plotly figure: {details}"
         )
         assert texts.window_title_template == "Plotly Visualization - {title}"
+        assert texts.sandbox_running_message == "Running Plotly sandbox..."
+        assert texts.sandbox_cancel_link_text == "Cancel"
 
     def test_build_settings_dialog_texts_includes_export_tab_fields(self) -> None:
         service = TranslationService()
@@ -94,6 +101,8 @@ class TestTranslationService:
             texts.plotly_multi_spec_prompt_text
             == "When multiple Plotly specs are found, ask which one to open"
         )
+        assert texts.plotly_timeout_label == "Plotly sandbox timeout:"
+        assert texts.plotly_timeout_suffix_seconds == "sec"
 
     def test_build_markdown_export_texts_returns_localized_labels(self) -> None:
         service = TranslationService()

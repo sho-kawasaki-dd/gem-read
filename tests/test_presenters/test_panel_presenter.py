@@ -341,6 +341,19 @@ class TestPlotlyToggle:
             True,
         )
 
+    def test_set_plotly_mode_preserves_python_mode_while_checking_toggle(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        panel_presenter.set_plotly_mode("python")
+
+        assert panel_presenter._plotly_enabled is True
+        assert panel_presenter._plotly_mode == "python"
+        assert mock_side_panel_view.get_calls("set_plotly_toggle_checked")[-1] == (
+            True,
+        )
+
     def test_toggle_updates_state_and_notifies_handler(
         self,
         panel_presenter: PanelPresenter,
@@ -385,7 +398,7 @@ class TestPlotlyRenderFlow:
         await panel_presenter._do_translate(include_explanation=False)
 
         request = mock_ai_model.analyze.await_args.args[0]
-        assert request.request_plotly_json is False
+        assert request.request_plotly_mode == "off"
         assert rendered == []
         assert panel_presenter._latest_plotly_specs == []
 
@@ -417,11 +430,30 @@ class TestPlotlyRenderFlow:
         await panel_presenter._do_translate(include_explanation=False)
 
         request = mock_ai_model.analyze.await_args.args[0]
-        assert request.request_plotly_json is True
+        assert request.request_plotly_mode == "json"
         assert len(rendered) == 1
         assert len(rendered[0]) == 1
         assert rendered[0][0].title == "Velocity Plot"
         assert panel_presenter._latest_plotly_specs == rendered[0]
+
+    @pytest.mark.asyncio
+    async def test_translate_with_python_plotly_mode_requests_python(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello world"))
+        )
+        panel_presenter.set_plotly_mode("python")
+        mock_ai_model.analyze = AsyncMock(
+            return_value=AnalysisResult(translated_text="done", raw_response="done")
+        )
+
+        await panel_presenter._do_translate(include_explanation=False)
+
+        request = mock_ai_model.analyze.await_args.args[0]
+        assert request.request_plotly_mode == "python"
 
     @pytest.mark.asyncio
     async def test_ai_failure_resets_plotly_specs(

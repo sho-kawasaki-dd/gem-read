@@ -11,6 +11,6 @@ class PlotlySpec:
     """LLM 応答から抽出した Plotly spec の生データ。"""
 
     index: int
-    language: Literal["json"]
+    language: Literal["json", "python"]
     source_text: str
     title: str | None = None

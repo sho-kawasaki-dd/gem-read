@@ -4,10 +4,10 @@ from pdf_epub_reader.dto import AnalysisMode, AnalysisRequest, PlotlySpec
 
 
 class TestPlotlyDtos:
-    def test_analysis_request_plotly_flag_defaults_to_false(self) -> None:
+    def test_analysis_request_plotly_mode_defaults_to_off(self) -> None:
         request = AnalysisRequest(text="hello", mode=AnalysisMode.TRANSLATION)
 
-        assert request.request_plotly_json is False
+        assert request.request_plotly_mode == "off"
 
     def test_plotly_spec_preserves_extracted_block_metadata(self) -> None:
         spec = PlotlySpec(
@@ -21,3 +21,8 @@ class TestPlotlyDtos:
         assert spec.language == "json"
         assert spec.source_text == '{"data": [], "layout": {}}'
         assert spec.title == "Plot 1"
+
+    def test_plotly_spec_accepts_python_language(self) -> None:
+        spec = PlotlySpec(index=2, language="python", source_text="print('ok')")
+
+        assert spec.language == "python"

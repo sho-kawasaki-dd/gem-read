@@ -148,8 +148,8 @@ class MainPresenter:
         self._panel_presenter.set_selected_model(
             self._config.gemini_model_name
         )
-        self._panel_presenter.set_plotly_enabled(
-            self._config.plotly_visualization_enabled
+        self._panel_presenter.set_plotly_mode(
+            self._config.plotly_visualization_mode
         )
         self._panel_presenter.apply_ui_language(self._config.ui_language)
         self._panel_presenter.set_on_selection_delete_handler(
@@ -745,8 +745,8 @@ class MainPresenter:
         self._panel_presenter.set_selected_model(
             new_config.gemini_model_name
         )
-        self._panel_presenter.set_plotly_enabled(
-            new_config.plotly_visualization_enabled
+        self._panel_presenter.set_plotly_mode(
+            new_config.plotly_visualization_mode
         )
 
         if old_ui_language != new_config.ui_language:
@@ -786,7 +786,7 @@ class MainPresenter:
 
     def _on_plotly_toggle_changed(self, checked: bool) -> None:
         """サイドパネルの Plotly トグル変更を設定へ永続化する。"""
-        self._config.plotly_visualization_enabled = checked
+        self._config.plotly_visualization_mode = "json" if checked else "off"
         save_config(self._config)
 
     def _on_plotly_render(self, specs: list[PlotlySpec]) -> None:
