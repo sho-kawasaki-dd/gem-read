@@ -34,6 +34,10 @@ class PlotlyRenderRequest:
     `origin_mode` は「どの送信モードでこの応答を得たか」を保持する。
     Phase 2 では Python モード送信時に JSON fallback が起き得るため、
     表示メッセージを決める材料として必要になる。
+
+    ``ai_response_elapsed_s`` は AI 応答受信までの経過秒数を保持する。
+    Plotly 描画に進む場合は MainPresenter が AI 時間と graph render 時間を
+    まとめて status bar に出すため、ここで一緒に渡しておく。
     """
 
     specs: list[PlotlySpec]

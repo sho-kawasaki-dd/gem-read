@@ -41,7 +41,17 @@ class MainWindowTexts:
 
 @dataclass(frozen=True)
 class AnalysisStatusTexts:
-    """AI request の running / cancel / timing 文言。"""
+    """AI request の状態表示に使う文言束。
+
+    MainPresenter はこの DTO を参照して status bar の表示を組み立てる。
+    それぞれの値の役割は次のとおり。
+
+    - ``running_message``: 実行中に出す汎用の進行中メッセージ。
+    - ``cancelled_message``: ユーザー cancel 後に即時表示する文言。
+    - ``timing_only``: AI 応答時間だけを出せる場合の完了メッセージ。
+    - ``timing_with_graph``: AI 応答時間と Plotly 描画時間を両方出す完了メッセージ。
+    - ``cancel_link_text``: running UI に出す Cancel リンクの表示文字列。
+    """
 
     running_message: str
     cancelled_message: str

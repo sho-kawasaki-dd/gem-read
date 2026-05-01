@@ -261,9 +261,12 @@ class MainWindow(QMainWindow):
 
         self._status_label = QLabel("")
         status_bar.addWidget(self._status_label, stretch=1)
+        # AI request と Plotly sandbox で共通利用する進行中ラベル。
+        # 表示テキストだけを保持し、実際のキャンセルは Presenter 側の callback に委譲する。
         self._running_operation_label = QLabel("")
         self._running_operation_label.hide()
         status_bar.addPermanentWidget(self._running_operation_label)
+        # Cancel リンクは Rich Text で表示し、クリック時は callback に中継する。
         self._running_operation_cancel_label = QLabel("")
         self._running_operation_cancel_label.setTextFormat(
             Qt.TextFormat.RichText
@@ -371,7 +374,12 @@ class MainWindow(QMainWindow):
         cancel_cb: Callable[[], None],
         cancel_text: str,
     ) -> None:
-        """汎用の進行中操作 UI を表示する。"""
+        """汎用の進行中操作 UI を表示する。
+
+        AI request の running 表示と Plotly sandbox の進捗表示を共通化し、
+        表示メッセージ・キャンセル処理・リンク文言だけを差し替えられるようにする。
+        ``cancel_text`` は HTML として解釈されないよう、表示時に escape している。
+        """
         self._running_operation_cancel_callback = cancel_cb
         self._running_operation_label.setText(message)
         self._running_operation_label.show()
@@ -381,7 +389,11 @@ class MainWindow(QMainWindow):
         self._running_operation_cancel_label.show()
 
     def clear_running_operation(self) -> None:
-        """汎用の進行中操作 UI を解除する。"""
+        """汎用の進行中操作 UI を解除する。
+
+        running ラベルを非表示にし、以後のリンククリックが古い callback を
+        叩かないよう参照も同時に外す。
+        """
         self._running_operation_cancel_callback = None
         self._running_operation_label.hide()
         self._running_operation_cancel_label.hide()
@@ -389,8 +401,9 @@ class MainWindow(QMainWindow):
     def show_plotly_running(self, cancel_cb: Callable[[], None]) -> None:
         """Plotly sandbox 実行中の補助 UI を表示する。
 
-        status bar には常駐メッセージとは別に、進行中ラベルと Cancel リンクを
-        出し、Python モードの長めの処理にだけ補助 UI を重ねる。
+        旧 API の互換ラッパとして残しつつ、実際には共通の running UI を使う。
+        Python sandbox の準備や実行中だけ補助表示を出したい意図を、
+        呼び出し側のコードからは隠蔽できる。
         """
         self.show_running_operation(
             "Plotly sandbox running",
@@ -399,7 +412,11 @@ class MainWindow(QMainWindow):
         )
 
     def clear_plotly_running(self) -> None:
-        """Plotly sandbox 実行中の補助 UI を解除する。"""
+        """Plotly sandbox 実行中の補助 UI を解除する。
+
+        実体は共通 running UI の解除処理であり、旧 API を呼ぶ既存コードとの
+        互換性を保つためのラッパである。
+        """
         self.clear_running_operation()
 
     def update_recent_files(self, files: list[str]) -> None:
@@ -420,6 +437,7 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, title, message)
 
     def _handle_running_operation_cancel_link(self, _link: str) -> None:
+        """ステータスバーの Cancel リンクを Presenter の callback に中継する。"""
         if self._running_operation_cancel_callback is not None:
             self._running_operation_cancel_callback()
 

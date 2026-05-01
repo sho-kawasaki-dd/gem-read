@@ -128,12 +128,15 @@ class MainPresenter:
         self._sandbox_executor = sandbox_executor
         self._plotly_worker_pool = ThreadPoolExecutor(max_workers=1)
         self._active_plotly_cancel_token: CancelToken | None = None
+        # AI request の running / cancel / timing 文言を language ごとに束ねて保持する。
         self._status_texts: AnalysisStatusTexts = (
             self._translation_service.build_analysis_status_texts(
             self._config.ui_language
             )
         )
+        # AI 応答時間は Plotly 描画が続く場合に備えて一時保持する。
         self._latest_ai_elapsed_s: float | None = None
+        # AI 応答完了後に、Plotly が来なかった場合だけ遅延表示するための task。
         self._ai_timing_task: asyncio.Task[None] | None = None
         self._plotly_render_requested = False
         self._base_dpi: int = self._config.default_dpi
@@ -194,6 +197,8 @@ class MainPresenter:
         self._panel_presenter.set_on_plotly_render_handler(
             self._on_plotly_render
         )
+        # PanelPresenter からは request の状態変化だけを受け取り、
+        # status bar の組み立ては MainPresenter 側で一元化する。
         self._panel_presenter.set_on_ai_request_started_handler(
             self._on_ai_request_started
         )
@@ -832,7 +837,11 @@ class MainPresenter:
         save_config(self._config)
 
     def _on_ai_request_started(self) -> None:
-        """AI request 開始時に running UI を表示する。"""
+        """AI request 開始時に running UI を表示する。
+
+        ここでは前回 request に紐づく timing 予約を破棄し、今まさに動いている
+        request だけが Cancel できる状態を status bar に出す。
+        """
         self._cancel_ai_timing_task()
         self._latest_ai_elapsed_s = None
         self._plotly_render_requested = False
@@ -843,13 +852,21 @@ class MainPresenter:
         )
 
     def _on_ai_request_finished(self, elapsed_s: float) -> None:
-        """AI request 成功時に running UI を解除し、timing 表示を保留する。"""
+        """AI request 成功時に running UI を解除し、timing 表示を保留する。
+
+        Plotly へ進む可能性があるので、ここでは即時に timing を確定させず、
+        まず elapsed 値だけを保持して後段の描画結果に合わせる。
+        """
         self._latest_ai_elapsed_s = elapsed_s
         self._view.clear_running_operation()
         self._schedule_ai_timing_message()
 
     def _on_ai_request_cancelled(self) -> None:
-        """AI request cancel 時に running UI を解除し、cancel status を出す。"""
+        """AI request cancel 時に running UI を解除し、cancel status を出す。
+
+        cancel 後に遅延表示が残ると誤解を招くため、保持していた timing state も
+        ここで消しておく。
+        """
         self._cancel_ai_timing_task()
         self._latest_ai_elapsed_s = None
         self._plotly_render_requested = False
@@ -857,7 +874,11 @@ class MainPresenter:
         self._view.show_status_message(self._status_texts.cancelled_message)
 
     def _on_ai_request_failed(self) -> None:
-        """AI request が失敗したときに running UI を解除する。"""
+        """AI request が失敗したときに running UI を解除する。
+
+        エラー本文は PanelPresenter 側で既に View に出しているため、ここでは
+        進行中表示だけを片付ける。cancel / failure の取り残しを防ぐ最終地点。
+        """
         self._cancel_ai_timing_task()
         self._latest_ai_elapsed_s = None
         self._plotly_render_requested = False
@@ -869,6 +890,10 @@ class MainPresenter:
         Phase 1 では JSON spec を即時描画し、複数 spec は設定に応じて選択する。
         Phase 2 では同じ入口から Python spec も受け取り、必要時だけ sandbox
         実行へ分岐する。
+
+        ``ai_response_elapsed_s`` が付いていればそれを優先し、無ければ直前の
+        AI request 完了時に保持した値を使う。これにより Plotly 経路でも
+        AI 応答時間と graph render 時間を 1 つの status にまとめられる。
         """
         if not request.specs:
             return
@@ -918,7 +943,11 @@ class MainPresenter:
         *,
         ai_elapsed_s: float | None = None,
     ) -> None:
-        """JSON spec を同期復元し、PlotWindow へ表示する。"""
+        """JSON spec を同期復元し、PlotWindow へ表示する。
+
+        計測対象は AI 応答待ちではなく、復元処理とウィンドウ表示そのものだけ。
+        そのため start / end はこのメソッドの中で閉じ、AI 時間と混ぜない。
+        """
         try:
             start_time = time.perf_counter()
             figure = render_spec(
@@ -934,6 +963,7 @@ class MainPresenter:
                 html,
                 plotly_texts.window_title_template.format(title=title),
             )
+            # 画面に出す直前までを graph render の対象として測る。
             graph_elapsed_s = time.perf_counter() - start_time
         except PlotlyRenderError as exc:
             self._view.show_status_message(
@@ -956,7 +986,11 @@ class MainPresenter:
         *,
         ai_elapsed_s: float | None = None,
     ) -> None:
-        """Python spec の sandbox 描画を非同期で開始する。"""
+        """Python spec の sandbox 描画を非同期で開始する。
+
+        sandbox 準備や実行時間が長くなり得るため、ここでは先に進行中 UI を出し、
+        実処理は background task に流す。
+        """
         cancel_token = CancelToken()
         self._active_plotly_cancel_token = cancel_token
         # 初回は venv 準備が走る可能性があるため、開始直後に進捗 UI を出す。
@@ -981,7 +1015,11 @@ class MainPresenter:
         *,
         ai_elapsed_s: float | None = None,
     ) -> None:
-        """QThreadPool 上で sandbox 描画を実行し、結果を UI に反映する。"""
+        """QThreadPool 上で sandbox 描画を実行し、結果を UI に反映する。
+
+        ここで測るのは sandbox での Plotly 図生成から UI 表示までの時間であり、
+        AI 応答待ち時間は caller から渡された値をそのまま使う。
+        """
         try:
             start_time = time.perf_counter()
             loop = asyncio.get_running_loop()
@@ -1001,6 +1039,7 @@ class MainPresenter:
                 html,
                 plotly_texts.window_title_template.format(title=title),
             )
+            # HTML 生成とウィンドウ表示が完了した時点を graph render 完了とみなす。
             graph_elapsed_s = time.perf_counter() - start_time
         except PlotlyRenderError as exc:
             self._view.show_status_message(
@@ -1080,6 +1119,11 @@ class MainPresenter:
             self._ai_timing_task = None
 
     def _schedule_ai_timing_message(self) -> None:
+        """Plotly が来なかった AI request だけ timing を遅延表示する。
+
+        1 イベントループ分だけ遅らせることで、直後に Plotly render が始まった場合は
+        graph timing 側に上書きさせる余地を残す。
+        """
         if self._latest_ai_elapsed_s is None:
             return
 
@@ -1183,6 +1227,7 @@ class MainPresenter:
         ai_elapsed_s: float | None,
         graph_elapsed_s: float,
     ) -> None:
+        """AI timing と graph timing のどちらを status bar に出すかを決める。"""
         if ai_elapsed_s is None:
             self._view.show_status_message(
                 plotly_texts.render_success_message_template.format(title=title)

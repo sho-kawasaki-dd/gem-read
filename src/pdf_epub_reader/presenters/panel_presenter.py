@@ -294,25 +294,41 @@ class PanelPresenter:
     def set_on_ai_request_started_handler(
         self, cb: Callable[[], None]
     ) -> None:
-        """MainPresenter が登録する AI request 開始ハンドラ。"""
+        """MainPresenter が登録する AI request 開始ハンドラ。
+
+        実際の running 表示や Cancel リンクの描画は MainPresenter 側の責務だが、
+        開始イベント自体はここで 1 回だけ発火させる。
+        """
         self._on_ai_request_started_handler = cb
 
     def set_on_ai_request_finished_handler(
         self, cb: Callable[[float], None]
     ) -> None:
-        """MainPresenter が登録する AI request 完了ハンドラ。"""
+        """MainPresenter が登録する AI request 完了ハンドラ。
+
+        引数の float には AI 応答受信までの経過秒数を渡し、MainPresenter が
+        Plotly 描画時間と組み合わせて status bar の timing 表示を組み立てる。
+        """
         self._on_ai_request_finished_handler = cb
 
     def set_on_ai_request_cancelled_handler(
         self, cb: Callable[[], None]
     ) -> None:
-        """MainPresenter が登録する AI request cancel ハンドラ。"""
+        """MainPresenter が登録する AI request cancel ハンドラ。
+
+        ここでは結果を上書きせず、進行中の task が取り消された事実だけを
+        MainPresenter に通知する。
+        """
         self._on_ai_request_cancelled_handler = cb
 
     def set_on_ai_request_failed_handler(
         self, cb: Callable[[], None]
     ) -> None:
-        """MainPresenter が登録する AI request failure ハンドラ。"""
+        """MainPresenter が登録する AI request failure ハンドラ。
+
+        AIKeyMissingError / AIRateLimitError 以外の予期しない例外も含め、
+        running UI を確実に解除したい場合の最終フォールバックとして使う。
+        """
         self._on_ai_request_failed_handler = cb
 
     def set_plotly_mode(self, mode: str) -> None:
@@ -434,6 +450,8 @@ class PanelPresenter:
 
         # ボタンクリック自体は同期イベントなので、その場で await せず
         # タスク化して UI スレッドをふさがないようにする。
+        # 既存 task がある場合は先に cancel し、遅れて返ってくる古い結果が
+        # 新しい request を上書きしないようにする。
         if self._active_analysis_task is not None:
             self._active_analysis_task.cancel()
         self._active_analysis_task = asyncio.create_task(
@@ -441,7 +459,12 @@ class PanelPresenter:
         )
 
     async def _do_translate(self, include_explanation: bool) -> None:
-        """翻訳モードで AI 解析を実行し、結果を View に返す。"""
+        """翻訳モードで AI 解析を実行し、結果を View に返す。
+
+        AI 応答本文の表示、export 状態の更新、Plotly 変換要求の発火までを
+        ここで一括して行う。cancel / 例外 / 正常終了で後片付けの責務が分かれるため、
+        末尾の finally で loading 状態と task 参照を必ず整理する。
+        """
         self._active_tab_mode = AnalysisMode.TRANSLATION
         current_task = asyncio.current_task()
         if self._active_analysis_task is None and current_task is not None:
@@ -461,6 +484,7 @@ class PanelPresenter:
             try:
                 if self._on_ai_request_started_handler is not None:
                     self._on_ai_request_started_handler()
+                # AI 応答時間は analyze() の実呼び出しだけを囲んで測る。
                 start_time = time.perf_counter()
                 request = AnalysisRequest(
                     text=analysis_text,
@@ -477,6 +501,7 @@ class PanelPresenter:
                 if include_explanation and result.explanation:
                     display += "\n\n---\n\n" + result.explanation
                 self._view.update_result_text(display)
+                # まず結果本文を反映し、その後に timing / Plotly 連携へ進める。
                 self._store_export_state(
                     action_mode=AnalysisMode.TRANSLATION,
                     result=result,
@@ -513,23 +538,31 @@ class PanelPresenter:
                 if self._on_ai_request_failed_handler is not None:
                     self._on_ai_request_failed_handler()
             except asyncio.CancelledError:
+                # cancel の場合は結果や cache 状態を壊さず、状態通知だけを行う。
                 if self._active_analysis_task is asyncio.current_task():
                     if self._on_ai_request_cancelled_handler is not None:
                         self._on_ai_request_cancelled_handler()
                 raise
             except Exception:
+                # 想定外例外でも running UI が残らないよう、失敗通知だけ先に送る。
                 if self._active_analysis_task is asyncio.current_task():
                     if self._on_ai_request_failed_handler is not None:
                         self._on_ai_request_failed_handler()
                 raise
             finally:
+                # current task と一致する場合だけ loading を落とし、二重 request 時の
+                # 新しい task による表示を誤って消さないようにする。
                 if self._active_analysis_task is asyncio.current_task():
                     self._view.show_loading(False)
         finally:
             self._clear_active_analysis_task_if_current()
 
     def _on_custom_prompt_submitted(self, prompt: str) -> None:
-        """カスタムプロンプト送信を受け取り、非同期処理を開始する。"""
+        """カスタムプロンプト送信を受け取り、非同期処理を開始する。
+
+        翻訳モードと同じ task 管理・cancel 方針を使い、UI からは送信済みかどうか
+        だけを見せる。
+        """
         if self._active_analysis_task is not None:
             self._active_analysis_task.cancel()
         self._active_analysis_task = asyncio.create_task(
@@ -537,7 +570,11 @@ class PanelPresenter:
         )
 
     async def _do_custom_prompt(self, prompt: str) -> None:
-        """カスタムプロンプトモードで AI 解析を実行する。"""
+        """カスタムプロンプトモードで AI 解析を実行する。
+
+        翻訳モードと同じく、AI 応答本文の反映・export 状態の更新・Plotly 連携を
+        ここでまとめて処理する。
+        """
         self._active_tab_mode = AnalysisMode.CUSTOM_PROMPT
         current_task = asyncio.current_task()
         if self._active_analysis_task is None and current_task is not None:
@@ -557,6 +594,7 @@ class PanelPresenter:
             try:
                 if self._on_ai_request_started_handler is not None:
                     self._on_ai_request_started_handler()
+                # AI 応答時間は custom prompt 本文を含めた analyze() 呼び出し部分だけを測る。
                 start_time = time.perf_counter()
                 request = AnalysisRequest(
                     text=analysis_text,
@@ -569,6 +607,7 @@ class PanelPresenter:
                 result = await self._ai_model.analyze(request)
                 elapsed_s = time.perf_counter() - start_time
                 self._view.update_result_text(result.raw_response)
+                # 解析結果が先、timing と Plotly 連携が後、という順番を保つ。
                 self._store_export_state(
                     action_mode=AnalysisMode.CUSTOM_PROMPT,
                     result=result,
@@ -605,16 +644,20 @@ class PanelPresenter:
                 if self._on_ai_request_failed_handler is not None:
                     self._on_ai_request_failed_handler()
             except asyncio.CancelledError:
+                # cancel では途中結果を残しつつ、状態通知だけ MainPresenter に渡す。
                 if self._active_analysis_task is asyncio.current_task():
                     if self._on_ai_request_cancelled_handler is not None:
                         self._on_ai_request_cancelled_handler()
                 raise
             except Exception:
+                # 予期しない例外は最終失敗扱いにして、running UI の取り残しを避ける。
                 if self._active_analysis_task is asyncio.current_task():
                     if self._on_ai_request_failed_handler is not None:
                         self._on_ai_request_failed_handler()
                 raise
             finally:
+                # 現在の task に限って loading を解除し、古い task の finally で
+                # 新しい request の表示を消してしまわないようにする。
                 if self._active_analysis_task is asyncio.current_task():
                     self._view.show_loading(False)
         finally:
@@ -719,7 +762,14 @@ class PanelPresenter:
         self._view.set_export_enabled(self.export_state is not None)
 
     def cancel_active_request(self) -> None:
-        """進行中の AI request task を cancel する。"""
+        """進行中の AI request task を cancel する。
+
+        ここでは task に cancel を送るだけにして、cache の invalidate / delete /
+        ownership 更新は一切行わない。ユーザーによる request cancel と
+        永続的な cache 操作は別の責務として扱う。
+        """
+        # user cancel は cache ownership / invalidation と無関係で、
+        # 進行中 request の task だけを止める。
         if self._active_analysis_task is not None:
             self._active_analysis_task.cancel()
 
@@ -737,6 +787,9 @@ class PanelPresenter:
 
         `request_plotly_mode` は送信時点のスナップショットなので、応答待ち中に
         UI 側のモードが切り替わっても、この処理は元の要求に従って判定する。
+
+        ``elapsed_s`` は PanelPresenter 側で測った AI 応答時間であり、Plotly 描画が
+        走る場合は MainPresenter の timing 表示にそのまま引き継ぐ。
         """
         if request.request_plotly_mode == "off":
             self._reset_plotly_specs()
@@ -750,6 +803,7 @@ class PanelPresenter:
         )
         self._latest_plotly_specs = selected_specs
         if selected_specs and self._on_plotly_render_handler is not None:
+            # Plotly へ進める場合だけ AI 時間を含めた描画要求を MainPresenter に渡す。
             self._on_plotly_render_handler(
                 PlotlyRenderRequest(
                     specs=selected_specs,

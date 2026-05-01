@@ -99,6 +99,12 @@ class TranslationService:
         )
 
     def build_analysis_status_texts(self, language: str) -> AnalysisStatusTexts:
+        """AI request の状態表示文言を 1 つの DTO にまとめて返す。
+
+        この DTO を分けておくことで、MainPresenter は running / cancel /
+        timing の文言だけを独立して差し替えられる。Plotly や MainWindow の
+        静的テキスト束と責務を混ぜずに済むのが利点である。
+        """
         return AnalysisStatusTexts(
             running_message=self.translate("ai.running_message", language),
             cancelled_message=self.translate("ai.cancelled_message", language),

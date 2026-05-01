@@ -124,19 +124,36 @@ class IMainView(Protocol):
         cancel_cb: Callable[[], None],
         cancel_text: str,
     ) -> None:
-        """ステータスバーで汎用の進行中操作 UI を表示する。"""
+        """ステータスバーで汎用の進行中操作 UI を表示する。
+
+        ``message`` は進行中ラベル本体、``cancel_cb`` は Cancel リンク押下時に
+        実行する処理、``cancel_text`` はリンクとして表示する文言を表す。
+        AI request と Plotly sandbox の両方で再利用できるよう、特定の処理名には
+        依存しない共通 API にしている。
+        """
         ...
 
     def clear_running_operation(self) -> None:
-        """汎用の進行中操作 UI を解除する。"""
+        """汎用の進行中操作 UI を解除する。
+
+        メッセージ本体と Cancel リンクの両方を隠し、登録済みの cancel callback も
+        破棄する。完了・cancel・error のいずれの経路でも最後に呼べるようにしてある。
+        """
         ...
 
     def show_plotly_running(self, cancel_cb: Callable[[], None]) -> None:
-        """Plotly sandbox 実行中のステータス UI を表示する。"""
+        """Plotly sandbox 実行中のステータス UI を表示する。
+
+        旧来の Plotly 専用 API を残すための互換ラッパで、内部的には
+        ``show_running_operation()`` を使って共通 UI に流し込む。
+        """
         ...
 
     def clear_plotly_running(self) -> None:
-        """Plotly sandbox 実行中のステータス UI を解除する。"""
+        """Plotly sandbox 実行中のステータス UI を解除する。
+
+        互換性維持のために残しているラッパで、実体は共通の running UI を消すだけ。
+        """
         ...
 
     # --- Callback registration (View → Presenter) ---

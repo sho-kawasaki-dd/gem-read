@@ -35,7 +35,11 @@ def main() -> None:
 
 
 async def _shutdown() -> None:
-    """アプリ終了時にキャッシュを自動破棄する。確認ダイアログなし。"""
+    """アプリ終了時にキャッシュを自動破棄する。確認ダイアログなし。
+
+    ここでの invalidate はアプリの後始末であり、ユーザーが実行中 request を
+    cancel したときの挙動とは別物として扱う。
+    """
     if _ai_model_ref is not None:
         try:
             await _ai_model_ref.invalidate_cache()

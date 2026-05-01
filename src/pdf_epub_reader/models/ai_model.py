@@ -159,6 +159,9 @@ class AIModel:
         内部クリアし、``system_instruction`` を含む ``GenerateContentConfig`` で
         キャッシュなし 1 回リトライする。
 
+        ここで扱うのは AI モデル内部の cache fallback だけで、ユーザーの request
+        cancel や Presenter 側の task cancel はこのメソッドの責務に含めない。
+
         Args:
             request: 解析要求。mode / text / images / model_name 等を含む。
 
@@ -203,7 +206,9 @@ class AIModel:
                 raise
             except AIAPIError as exc:
                 # キャッシュ付きリクエスト失敗 → キャッシュを内部クリアし
-                # キャッシュなしで 1 回リトライ
+                # キャッシュなしで 1 回リトライする。
+                # ただし explicit cache_name は呼び出し元管理なので、ここでは
+                # 内部 cache だけを落として request 由来の指定は尊重する。
                 cache_request_failed = True
                 cache_fallback_reason = self._normalize_cache_fallback_reason(exc)
                 logger.warning(
@@ -450,6 +455,8 @@ class AIModel:
         """現在のキャッシュを削除する。
 
         既に削除済みの場合はログのみ出力し、例外は送出しない。
+        これは「現在の internal cache を丸ごと破棄する」操作であり、
+        request cancel のような一時的な UI 操作とは切り離して扱う。
         """
         if self._cache_name is None:
             return
@@ -462,6 +469,9 @@ class AIModel:
         現在アクティブなキャッシュと同じ名前を削除した場合は、
         内部に保持しているキャッシュ状態も合わせてクリアする。
         一覧テーブルから任意のキャッシュを削除する用途を想定する。
+
+        request cancel では呼ばれず、キャッシュ管理 UI からの明示操作だけを
+        想定している。
         """
         if not cache_name:
             return
