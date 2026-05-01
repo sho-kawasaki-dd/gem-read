@@ -6,6 +6,8 @@ from pdf_epub_reader.services.plotly_render_service import (
 	figure_to_html,
 	parse_spec,
 )
+from pdf_epub_reader.services.plotly_sandbox.cancel import CancelToken
+from pdf_epub_reader.services.plotly_sandbox.executor import SandboxExecutor
 from pdf_epub_reader.services.translation_service import TranslationService
 
 __all__ = [
@@ -14,4 +16,6 @@ __all__ = [
 	"PlotlyRenderError",
 	"parse_spec",
 	"figure_to_html",
+	"CancelToken",
+	"SandboxExecutor",
 ]

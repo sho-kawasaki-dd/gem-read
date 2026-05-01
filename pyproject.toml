@@ -35,3 +35,6 @@ packages = ["src/pdf_epub_reader", "src/browser_api", "src/desktop_capture"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "slow: sandbox subprocess integration tests",
+]
