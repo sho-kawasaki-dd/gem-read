@@ -1821,6 +1821,7 @@ class TestPlotlyRenderFlow:
         mock_document_model: MockDocumentModel,
         mock_side_panel_view: MockSidePanelView,
         mock_ai_model: MockAIModel,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         panel = PanelPresenter(
             view=mock_side_panel_view, ai_model=mock_ai_model
@@ -1840,6 +1841,11 @@ class TestPlotlyRenderFlow:
             plot_window_factory=build_window,
         )
 
+        monkeypatch.setattr(
+            "pdf_epub_reader.presenters.main_presenter.time.perf_counter",
+            iter([100.0, 100.4]).__next__,
+        )
+
         presenter._on_plotly_render(
             PlotlyRenderRequest(
                 specs=[
@@ -1851,6 +1857,7 @@ class TestPlotlyRenderFlow:
                 )
                 ],
                 origin_mode="json",
+                ai_response_elapsed_s=1.2,
             )
         )
 
@@ -1860,7 +1867,7 @@ class TestPlotlyRenderFlow:
         assert "<html" in html.lower()
         assert title == "Plotly Visualization - Velocity Plot"
         assert mock_main_view.get_calls("show_status_message")[-1] == (
-            "Opened Plotly visualization: Velocity Plot",
+            "AI response: 1.2 s / graph render: 0.4 s",
         )
 
     def test_multiple_specs_prompt_mode_uses_view_picker(
@@ -2020,6 +2027,7 @@ class TestPlotlyRenderFlow:
         mock_document_model: MockDocumentModel,
         mock_side_panel_view: MockSidePanelView,
         mock_ai_model: MockAIModel,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         panel = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
         created_windows: list[MockPlotWindow] = []
@@ -2039,6 +2047,11 @@ class TestPlotlyRenderFlow:
             sandbox_executor=sandbox,
         )
 
+        monkeypatch.setattr(
+            "pdf_epub_reader.presenters.main_presenter.time.perf_counter",
+            iter([200.0, 200.6]).__next__,
+        )
+
         presenter._on_plotly_render(
             PlotlyRenderRequest(
                 specs=[
@@ -2050,6 +2063,7 @@ class TestPlotlyRenderFlow:
                     )
                 ],
                 origin_mode="python",
+                ai_response_elapsed_s=2.5,
             )
         )
 
@@ -2063,6 +2077,9 @@ class TestPlotlyRenderFlow:
         assert mock_main_view.get_calls("clear_plotly_running") == [()]
         assert len(created_windows) == 1
         assert created_windows[0].calls[0][1] == "Plotly Visualization - Python Plot"
+        assert mock_main_view.get_calls("show_status_message")[-1] == (
+            "AI response: 2.5 s / graph render: 0.6 s",
+        )
 
     def test_python_origin_json_fallback_reports_status_before_render(
         self,

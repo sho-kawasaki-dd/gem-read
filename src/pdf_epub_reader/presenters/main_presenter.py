@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -873,8 +874,11 @@ class MainPresenter:
             return
 
         self._plotly_render_requested = True
-        if request.ai_response_elapsed_s is not None:
-            self._latest_ai_elapsed_s = request.ai_response_elapsed_s
+        ai_elapsed_s = request.ai_response_elapsed_s
+        if ai_elapsed_s is None:
+            ai_elapsed_s = self._latest_ai_elapsed_s
+        elif ai_elapsed_s is not None:
+            self._latest_ai_elapsed_s = ai_elapsed_s
 
         plotly_texts = self._translation_service.build_plotly_texts(
             self._config.ui_language
@@ -891,19 +895,32 @@ class MainPresenter:
             )
 
         if selected.language == "python":
-            self._start_plotly_python_render(selected, title, plotly_texts)
+            self._start_plotly_python_render(
+                selected,
+                title,
+                plotly_texts,
+                ai_elapsed_s=ai_elapsed_s,
+            )
             return
 
-        self._render_and_show_plotly_figure(selected, title, plotly_texts)
+        self._render_and_show_plotly_figure(
+            selected,
+            title,
+            plotly_texts,
+            ai_elapsed_s=ai_elapsed_s,
+        )
 
     def _render_and_show_plotly_figure(
         self,
         spec: PlotlySpec,
         title: str,
         plotly_texts,
+        *,
+        ai_elapsed_s: float | None = None,
     ) -> None:
         """JSON spec を同期復元し、PlotWindow へ表示する。"""
         try:
+            start_time = time.perf_counter()
             figure = render_spec(
                 spec,
                 sandbox=None,
@@ -911,20 +928,24 @@ class MainPresenter:
                 cancel_token=CancelToken(),
             )
             html = figure_to_html(figure)
+            window = self._plot_window_factory()
+            self._plot_windows.append(window)
+            window.show_figure_html(
+                html,
+                plotly_texts.window_title_template.format(title=title),
+            )
+            graph_elapsed_s = time.perf_counter() - start_time
         except PlotlyRenderError as exc:
             self._view.show_status_message(
                 self._build_plotly_render_error_message(exc, plotly_texts)
             )
             return
 
-        window = self._plot_window_factory()
-        self._plot_windows.append(window)
-        window.show_figure_html(
-            html,
-            plotly_texts.window_title_template.format(title=title),
-        )
-        self._view.show_status_message(
-            plotly_texts.render_success_message_template.format(title=title)
+        self._show_plotly_render_success_status(
+            plotly_texts,
+            title=title,
+            ai_elapsed_s=ai_elapsed_s,
+            graph_elapsed_s=graph_elapsed_s,
         )
 
     def _start_plotly_python_render(
@@ -932,6 +953,8 @@ class MainPresenter:
         spec: PlotlySpec,
         title: str,
         plotly_texts,
+        *,
+        ai_elapsed_s: float | None = None,
     ) -> None:
         """Python spec の sandbox 描画を非同期で開始する。"""
         cancel_token = CancelToken()
@@ -945,6 +968,7 @@ class MainPresenter:
                 title,
                 plotly_texts,
                 cancel_token,
+                ai_elapsed_s=ai_elapsed_s,
             )
         )
 
@@ -954,9 +978,12 @@ class MainPresenter:
         title: str,
         plotly_texts,
         cancel_token: CancelToken,
+        *,
+        ai_elapsed_s: float | None = None,
     ) -> None:
         """QThreadPool 上で sandbox 描画を実行し、結果を UI に反映する。"""
         try:
+            start_time = time.perf_counter()
             loop = asyncio.get_running_loop()
             figure = await loop.run_in_executor(
                 self._plotly_worker_pool,
@@ -968,6 +995,13 @@ class MainPresenter:
                 ),
             )
             html = figure_to_html(figure)
+            window = self._plot_window_factory()
+            self._plot_windows.append(window)
+            window.show_figure_html(
+                html,
+                plotly_texts.window_title_template.format(title=title),
+            )
+            graph_elapsed_s = time.perf_counter() - start_time
         except PlotlyRenderError as exc:
             self._view.show_status_message(
                 self._build_plotly_render_error_message(exc, plotly_texts)
@@ -1003,14 +1037,11 @@ class MainPresenter:
             self._active_plotly_cancel_token = None
             self._view.clear_plotly_running()
 
-        window = self._plot_window_factory()
-        self._plot_windows.append(window)
-        window.show_figure_html(
-            html,
-            plotly_texts.window_title_template.format(title=title),
-        )
-        self._view.show_status_message(
-            plotly_texts.render_success_message_template.format(title=title)
+        self._show_plotly_render_success_status(
+            plotly_texts,
+            title=title,
+            ai_elapsed_s=ai_elapsed_s,
+            graph_elapsed_s=graph_elapsed_s,
         )
 
     def _run_plotly_render_coroutine(self, coro: asyncio.Future | asyncio.coroutines) -> None:
@@ -1142,6 +1173,27 @@ class MainPresenter:
             )
         return plotly_texts.restore_failed_message_template.format(
             details=error.details
+        )
+
+    def _show_plotly_render_success_status(
+        self,
+        plotly_texts,
+        *,
+        title: str,
+        ai_elapsed_s: float | None,
+        graph_elapsed_s: float,
+    ) -> None:
+        if ai_elapsed_s is None:
+            self._view.show_status_message(
+                plotly_texts.render_success_message_template.format(title=title)
+            )
+            return
+
+        self._view.show_status_message(
+            self._status_texts.timing_with_graph.format(
+                ai_seconds=self._format_seconds(ai_elapsed_s),
+                graph_seconds=self._format_seconds(graph_elapsed_s),
+            )
         )
 
     def _build_plot_window(self) -> _PlotWindowLike:
