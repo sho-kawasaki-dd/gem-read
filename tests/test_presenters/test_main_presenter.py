@@ -1864,7 +1864,11 @@ class TestPlotlyRenderFlow:
 
         assert len(created_windows) == 1
         assert any(name == "set_on_rerender_requested" for name, _ in created_windows[0].calls)
-        show_call = next(name_args for name_args in created_windows[0].calls if name_args[0] == "show_figures")
+        show_call = next(
+            name_args
+            for name_args in created_windows[0].calls
+            if name_args[0] == "show_figures"
+        )
         payload = show_call[1][0]
         assert "<html" in payload.html.lower()
         assert payload.title == "Plotly Visualization - Velocity Plot"
@@ -1926,7 +1930,11 @@ class TestPlotlyRenderFlow:
             "Cancel",
         )
         assert len(created_windows) == 1
-        show_call = next(name_args for name_args in created_windows[0].calls if name_args[0] == "show_figures")
+        show_call = next(
+            name_args
+            for name_args in created_windows[0].calls
+            if name_args[0] == "show_figures"
+        )
         assert show_call[1][0].title == "Plotly Visualization - Plot B"
 
     def test_multiple_specs_first_only_mode_skips_picker(
@@ -1977,10 +1985,71 @@ class TestPlotlyRenderFlow:
 
         assert mock_main_view.get_calls("show_plotly_spec_picker") == []
         assert len(created_windows) == 1
-        show_call = next(name_args for name_args in created_windows[0].calls if name_args[0] == "show_figures")
+        show_call = next(
+            name_args
+            for name_args in created_windows[0].calls
+            if name_args[0] == "show_figures"
+        )
         assert show_call[1][0].title == "Plotly Visualization - First Plot"
 
-    def test_plotly_render_failure_reports_status_without_opening_window(
+    def test_multiple_specs_all_tabs_mode_shows_single_window_with_all_tabs(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        created_windows: list[MockPlotWindow] = []
+
+        def build_window() -> MockPlotWindow:
+            window = MockPlotWindow()
+            created_windows.append(window)
+            return window
+
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(ui_language="en", plotly_multi_spec_mode="all_tabs"),
+            plot_window_factory=build_window,
+        )
+
+        presenter._on_plotly_render(
+            PlotlyRenderRequest(
+                specs=[
+                    PlotlySpec(
+                        index=0,
+                        language="json",
+                        source_text='{"data": [], "layout": {}}',
+                        title="Plot A",
+                    ),
+                    PlotlySpec(
+                        index=1,
+                        language="json",
+                        source_text='{"data": [], "layout": {}}',
+                        title="Plot B",
+                    ),
+                ],
+                origin_mode="json",
+            )
+        )
+
+        assert mock_main_view.get_calls("show_plotly_spec_picker") == []
+        assert len(created_windows) == 1
+        show_call = next(
+            name_args
+            for name_args in created_windows[0].calls
+            if name_args[0] == "show_figures"
+        )
+        payloads = show_call[1]
+        assert len(payloads) == 2
+        assert payloads[0].title == "Plotly Visualization - Plot A"
+        assert payloads[1].title == "Plotly Visualization - Plot B"
+
+    def test_plotly_render_failure_renders_error_tab_without_blocking_window(
         self,
         mock_main_view: MockMainView,
         mock_document_model: MockDocumentModel,
@@ -2008,21 +2077,34 @@ class TestPlotlyRenderFlow:
         presenter._on_plotly_render(
             PlotlyRenderRequest(
                 specs=[
-                PlotlySpec(
-                    index=0,
-                    language="json",
-                    source_text="{broken",
-                    title="Broken Plot",
-                )
+                    PlotlySpec(
+                        index=0,
+                        language="json",
+                        source_text="{broken",
+                        title="Broken Plot",
+                    ),
+                    PlotlySpec(
+                        index=1,
+                        language="json",
+                        source_text='{"data": [], "layout": {}}',
+                        title="Healthy Plot",
+                    ),
                 ],
                 origin_mode="json",
             )
         )
 
-        assert created_windows == []
-        assert "The Plotly JSON is invalid:" in mock_main_view.get_calls(
-            "show_status_message"
-        )[-1][0]
+        assert len(created_windows) == 1
+        show_call = next(
+            name_args
+            for name_args in created_windows[0].calls
+            if name_args[0] == "show_figures"
+        )
+        payloads = show_call[1]
+        assert len(payloads) == 2
+        assert payloads[0].render_error is not None
+        assert payloads[1].render_error is None
+        assert payloads[1].html.startswith("<html")
 
     @pytest.mark.asyncio
     async def test_python_plotly_render_uses_sandbox_executor_and_running_ui(
@@ -2081,7 +2163,11 @@ class TestPlotlyRenderFlow:
         assert mock_main_view.get_calls("clear_plotly_running") == [()]
         assert len(created_windows) == 1
         assert any(name == "set_on_rerender_requested" for name, _ in created_windows[0].calls)
-        show_call = next(name_args for name_args in created_windows[0].calls if name_args[0] == "show_figures")
+        show_call = next(
+            name_args
+            for name_args in created_windows[0].calls
+            if name_args[0] == "show_figures"
+        )
         assert show_call[1][0].title == "Plotly Visualization - Python Plot"
         assert mock_main_view.get_calls("show_status_message")[-1] == (
             "AI response: 2.5 s / graph render: 0.6 s",
@@ -2137,7 +2223,9 @@ class TestPlotlyRenderFlow:
             )
         )
 
-        reload_call = next(name_args for name_args in window.calls if name_args[0] == "reload_tab")
+        reload_call = next(
+            name_args for name_args in window.calls if name_args[0] == "reload_tab"
+        )
         assert reload_call[1][0] == 0
         assert reload_call[1][1].title == "Plotly Visualization - Reload Plot"
         assert reload_call[1][1].html.startswith("<html")

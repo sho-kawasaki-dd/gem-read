@@ -10,6 +10,7 @@ MainPresenter の役割は、メインウィンドウで発生したユーザー
 from __future__ import annotations
 
 import asyncio
+import html as html_lib
 import logging
 import time
 from collections.abc import Callable
@@ -905,78 +906,54 @@ class MainPresenter:
         plotly_texts = self._translation_service.build_plotly_texts(
             self._config.ui_language
         )
-        selected = self._select_plotly_spec(request.specs, plotly_texts)
-        if selected is None:
+        selected_specs = self._select_plotly_specs(request.specs, plotly_texts)
+        if selected_specs is None:
             return
 
-        title = self._resolve_plotly_spec_title(selected, plotly_texts)
-        if request.origin_mode == "python" and selected.language == "json":
+        title = self._resolve_plotly_spec_title(selected_specs[0], plotly_texts)
+        if request.origin_mode == "python" and selected_specs[0].language == "json":
             # Python モード送信でも python block が無かった場合の fallback 通知。
             self._view.show_status_message(
                 plotly_texts.sandbox_fallback_to_json_message
             )
 
-        if selected.language == "python":
+        if selected_specs[0].language == "python":
             self._start_plotly_python_render(
-                selected,
+                selected_specs,
                 title,
                 plotly_texts,
                 ai_elapsed_s=ai_elapsed_s,
             )
             return
 
-        self._render_and_show_plotly_figure(
-            selected,
+        self._render_and_show_plotly_figures(
+            selected_specs,
             title,
             plotly_texts,
             ai_elapsed_s=ai_elapsed_s,
         )
 
-    def _render_and_show_plotly_figure(
+    def _render_and_show_plotly_figures(
         self,
-        spec: PlotlySpec,
+        specs: list[PlotlySpec],
         title: str,
         plotly_texts,
         *,
         ai_elapsed_s: float | None = None,
     ) -> None:
-        """JSON spec を同期復元し、PlotWindow へ表示する。
+        """JSON spec を同期復元し、PlotWindow へタブ集約して表示する。
 
         計測対象は AI 応答待ちではなく、復元処理とウィンドウ表示そのものだけ。
         そのため start / end はこのメソッドの中で閉じ、AI 時間と混ぜない。
         """
-        try:
-            start_time = time.perf_counter()
-            figure = render_spec(
-                spec,
-                sandbox=None,
-                timeout_s=self._config.plotly_sandbox_timeout_s,
-                cancel_token=CancelToken(),
-            )
-            html = figure_to_html(figure)
-            window = self._plot_window_factory()
-            self._plot_windows.append(window)
-            self._bind_plot_window(window)
-            window.show_figures(
-                [
-                    PlotTabPayload(
-                        title=plotly_texts.window_title_template.format(
-                            title=title
-                        ),
-                        html=html,
-                        spec_source_text=spec.source_text,
-                        spec_language=spec.language,
-                        spec_index=spec.index,
-                    )
-                ]
-            )
-            # 画面に出す直前までを graph render の対象として測る。
-            graph_elapsed_s = time.perf_counter() - start_time
-        except PlotlyRenderError as exc:
-            self._view.show_status_message(
-                self._build_plotly_render_error_message(exc, plotly_texts)
-            )
-            return
+        start_time = time.perf_counter()
+        tab_payloads = self._build_plotly_tab_payloads_sync(specs, plotly_texts)
+        window = self._plot_window_factory()
+        self._plot_windows.append(window)
+        self._bind_plot_window(window)
+        window.show_figures(tab_payloads)
+        # 画面に出す直前までを graph render の対象として測る。
+        graph_elapsed_s = time.perf_counter() - start_time
 
         self._show_plotly_render_success_status(
             plotly_texts,
@@ -987,7 +964,7 @@ class MainPresenter:
 
     def _start_plotly_python_render(
         self,
-        spec: PlotlySpec,
+        specs: list[PlotlySpec],
         title: str,
         plotly_texts,
         *,
@@ -1005,7 +982,7 @@ class MainPresenter:
         self._view.show_plotly_running(cancel_token.cancel)
         self._run_plotly_render_coroutine(
             self._render_plotly_python_async(
-                spec,
+                specs,
                 title,
                 plotly_texts,
                 cancel_token,
@@ -1015,7 +992,7 @@ class MainPresenter:
 
     async def _render_plotly_python_async(
         self,
-        spec: PlotlySpec,
+        specs: list[PlotlySpec],
         title: str,
         plotly_texts,
         cancel_token: CancelToken,
@@ -1029,40 +1006,17 @@ class MainPresenter:
         """
         try:
             start_time = time.perf_counter()
-            loop = asyncio.get_running_loop()
-            figure = await loop.run_in_executor(
-                self._plotly_worker_pool,
-                lambda: render_spec(
-                    spec,
-                    sandbox=self._get_sandbox_executor(),
-                    timeout_s=self._config.plotly_sandbox_timeout_s,
-                    cancel_token=cancel_token,
-                ),
+            tab_payloads = await self._build_plotly_tab_payloads_async(
+                specs,
+                plotly_texts,
+                cancel_token,
             )
-            html = figure_to_html(figure)
             window = self._plot_window_factory()
             self._plot_windows.append(window)
             self._bind_plot_window(window)
-            window.show_figures(
-                [
-                    PlotTabPayload(
-                        title=plotly_texts.window_title_template.format(
-                            title=title
-                        ),
-                        html=html,
-                        spec_source_text=spec.source_text,
-                        spec_language=spec.language,
-                        spec_index=spec.index,
-                    )
-                ]
-            )
+            window.show_figures(tab_payloads)
             # HTML 生成とウィンドウ表示が完了した時点を graph render 完了とみなす。
             graph_elapsed_s = time.perf_counter() - start_time
-        except PlotlyRenderError as exc:
-            self._view.show_status_message(
-                self._build_plotly_render_error_message(exc, plotly_texts)
-            )
-            return
         except SandboxTimeoutError:
             # AI 応答自体は残しつつ、図だけを諦める。
             self._view.show_status_message(plotly_texts.sandbox_timeout_message)
@@ -1189,14 +1143,18 @@ class MainPresenter:
             **kwargs,
         )
 
-    def _select_plotly_spec(
+    def _select_plotly_specs(
         self,
         specs: list[PlotlySpec],
         plotly_texts,
-    ) -> PlotlySpec | None:
-        """複数 Plotly spec から表示対象を 1 件選ぶ。"""
+    ) -> list[PlotlySpec] | None:
+        """複数 Plotly spec から表示対象の一覧を選ぶ。"""
+        if not specs:
+            return None
         if len(specs) == 1 or self._config.plotly_multi_spec_mode == "first_only":
-            return specs[0]
+            return [specs[0]]
+        if self._config.plotly_multi_spec_mode == "all_tabs":
+            return specs
 
         # `prompt` モードでは View に選択ダイアログを委譲する。
         labels = [
@@ -1213,7 +1171,116 @@ class MainPresenter:
             return None
         if selected_index < 0 or selected_index >= len(specs):
             return None
-        return specs[selected_index]
+        return [specs[selected_index]]
+
+    def _build_plotly_tab_payloads_sync(
+        self,
+        specs: list[PlotlySpec],
+        plotly_texts,
+    ) -> list[PlotTabPayload]:
+        return [
+            self._build_plotly_tab_payload_sync(spec, plotly_texts)
+            for spec in specs
+        ]
+
+    def _build_plotly_tab_payload_sync(
+        self,
+        spec: PlotlySpec,
+        plotly_texts,
+    ) -> PlotTabPayload:
+        try:
+            figure = render_spec(
+                spec,
+                sandbox=None,
+                timeout_s=self._config.plotly_sandbox_timeout_s,
+                cancel_token=CancelToken(),
+            )
+        except PlotlyRenderError as exc:
+            return self._build_plotly_error_tab_payload(spec, exc, plotly_texts)
+
+        return PlotTabPayload(
+            title=self._window_title_for_plotly_spec(spec, plotly_texts),
+            html=figure_to_html(figure),
+            spec_source_text=spec.source_text,
+            spec_language=spec.language,
+            spec_index=spec.index,
+        )
+
+    async def _build_plotly_tab_payloads_async(
+        self,
+        specs: list[PlotlySpec],
+        plotly_texts,
+        cancel_token: CancelToken,
+    ) -> list[PlotTabPayload]:
+        tab_payloads: list[PlotTabPayload] = []
+        loop = asyncio.get_running_loop()
+        for spec in specs:
+            if cancel_token.cancelled:
+                break
+            try:
+                figure = await loop.run_in_executor(
+                    self._plotly_worker_pool,
+                    lambda current_spec=spec: render_spec(
+                        current_spec,
+                        sandbox=self._get_sandbox_executor(),
+                        timeout_s=self._config.plotly_sandbox_timeout_s,
+                        cancel_token=cancel_token,
+                    ),
+                )
+            except PlotlyRenderError as exc:
+                tab_payloads.append(
+                    self._build_plotly_error_tab_payload(spec, exc, plotly_texts)
+                )
+                continue
+
+            tab_payloads.append(
+                PlotTabPayload(
+                    title=self._window_title_for_plotly_spec(spec, plotly_texts),
+                    html=figure_to_html(figure),
+                    spec_source_text=spec.source_text,
+                    spec_language=spec.language,
+                    spec_index=spec.index,
+                )
+            )
+        return tab_payloads
+
+    def _build_plotly_error_tab_payload(
+        self,
+        spec: PlotlySpec,
+        error: PlotlyRenderError,
+        plotly_texts,
+    ) -> PlotTabPayload:
+        title = self._window_title_for_plotly_spec(spec, plotly_texts)
+        message = self._build_plotly_render_error_message(error, plotly_texts)
+        return PlotTabPayload(
+            title=title,
+            html=self._build_plotly_error_html(title, message),
+            spec_source_text=spec.source_text,
+            spec_language=spec.language,
+            spec_index=spec.index,
+            render_error=message,
+        )
+
+    @staticmethod
+    def _build_plotly_error_html(title: str, message: str) -> str:
+        return (
+            "<!doctype html><html><head><meta charset=\"utf-8\">"
+            f"<title>{html_lib.escape(title)}</title>"
+            "<style>body{font-family:sans-serif;padding:1rem;}"
+            "pre{white-space:pre-wrap;color:#8a1f11;background:#fce8e6;"
+            "padding:1rem;border-radius:8px;}</style></head><body>"
+            f"<h1>{html_lib.escape(title)}</h1>"
+            f"<pre>{html_lib.escape(message)}</pre></body></html>"
+        )
+
+    def _window_title_for_plotly_spec(
+        self,
+        spec: PlotlySpec,
+        plotly_texts,
+    ) -> str:
+        return plotly_texts.window_title_template.format(
+            title=self._resolve_plotly_spec_title(spec, plotly_texts)
+        )
 
     def _resolve_plotly_spec_title(self, spec: PlotlySpec, plotly_texts) -> str:
         """spec からウィンドウ表示用タイトルを解決する。"""
