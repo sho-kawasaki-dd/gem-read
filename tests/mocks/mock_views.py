@@ -567,7 +567,7 @@ class MockSettingsDialogView:
             "export_include_usage_metrics": False,
             "export_include_yaml_frontmatter": False,
             "plotly_sandbox_timeout_s": 10.0,
-            "plotly_multi_spec_mode": "prompt",
+            "plotly_multi_spec_mode": "all_tabs",
         }
         # exec_dialog が返す固定値。True = OK、False = Cancel。
         self._exec_return: bool = True

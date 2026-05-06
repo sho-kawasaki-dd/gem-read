@@ -162,6 +162,7 @@ class SettingsDialogTexts:
     export_include_yaml_frontmatter_text: str
     plotly_multi_spec_prompt_text: str
     plotly_multi_spec_first_only_text: str
+    plotly_multi_spec_all_tabs_text: str
     plotly_timeout_label: str
     plotly_timeout_suffix_seconds: str
     minutes_suffix: str

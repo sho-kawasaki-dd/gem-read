@@ -254,16 +254,21 @@ class SettingsDialog(QDialog):
         self._plotly_multi_spec_group = QButtonGroup(self)
         self._plotly_multi_spec_prompt_radio = QRadioButton("")
         self._plotly_multi_spec_first_only_radio = QRadioButton("")
+        self._plotly_multi_spec_all_tabs_radio = QRadioButton("")
         self._plotly_multi_spec_group.addButton(
             self._plotly_multi_spec_prompt_radio
         )
         self._plotly_multi_spec_group.addButton(
             self._plotly_multi_spec_first_only_radio
         )
+        self._plotly_multi_spec_group.addButton(
+            self._plotly_multi_spec_all_tabs_radio
+        )
         visualization_layout.addRow(self._plotly_multi_spec_prompt_radio)
         visualization_layout.addRow(
             self._plotly_multi_spec_first_only_radio
         )
+        visualization_layout.addRow(self._plotly_multi_spec_all_tabs_radio)
 
         self._tabs.addTab(visualization_tab, "")
 
@@ -373,6 +378,8 @@ class SettingsDialog(QDialog):
         return self._plotly_timeout_spin.value()
 
     def get_plotly_multi_spec_mode(self) -> PlotlyMultiSpecMode:
+        if self._plotly_multi_spec_all_tabs_radio.isChecked():
+            return "all_tabs"
         if self._plotly_multi_spec_first_only_radio.isChecked():
             return "first_only"
         return "prompt"
@@ -478,6 +485,9 @@ class SettingsDialog(QDialog):
     def set_plotly_multi_spec_mode(self, value: PlotlyMultiSpecMode) -> None:
         if value == "first_only":
             self._plotly_multi_spec_first_only_radio.setChecked(True)
+            return
+        if value == "all_tabs":
+            self._plotly_multi_spec_all_tabs_radio.setChecked(True)
             return
         self._plotly_multi_spec_prompt_radio.setChecked(True)
 
@@ -588,6 +598,9 @@ class SettingsDialog(QDialog):
         )
         self._plotly_multi_spec_first_only_radio.setText(
             texts.plotly_multi_spec_first_only_text
+        )
+        self._plotly_multi_spec_all_tabs_radio.setText(
+            texts.plotly_multi_spec_all_tabs_text
         )
         self._tabs.setTabText(4, texts.visualization_tab_text)
         self._reset_button.setText(texts.reset_defaults_button_text)

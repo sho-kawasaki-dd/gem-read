@@ -263,6 +263,9 @@ class TranslationService:
             plotly_multi_spec_first_only_text=self.translate(
                 "settings.visualization.plotly_multi_spec_first_only", language
             ),
+            plotly_multi_spec_all_tabs_text=self.translate(
+                "settings.visualization.plotly_multi_spec_all_tabs", language
+            ),
             plotly_timeout_label=self.translate(
                 "settings.visualization.plotly_timeout", language
             ),

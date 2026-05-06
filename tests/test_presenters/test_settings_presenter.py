@@ -505,22 +505,42 @@ class TestPlotlyVisualizationSettings:
             15.0,
         )
 
+    def test_populate_sets_plotly_visualization_all_tabs_mode(
+        self, mock_settings_view: MockSettingsDialogView
+    ) -> None:
+        config = AppConfig(
+            plotly_visualization_mode="json",
+            plotly_sandbox_timeout_s=15.0,
+            plotly_multi_spec_mode="all_tabs",
+        )
+        mock_settings_view._exec_return = True
+
+        presenter = SettingsPresenter(mock_settings_view, config)
+        with patch(
+            "pdf_epub_reader.presenters.settings_presenter.save_config"
+        ):
+            presenter.show()
+
+        assert mock_settings_view.get_calls("set_plotly_multi_spec_mode")[0] == (
+            "all_tabs",
+        )
+
     def test_read_config_includes_plotly_multi_spec_mode_and_preserves_toggle(
         self, mock_settings_view: MockSettingsDialogView
     ) -> None:
         config = AppConfig(
             plotly_visualization_mode="json",
-            plotly_multi_spec_mode="prompt",
+            plotly_multi_spec_mode="all_tabs",
         )
         presenter = SettingsPresenter(mock_settings_view, config)
         mock_settings_view._values["plotly_sandbox_timeout_s"] = 25.0
-        mock_settings_view._values["plotly_multi_spec_mode"] = "first_only"
+        mock_settings_view._values["plotly_multi_spec_mode"] = "all_tabs"
 
         result = presenter._read_config_from_view()
 
         assert result.plotly_visualization_mode == "json"
         assert result.plotly_sandbox_timeout_s == 25.0
-        assert result.plotly_multi_spec_mode == "first_only"
+        assert result.plotly_multi_spec_mode == "all_tabs"
 
     def test_read_config_clamps_plotly_sandbox_timeout(
         self, mock_settings_view: MockSettingsDialogView
