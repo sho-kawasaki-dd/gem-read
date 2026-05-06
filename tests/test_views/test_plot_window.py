@@ -86,6 +86,61 @@ def test_selection_sync_keeps_list_and_tabs_aligned() -> None:
     assert window._spec_list.currentRow() == 0
 
 
+def test_toolbar_actions_copy_source_and_reload_tab() -> None:
+    _get_app()
+    window = PlotWindow()
+    copied_texts: list[str] = []
+    rerendered: list[PlotTabPayload] = []
+
+    class _Clipboard:
+        def setText(self, text: str) -> None:
+            copied_texts.append(text)
+
+        def setPixmap(self, pixmap) -> None:
+            copied_texts.append("pixmap")
+
+    with patch(
+        "pdf_epub_reader.views.plot_window.QWebEngineView.load"
+    ) as mock_load:
+        with patch(
+            "pdf_epub_reader.views.plot_window.QApplication.clipboard",
+            return_value=_Clipboard(),
+        ):
+            window.show_figures(
+                [
+                    PlotTabPayload(
+                        title="Plot A",
+                        html="<html><body>plot</body></html>",
+                        spec_source_text='{"data": []}',
+                        spec_language="json",
+                        spec_index=0,
+                    )
+                ]
+            )
+            window.set_on_rerender_requested(rerendered.append)
+
+            window._tab_states[0].copy_source_action.trigger()
+            assert copied_texts == ['{"data": []}']
+
+            window._tab_states[0].rerender_action.trigger()
+            assert len(rerendered) == 1
+            assert rerendered[0].spec_source_text == '{"data": []}'
+
+            window.reload_tab(
+                0,
+                PlotTabPayload(
+                    title="Plot A",
+                    html="<html><body>plot updated</body></html>",
+                    spec_source_text='{"data": [1]}',
+                    spec_language="json",
+                    spec_index=0,
+                ),
+            )
+
+    assert mock_load.call_count == 2
+    assert window._tab_states[0].html_path.name == "plot_0002.html"
+
+
 def test_close_event_cleans_up_temp_html_directory() -> None:
     _get_app()
     window = PlotWindow()

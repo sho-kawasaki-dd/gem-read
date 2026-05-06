@@ -11,11 +11,13 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from collections.abc import Callable
 
 from PySide6.QtCore import QSignalBlocker, Qt, QUrl
 from PySide6.QtGui import QAction
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
+    QApplication,
     QListWidget,
     QListWidgetItem,
     QSplitter,
@@ -42,6 +44,7 @@ class PlotWindow(QWidget):
         self._temp_dir: TemporaryDirectory[str] | None = None
         self._html_counter = 0
         self._tab_states: list[_PlotTabState] = []
+        self._on_rerender_requested: Callable[[PlotTabPayload], None] | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -103,6 +106,28 @@ class PlotWindow(QWidget):
             ]
         )
 
+    def set_on_rerender_requested(
+        self, cb: Callable[[PlotTabPayload], None]
+    ) -> None:
+        """現在のタブを再描画したいときに呼ぶコールバックを登録する。"""
+        self._on_rerender_requested = cb
+
+    def reload_tab(self, index: int, payload: PlotTabPayload) -> None:
+        """既存タブの内容を新しい HTML で差し替える。"""
+        if index < 0 or index >= len(self._tab_states):
+            return
+
+        tab_state = self._tab_states[index]
+        tab_state.payload = payload
+        tab_state.html_path = self._write_html_file(payload.html)
+        tab_state.web_view.load(QUrl.fromLocalFile(str(tab_state.html_path)))
+        self._tab_widget.setTabText(index, payload.title)
+        item = self._spec_list.item(index)
+        if item is not None:
+            item.setText(payload.title)
+        if self._tab_widget.currentIndex() == index:
+            self.setWindowTitle(payload.title)
+
     def closeEvent(self, event) -> None:
         """ウィンドウ終了時に一時 HTML を確実に片付ける。"""
         self._cleanup_temp_dir()
@@ -135,10 +160,21 @@ class PlotWindow(QWidget):
 
         toolbar = QToolBar(tab_widget)
         toolbar.setMovable(False)
-        toolbar.addAction(QAction("Rerender", toolbar))
-        toolbar.addAction(QAction("Copy source", toolbar))
-        toolbar.addAction(QAction("Copy PNG", toolbar))
-        toolbar.addAction(QAction("Save", toolbar))
+        rerender_action = QAction("Rerender", toolbar)
+        rerender_action.triggered.connect(lambda: self._request_rerender(payload))
+        copy_source_action = QAction("Copy source", toolbar)
+        copy_source_action.triggered.connect(
+            lambda: self._copy_source_to_clipboard(payload)
+        )
+        copy_png_action = QAction("Copy PNG", toolbar)
+        copy_png_action.triggered.connect(
+            lambda: self._copy_png_to_clipboard(tab_widget)
+        )
+        save_action = QAction("Save", toolbar)
+        toolbar.addAction(rerender_action)
+        toolbar.addAction(copy_source_action)
+        toolbar.addAction(copy_png_action)
+        toolbar.addAction(save_action)
 
         web_view = QWebEngineView(tab_widget)
         html_path = self._write_html_file(payload.html)
@@ -153,6 +189,11 @@ class PlotWindow(QWidget):
         return _PlotTabState(
             payload=payload,
             widget=tab_widget,
+            toolbar=toolbar,
+            rerender_action=rerender_action,
+            copy_source_action=copy_source_action,
+            copy_png_action=copy_png_action,
+            save_action=save_action,
             web_view=web_view,
             html_path=html_path,
         )
@@ -172,6 +213,17 @@ class PlotWindow(QWidget):
         self._spec_toggle_button.setArrowType(
             Qt.ArrowType.LeftArrow if checked else Qt.ArrowType.RightArrow
         )
+
+    def _request_rerender(self, payload: PlotTabPayload) -> None:
+        if self._on_rerender_requested is None:
+            return
+        self._on_rerender_requested(payload)
+
+    def _copy_source_to_clipboard(self, payload: PlotTabPayload) -> None:
+        QApplication.clipboard().setText(payload.spec_source_text)
+
+    def _copy_png_to_clipboard(self, tab_widget: QWidget) -> None:
+        QApplication.clipboard().setPixmap(tab_widget.grab())
 
     def _on_spec_list_row_changed(self, index: int) -> None:
         if index < 0:
@@ -241,5 +293,10 @@ class PlotWindow(QWidget):
 class _PlotTabState:
     payload: PlotTabPayload
     widget: QWidget
+    toolbar: QToolBar
+    rerender_action: QAction
+    copy_source_action: QAction
+    copy_png_action: QAction
+    save_action: QAction
     web_view: QWebEngineView
     html_path: Path

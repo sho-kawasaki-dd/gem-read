@@ -281,10 +281,24 @@ class MockPlotWindow:
     """PlotWindow の代替として使う軽量 mock。"""
 
     def __init__(self) -> None:
-        self.calls: list[list[PlotTabPayload]] = []
+        self.calls: list[tuple[str, object]] = []
+        self._on_rerender_requested: Callable[[PlotTabPayload], None] | None = None
 
     def show_figures(self, tab_payloads: list[PlotTabPayload]) -> None:
-        self.calls.append(tab_payloads)
+        self.calls.append(("show_figures", tab_payloads))
+
+    def reload_tab(self, index: int, payload: PlotTabPayload) -> None:
+        self.calls.append(("reload_tab", (index, payload)))
+
+    def set_on_rerender_requested(
+        self, cb: Callable[[PlotTabPayload], None]
+    ) -> None:
+        self._on_rerender_requested = cb
+        self.calls.append(("set_on_rerender_requested", ()))
+
+    def simulate_rerender_requested(self, payload: PlotTabPayload) -> None:
+        if self._on_rerender_requested is not None:
+            self._on_rerender_requested(payload)
 
     def show_figure_html(self, html: str, title: str) -> None:
         self.show_figures(

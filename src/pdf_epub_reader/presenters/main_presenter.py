@@ -77,6 +77,10 @@ logger = logging.getLogger(__name__)
 
 class _PlotWindowLike(Protocol):
     def show_figures(self, tab_payloads: list[PlotTabPayload]) -> None: ...
+    def reload_tab(self, index: int, payload: PlotTabPayload) -> None: ...
+    def set_on_rerender_requested(
+        self, cb: Callable[[PlotTabPayload], None]
+    ) -> None: ...
 
 
 class MainPresenter:
@@ -952,6 +956,7 @@ class MainPresenter:
             html = figure_to_html(figure)
             window = self._plot_window_factory()
             self._plot_windows.append(window)
+            self._bind_plot_window(window)
             window.show_figures(
                 [
                     PlotTabPayload(
@@ -1037,6 +1042,7 @@ class MainPresenter:
             html = figure_to_html(figure)
             window = self._plot_window_factory()
             self._plot_windows.append(window)
+            self._bind_plot_window(window)
             window.show_figures(
                 [
                     PlotTabPayload(
@@ -1256,6 +1262,104 @@ class MainPresenter:
         from pdf_epub_reader.views.plot_window import PlotWindow
 
         return PlotWindow()
+
+    def _bind_plot_window(self, window: _PlotWindowLike) -> None:
+        window.set_on_rerender_requested(
+            lambda payload, bound_window=window: self._on_plotly_rerender_requested(
+                bound_window,
+                payload,
+            )
+        )
+
+    def _on_plotly_rerender_requested(
+        self,
+        window: _PlotWindowLike,
+        payload: PlotTabPayload,
+    ) -> None:
+        """PlotWindow の rerender 要求を受け、同じタブを更新する。"""
+        plotly_texts = self._translation_service.build_plotly_texts(
+            self._config.ui_language
+        )
+        spec = PlotlySpec(
+            index=payload.spec_index,
+            language=payload.spec_language,
+            source_text=payload.spec_source_text,
+            title=None,
+        )
+        if spec.language == "python":
+            self._run_plotly_render_coroutine(
+                self._rerender_plotly_python_async(
+                    window,
+                    spec,
+                    payload,
+                    plotly_texts,
+                )
+            )
+            return
+
+        self._rerender_plotly_json(window, spec, payload, plotly_texts)
+
+    def _rerender_plotly_json(
+        self,
+        window: _PlotWindowLike,
+        spec: PlotlySpec,
+        payload: PlotTabPayload,
+        plotly_texts,
+    ) -> None:
+        try:
+            figure = render_spec(
+                spec,
+                sandbox=None,
+                timeout_s=self._config.plotly_sandbox_timeout_s,
+                cancel_token=CancelToken(),
+            )
+            window.reload_tab(
+                payload.spec_index,
+                PlotTabPayload(
+                    title=payload.title,
+                    html=figure_to_html(figure),
+                    spec_source_text=payload.spec_source_text,
+                    spec_language=payload.spec_language,
+                    spec_index=payload.spec_index,
+                ),
+            )
+        except PlotlyRenderError as exc:
+            self._view.show_status_message(
+                self._build_plotly_render_error_message(exc, plotly_texts)
+            )
+
+    async def _rerender_plotly_python_async(
+        self,
+        window: _PlotWindowLike,
+        spec: PlotlySpec,
+        payload: PlotTabPayload,
+        plotly_texts,
+    ) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+            figure = await loop.run_in_executor(
+                self._plotly_worker_pool,
+                lambda: render_spec(
+                    spec,
+                    sandbox=self._get_sandbox_executor(),
+                    timeout_s=self._config.plotly_sandbox_timeout_s,
+                    cancel_token=CancelToken(),
+                ),
+            )
+            window.reload_tab(
+                payload.spec_index,
+                PlotTabPayload(
+                    title=payload.title,
+                    html=figure_to_html(figure),
+                    spec_source_text=payload.spec_source_text,
+                    spec_language=payload.spec_language,
+                    spec_index=payload.spec_index,
+                ),
+            )
+        except PlotlyRenderError as exc:
+            self._view.show_status_message(
+                self._build_plotly_render_error_message(exc, plotly_texts)
+            )
 
     async def _reload_layout(self) -> None:
         """DPI 変更後にプレースホルダーを再計算し再描画する。
