@@ -13,6 +13,7 @@ from pdf_epub_reader.dto import (
     LanguageDialogTexts,
     MainWindowTexts,
     PageData,
+    PlotTabPayload,
     RectCoords,
     SettingsDialogTexts,
     SelectionSnapshot,
@@ -280,10 +281,23 @@ class MockPlotWindow:
     """PlotWindow の代替として使う軽量 mock。"""
 
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[list[PlotTabPayload]] = []
+
+    def show_figures(self, tab_payloads: list[PlotTabPayload]) -> None:
+        self.calls.append(tab_payloads)
 
     def show_figure_html(self, html: str, title: str) -> None:
-        self.calls.append((html, title))
+        self.show_figures(
+            [
+                PlotTabPayload(
+                    title=title,
+                    html=html,
+                    spec_source_text="",
+                    spec_language="json",
+                    spec_index=0,
+                )
+            ]
+        )
 
 
 class MockSidePanelView:

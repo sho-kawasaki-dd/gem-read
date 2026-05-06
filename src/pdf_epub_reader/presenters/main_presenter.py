@@ -20,6 +20,7 @@ from typing import Protocol
 from pdf_epub_reader.dto import (
     AnalysisStatusTexts,
     PageData,
+    PlotTabPayload,
     PlotlyRenderRequest,
     PlotlySpec,
     RectCoords,
@@ -75,7 +76,7 @@ logger = logging.getLogger(__name__)
 
 
 class _PlotWindowLike(Protocol):
-    def show_figure_html(self, html: str, title: str) -> None: ...
+    def show_figures(self, tab_payloads: list[PlotTabPayload]) -> None: ...
 
 
 class MainPresenter:
@@ -951,9 +952,18 @@ class MainPresenter:
             html = figure_to_html(figure)
             window = self._plot_window_factory()
             self._plot_windows.append(window)
-            window.show_figure_html(
-                html,
-                plotly_texts.window_title_template.format(title=title),
+            window.show_figures(
+                [
+                    PlotTabPayload(
+                        title=plotly_texts.window_title_template.format(
+                            title=title
+                        ),
+                        html=html,
+                        spec_source_text=spec.source_text,
+                        spec_language=spec.language,
+                        spec_index=spec.index,
+                    )
+                ]
             )
             # 画面に出す直前までを graph render の対象として測る。
             graph_elapsed_s = time.perf_counter() - start_time
@@ -1027,9 +1037,18 @@ class MainPresenter:
             html = figure_to_html(figure)
             window = self._plot_window_factory()
             self._plot_windows.append(window)
-            window.show_figure_html(
-                html,
-                plotly_texts.window_title_template.format(title=title),
+            window.show_figures(
+                [
+                    PlotTabPayload(
+                        title=plotly_texts.window_title_template.format(
+                            title=title
+                        ),
+                        html=html,
+                        spec_source_text=spec.source_text,
+                        spec_language=spec.language,
+                        spec_index=spec.index,
+                    )
+                ]
             )
             # HTML 生成とウィンドウ表示が完了した時点を graph render 完了とみなす。
             graph_elapsed_s = time.perf_counter() - start_time

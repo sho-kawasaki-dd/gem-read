@@ -43,3 +43,20 @@ class PlotlyRenderRequest:
     specs: list[PlotlySpec]
     origin_mode: Literal["json", "python"]
     ai_response_elapsed_s: float | None = None
+
+
+@dataclass(frozen=True)
+class PlotTabPayload:
+    """PlotWindow のタブ 1 枚分に必要な表示状態をまとめた DTO。
+
+    Step 3A ではまだ PlotWindow 側のタブ UI は導入しないが、
+    将来の show_figures() へ渡すための「表示済み HTML + 元 spec 情報」の
+    境界をここで固定しておく。
+    """
+
+    title: str
+    html: str
+    spec_source_text: str
+    spec_language: Literal["json", "python"]
+    spec_index: int
+    render_error: str | None = None

@@ -1863,9 +1863,9 @@ class TestPlotlyRenderFlow:
 
         assert len(created_windows) == 1
         assert len(created_windows[0].calls) == 1
-        html, title = created_windows[0].calls[0]
-        assert "<html" in html.lower()
-        assert title == "Plotly Visualization - Velocity Plot"
+        payload = created_windows[0].calls[0][0]
+        assert "<html" in payload.html.lower()
+        assert payload.title == "Plotly Visualization - Velocity Plot"
         assert mock_main_view.get_calls("show_status_message")[-1] == (
             "AI response: 1.2 s / graph render: 0.4 s",
         )
@@ -1924,7 +1924,7 @@ class TestPlotlyRenderFlow:
             "Cancel",
         )
         assert len(created_windows) == 1
-        assert created_windows[0].calls[0][1] == "Plotly Visualization - Plot B"
+        assert created_windows[0].calls[0][0].title == "Plotly Visualization - Plot B"
 
     def test_multiple_specs_first_only_mode_skips_picker(
         self,
@@ -1974,7 +1974,10 @@ class TestPlotlyRenderFlow:
 
         assert mock_main_view.get_calls("show_plotly_spec_picker") == []
         assert len(created_windows) == 1
-        assert created_windows[0].calls[0][1] == "Plotly Visualization - First Plot"
+        assert (
+            created_windows[0].calls[0][0].title
+            == "Plotly Visualization - First Plot"
+        )
 
     def test_plotly_render_failure_reports_status_without_opening_window(
         self,
@@ -2076,7 +2079,7 @@ class TestPlotlyRenderFlow:
         assert mock_main_view.get_calls("show_plotly_running") == [()]
         assert mock_main_view.get_calls("clear_plotly_running") == [()]
         assert len(created_windows) == 1
-        assert created_windows[0].calls[0][1] == "Plotly Visualization - Python Plot"
+        assert created_windows[0].calls[0][0].title == "Plotly Visualization - Python Plot"
         assert mock_main_view.get_calls("show_status_message")[-1] == (
             "AI response: 2.5 s / graph render: 0.6 s",
         )
