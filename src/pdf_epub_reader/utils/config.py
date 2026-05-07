@@ -79,6 +79,7 @@ DEFAULT_EXPORT_INCLUDE_RAW_RESPONSE = False
 DEFAULT_EXPORT_INCLUDE_DOCUMENT_METADATA = False
 DEFAULT_EXPORT_INCLUDE_USAGE_METRICS = False
 DEFAULT_EXPORT_INCLUDE_YAML_FRONTMATTER = False
+DEFAULT_EXPORT_INCLUDE_PLOTLY_VISUALIZATIONS = True
 
 # --- Plotly visualization デフォルト設定 ---
 DEFAULT_PLOTLY_VISUALIZATION_MODE: Literal["off", "json", "python"] = "off"
@@ -265,6 +266,9 @@ class AppConfig:
     export_include_usage_metrics: bool = DEFAULT_EXPORT_INCLUDE_USAGE_METRICS
     export_include_yaml_frontmatter: bool = (
         DEFAULT_EXPORT_INCLUDE_YAML_FRONTMATTER
+    )
+    export_include_plotly_visualizations: bool = (
+        DEFAULT_EXPORT_INCLUDE_PLOTLY_VISUALIZATIONS
     )
 
     # Phase 9: Plotly visualization 設定

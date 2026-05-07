@@ -9,6 +9,7 @@ from pdf_epub_reader.dto import (
     AnalysisResult,
     AnalysisUsage,
     DocumentInfo,
+    PlotlySpec,
     RectCoords,
     SelectionSlot,
     SelectionSnapshot,
@@ -29,6 +30,7 @@ def _payload(
     snapshot: SelectionSnapshot | None = None,
     action_mode: AnalysisMode = AnalysisMode.TRANSLATION,
     model_name: str = "gemini-2.5-pro",
+    plotly_specs: list[PlotlySpec] | None = None,
 ) -> MarkdownExportPayload:
     return MarkdownExportPayload(
         result=result
@@ -59,6 +61,7 @@ def _payload(
         ),
         action_mode=action_mode,
         model_name=model_name,
+        plotly_specs=plotly_specs or [],
     )
 
 
@@ -123,6 +126,55 @@ class TestMarkdownExportService:
         assert "- File Name: Example Paper.pdf" in markdown
         assert "## Usage Metrics" in markdown
         assert "- Total Tokens: 18" in markdown
+
+    def test_includes_plotly_visualizations_when_enabled(self) -> None:
+        texts = TranslationService().build_markdown_export_texts("en")
+        payload = _payload(
+            plotly_specs=[
+                PlotlySpec(
+                    index=1,
+                    language="json",
+                    source_text='{"data": [], "layout": {}}',
+                    title="Velocity Plot",
+                )
+            ],
+        )
+
+        markdown = build_markdown_export_document(
+            payload,
+            AppConfig(),
+            texts,
+            exported_at=datetime(2026, 4, 20, 10, 30, 0, tzinfo=timezone.utc),
+        )
+
+        assert "## Visualizations" in markdown
+        assert (
+            "![Velocity Plot](Example Paper_20260420T103000_plots/plot_1.png)"
+            in markdown
+        )
+
+    def test_skips_plotly_visualizations_when_disabled(self) -> None:
+        texts = TranslationService().build_markdown_export_texts("en")
+        payload = _payload(
+            plotly_specs=[
+                PlotlySpec(
+                    index=1,
+                    language="json",
+                    source_text='{"data": [], "layout": {}}',
+                    title="Velocity Plot",
+                )
+            ],
+        )
+
+        markdown = build_markdown_export_document(
+            payload,
+            AppConfig(export_include_plotly_visualizations=False),
+            texts,
+            exported_at=datetime(2026, 4, 20, 10, 30, 0, tzinfo=timezone.utc),
+        )
+
+        assert "## Visualizations" not in markdown
+        assert "_plots/plot_1.png" not in markdown
 
     def test_localizes_labels_from_ui_language(self) -> None:
         texts = TranslationService().build_markdown_export_texts("ja")

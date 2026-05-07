@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,6 +12,7 @@ from pdf_epub_reader.dto import (
     AnalysisResult,
     DocumentInfo,
     MarkdownExportTexts,
+    PlotlySpec,
     SelectionSnapshot,
 )
 from pdf_epub_reader.utils.config import AppConfig
@@ -26,6 +27,7 @@ class MarkdownExportPayload:
     selection_snapshot: SelectionSnapshot
     action_mode: AnalysisMode
     model_name: str = ""
+    plotly_specs: list[PlotlySpec] = field(default_factory=list)
 
 
 def build_markdown_export_document(
@@ -46,6 +48,12 @@ def build_markdown_export_document(
     title = resolve_document_title(payload.document_info)
     source_file = Path(payload.document_info.file_path).name
     selections = resolve_selection_list(payload.selection_snapshot)
+    markdown_stem = Path(
+        build_markdown_export_filename(
+            payload.document_info,
+            exported_at=exported_at_utc,
+        )
+    ).stem
 
     lines: list[str] = []
 
@@ -133,6 +141,15 @@ def build_markdown_export_document(
                 f"- {texts.total_tokens_label}: {usage.total_token_count}"
             )
         lines.append("")
+
+    if config.export_include_plotly_visualizations and payload.plotly_specs:
+        lines.append("## Visualizations")
+        lines.append("")
+        for index, spec in enumerate(payload.plotly_specs, start=1):
+            alt_text = (spec.title or f"Plot {index}").strip() or f"Plot {index}"
+            asset_path = f"{markdown_stem}_plots/plot_{index}.png"
+            lines.append(f"![{alt_text}]({asset_path})")
+            lines.append("")
 
     return _trim_trailing_blank_lines(lines)
 
