@@ -499,6 +499,8 @@ class TestPlotlyRenderFlow:
         assert len(rendered[0].specs) == 1
         assert rendered[0].specs[0].title == "Velocity Plot"
         assert panel_presenter._latest_plotly_specs == rendered[0].specs
+        assert panel_presenter.export_state is not None
+        assert panel_presenter.export_state.plotly_specs == rendered[0].specs
         assert finished == [0.5]
 
     @pytest.mark.asyncio

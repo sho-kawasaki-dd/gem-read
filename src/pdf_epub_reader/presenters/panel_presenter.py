@@ -11,7 +11,7 @@ import asyncio
 import time
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from pdf_epub_reader.dto import (
     AnalysisMode,
@@ -51,6 +51,7 @@ class ExportState:
     include_explanation: bool
     model_name: str
     selection_snapshot: SelectionSnapshot
+    plotly_specs: list[PlotlySpec] = field(default_factory=list)
 
 
 class PanelPresenter:
@@ -147,7 +148,10 @@ class PanelPresenter:
     @property
     def export_state(self) -> ExportState | None:
         """現在アクティブなタブに対応する export 状態を返す。"""
-        return self._export_states.get(self._active_tab_mode)
+        state = self._export_states.get(self._active_tab_mode)
+        if state is None:
+            return None
+        return replace(state, plotly_specs=list(self._latest_plotly_specs))
 
     def set_selected_text(self, text: str) -> None:
         """現在の解析対象テキストを更新し、View にも反映する。
