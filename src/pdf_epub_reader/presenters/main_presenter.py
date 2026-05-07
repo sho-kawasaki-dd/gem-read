@@ -44,6 +44,12 @@ from pdf_epub_reader.services.markdown_export_service import (
     build_markdown_export_document,
     build_markdown_export_filename,
 )
+from pdf_epub_reader.services.plotly_export_service import (
+    PlotlyExportError,
+    PlotlyExportFormat,
+    export_spec,
+    is_kaleido_available,
+)
 from pdf_epub_reader.services.plotly_render_service import (
     PlotlyRenderError,
     figure_to_html,
@@ -82,6 +88,10 @@ class _PlotWindowLike(Protocol):
     def set_on_rerender_requested(
         self, cb: Callable[[PlotTabPayload], None]
     ) -> None: ...
+    def set_on_save_requested(
+        self, cb: Callable[[PlotTabPayload, Path], None]
+    ) -> None: ...
+    def set_kaleido_available(self, available: bool) -> None: ...
 
 
 class MainPresenter:
@@ -133,6 +143,7 @@ class MainPresenter:
         )
         self._sandbox_executor = sandbox_executor
         self._plotly_worker_pool = ThreadPoolExecutor(max_workers=1)
+        self._kaleido_available = is_kaleido_available()
         self._active_plotly_cancel_token: CancelToken | None = None
         # AI request の running / cancel / timing 文言を language ごとに束ねて保持する。
         self._status_texts: AnalysisStatusTexts = (
@@ -1331,16 +1342,19 @@ class MainPresenter:
         return PlotWindow(
             texts=self._translation_service.build_plot_window_texts(
                 self._config.ui_language
-            )
+            ),
+            export_folder=self._config.export_folder,
         )
 
     def _bind_plot_window(self, window: _PlotWindowLike) -> None:
+        window.set_kaleido_available(self._kaleido_available)
         window.set_on_rerender_requested(
             lambda payload, bound_window=window: self._on_plotly_rerender_requested(
                 bound_window,
                 payload,
             )
         )
+        window.set_on_save_requested(self._on_plotly_save_requested)
 
     def _on_plotly_rerender_requested(
         self,
@@ -1369,6 +1383,95 @@ class MainPresenter:
             return
 
         self._rerender_plotly_json(window, spec, payload, plotly_texts)
+
+    def _on_plotly_save_requested(
+        self,
+        payload: PlotTabPayload,
+        file_path: Path,
+    ) -> None:
+        """PlotWindow からの保存要求を、拡張子に応じて処理する。"""
+        format_name = file_path.suffix.lower().lstrip(".")
+        if format_name not in {"html", "png", "svg", "json"}:
+            self._view.show_status_message(
+                f"Failed to save Plotly visualization: unsupported file extension ({file_path.suffix or 'none'})."
+            )
+            return
+
+        if format_name == "html":
+            try:
+                file_path.write_text(payload.html, encoding="utf-8")
+            except OSError as exc:
+                self._view.show_status_message(
+                    f"Failed to save Plotly visualization: {exc}"
+                )
+                return
+            self._view.show_status_message(
+                f"Saved Plotly visualization to {file_path}"
+            )
+            return
+
+        if format_name == "json" and payload.spec_language == "json":
+            try:
+                file_path.write_text(payload.spec_source_text, encoding="utf-8")
+            except OSError as exc:
+                self._view.show_status_message(
+                    f"Failed to save Plotly visualization: {exc}"
+                )
+                return
+            self._view.show_status_message(
+                f"Saved Plotly visualization to {file_path}"
+            )
+            return
+
+        self._run_plotly_render_coroutine(
+            self._save_plotly_payload_async(payload, file_path, format_name)
+        )
+
+    async def _save_plotly_payload_async(
+        self,
+        payload: PlotTabPayload,
+        file_path: Path,
+        format_name: PlotlyExportFormat,
+    ) -> None:
+        try:
+            spec = PlotlySpec(
+                index=payload.spec_index,
+                language=payload.spec_language,
+                source_text=payload.spec_source_text,
+                title=payload.title,
+            )
+            loop = asyncio.get_running_loop()
+            figure = await loop.run_in_executor(
+                self._plotly_worker_pool,
+                lambda: render_spec(
+                    spec,
+                    sandbox=(
+                        self._get_sandbox_executor()
+                        if spec.language == "python"
+                        else None
+                    ),
+                    timeout_s=self._config.plotly_sandbox_timeout_s,
+                    cancel_token=CancelToken(),
+                ),
+            )
+            await loop.run_in_executor(
+                self._plotly_worker_pool,
+                lambda: export_spec(
+                    spec,
+                    figure,
+                    format=format_name,
+                    path=file_path,
+                ),
+            )
+        except (PlotlyRenderError, PlotlyExportError) as exc:
+            self._view.show_status_message(
+                f"Failed to save Plotly visualization: {exc}"
+            )
+            return
+
+        self._view.show_status_message(
+            f"Saved Plotly visualization to {file_path}"
+        )
 
     def _rerender_plotly_json(
         self,

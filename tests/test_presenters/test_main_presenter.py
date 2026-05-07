@@ -2231,6 +2231,139 @@ class TestPlotlyRenderFlow:
         assert reload_call[1][1].html.startswith("<html")
         assert window.calls[-1][0] == "reload_tab"
 
+    def test_plotly_save_request_writes_html_synchronously(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+        tmp_path: Path,
+    ) -> None:
+        panel = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
+        created_windows: list[MockPlotWindow] = []
+
+        def build_window() -> MockPlotWindow:
+            window = MockPlotWindow()
+            created_windows.append(window)
+            return window
+
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(ui_language="en"),
+            plot_window_factory=build_window,
+        )
+
+        presenter._on_plotly_render(
+            PlotlyRenderRequest(
+                specs=[
+                    PlotlySpec(
+                        index=0,
+                        language="json",
+                        source_text='{"data": [], "layout": {}}',
+                        title="Save Plot",
+                    )
+                ],
+                origin_mode="json",
+            )
+        )
+
+        window = created_windows[0]
+        target_path = tmp_path / "plot.html"
+        window.simulate_save_requested(
+            PlotTabPayload(
+                title="Plotly Visualization - Save Plot",
+                html="<html><body>saved</body></html>",
+                spec_source_text='{"data": [], "layout": {}}',
+                spec_language="json",
+                spec_index=0,
+            ),
+            target_path,
+        )
+
+        assert target_path.read_text(encoding="utf-8") == "<html><body>saved</body></html>"
+        assert mock_main_view.get_calls("show_status_message")[-1] == (
+            f"Saved Plotly visualization to {target_path}",
+        )
+
+    def test_plotly_save_request_uses_worker_for_png_export(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        panel = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
+        created_windows: list[MockPlotWindow] = []
+
+        def build_window() -> MockPlotWindow:
+            window = MockPlotWindow()
+            created_windows.append(window)
+            return window
+
+        export_calls: list[tuple[str, str]] = []
+
+        def fake_render_spec(spec, *, sandbox, timeout_s, cancel_token):
+            export_calls.append(("render", spec.language))
+            return object()
+
+        def fake_export_spec(spec, figure, *, format, path):
+            export_calls.append(("export", format))
+            Path(path).write_bytes(b"png")
+
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(ui_language="en"),
+            plot_window_factory=build_window,
+        )
+
+        presenter._on_plotly_render(
+            PlotlyRenderRequest(
+                specs=[
+                    PlotlySpec(
+                        index=0,
+                        language="json",
+                        source_text='{"data": [], "layout": {}}',
+                        title="Save Plot",
+                    )
+                ],
+                origin_mode="json",
+            )
+        )
+
+        monkeypatch.setattr(
+            "pdf_epub_reader.presenters.main_presenter.render_spec",
+            fake_render_spec,
+        )
+        monkeypatch.setattr(
+            "pdf_epub_reader.presenters.main_presenter.export_spec",
+            fake_export_spec,
+        )
+
+        window = created_windows[0]
+        target_path = tmp_path / "plot.png"
+        window.simulate_save_requested(
+            PlotTabPayload(
+                title="Plotly Visualization - Save Plot",
+                html="<html><body>saved</body></html>",
+                spec_source_text='{"data": [], "layout": {}}',
+                spec_language="json",
+                spec_index=0,
+            ),
+            target_path,
+        )
+
+        assert target_path.read_bytes() == b"png"
+        assert export_calls == [("render", "json"), ("export", "png")]
+        assert mock_main_view.get_calls("show_status_message")[-1] == (
+            f"Saved Plotly visualization to {target_path}",
+        )
+
     def test_python_origin_json_fallback_reports_status_before_render(
         self,
         mock_main_view: MockMainView,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import os
 from pathlib import Path
 from typing import cast
@@ -140,6 +141,80 @@ def test_toolbar_actions_copy_source_and_reload_tab() -> None:
 
     assert mock_load.call_count == 2
     assert window._tab_states[0].html_path.name == "plot_0002.html"
+
+
+def test_toolbar_save_uses_dialog_filters_and_callback() -> None:
+    _get_app()
+    window = PlotWindow(export_folder=r"C:\exports")
+    saved_paths: list[Path] = []
+
+    def _on_save_requested(payload: PlotTabPayload, file_path: Path) -> None:
+        saved_paths.append(file_path)
+
+    fixed_now = datetime(2026, 4, 20, 10, 30, 45)
+
+    with patch("pdf_epub_reader.views.plot_window.QWebEngineView.load"):
+        with patch(
+            "pdf_epub_reader.views.plot_window.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = fixed_now
+            with patch(
+                "pdf_epub_reader.views.plot_window.QFileDialog.getSaveFileName",
+                return_value=(r"C:\exports\Plot A_20260420T103045.png", "PNG (*.png)"),
+            ) as mock_get_save:
+                window.show_figures(
+                    [
+                        PlotTabPayload(
+                            title="Plot A",
+                            html="<html><body>plot</body></html>",
+                            spec_source_text='{"data": []}',
+                            spec_language="json",
+                            spec_index=0,
+                        )
+                    ]
+                )
+                window.set_on_save_requested(_on_save_requested)
+
+                window._tab_states[0].save_action.trigger()
+
+    mock_get_save.assert_called_once()
+    assert "HTML (*.html);;PNG (*.png);;SVG (*.svg);;JSON (*.json)" in mock_get_save.call_args.args[3]
+    assert saved_paths == [Path(r"C:\exports\Plot A_20260420T103045.png")]
+
+
+def test_toolbar_save_excludes_png_svg_when_kaleido_is_unavailable() -> None:
+    _get_app()
+    window = PlotWindow(export_folder=r"C:\exports")
+    saved_paths: list[Path] = []
+
+    def _on_save_requested(payload: PlotTabPayload, file_path: Path) -> None:
+        saved_paths.append(file_path)
+
+    with patch("pdf_epub_reader.views.plot_window.QWebEngineView.load"):
+        with patch(
+            "pdf_epub_reader.views.plot_window.QFileDialog.getSaveFileName",
+            return_value=(r"C:\exports\Plot A_20260420T103045.html", "HTML (*.html)"),
+        ) as mock_get_save:
+            window.set_kaleido_available(False)
+            window.show_figures(
+                [
+                    PlotTabPayload(
+                        title="Plot A",
+                        html="<html><body>plot</body></html>",
+                        spec_source_text='{"data": []}',
+                        spec_language="json",
+                        spec_index=0,
+                    )
+                ]
+            )
+            window.set_on_save_requested(_on_save_requested)
+
+            window._tab_states[0].save_action.trigger()
+
+    mock_get_save.assert_called_once()
+    assert mock_get_save.call_args.args[3] == "HTML (*.html);;JSON (*.json)"
+    assert window._tab_states[0].copy_png_action.isEnabled() is False
+    assert saved_paths == [Path(r"C:\exports\Plot A_20260420T103045.html")]
 
 
 def test_plot_window_texts_are_applied_to_chrome() -> None:

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from pdf_epub_reader.dto import (
     CacheDialogTexts,
@@ -283,6 +284,8 @@ class MockPlotWindow:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
         self._on_rerender_requested: Callable[[PlotTabPayload], None] | None = None
+        self._on_save_requested: Callable[[PlotTabPayload, Path], None] | None = None
+        self._kaleido_available: bool | None = None
 
     def show_figures(self, tab_payloads: list[PlotTabPayload]) -> None:
         self.calls.append(("show_figures", tab_payloads))
@@ -296,9 +299,23 @@ class MockPlotWindow:
         self._on_rerender_requested = cb
         self.calls.append(("set_on_rerender_requested", ()))
 
+    def set_on_save_requested(
+        self, cb: Callable[[PlotTabPayload, Path], None]
+    ) -> None:
+        self._on_save_requested = cb
+        self.calls.append(("set_on_save_requested", ()))
+
+    def set_kaleido_available(self, available: bool) -> None:
+        self._kaleido_available = available
+        self.calls.append(("set_kaleido_available", (available,)))
+
     def simulate_rerender_requested(self, payload: PlotTabPayload) -> None:
         if self._on_rerender_requested is not None:
             self._on_rerender_requested(payload)
+
+    def simulate_save_requested(self, payload: PlotTabPayload, file_path: Path) -> None:
+        if self._on_save_requested is not None:
+            self._on_save_requested(payload, file_path)
 
     def show_figure_html(self, html: str, title: str) -> None:
         self.show_figures(

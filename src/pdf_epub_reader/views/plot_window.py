@@ -7,6 +7,7 @@ Phase 1 では `plotly.io.to_html(..., include_plotlyjs="inline")` の出力を
 
 from __future__ import annotations
 
+from datetime import datetime
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QListWidget,
     QListWidgetItem,
     QSplitter,
@@ -54,15 +56,19 @@ class PlotWindow(QWidget):
         self,
         parent: QWidget | None = None,
         texts: PlotWindowTexts | None = None,
+        export_folder: str = "",
     ) -> None:
         super().__init__(parent)
         self.resize(960, 720)
         self._texts = texts or _DEFAULT_TEXTS
+        self._export_folder = export_folder.strip()
         # WebEngine が読む一時 HTML の寿命をウィンドウに揃える。
         self._temp_dir: TemporaryDirectory[str] | None = None
         self._html_counter = 0
         self._tab_states: list[_PlotTabState] = []
         self._on_rerender_requested: Callable[[PlotTabPayload], None] | None = None
+        self._on_save_requested: Callable[[PlotTabPayload, Path], None] | None = None
+        self._kaleido_available = True
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -130,6 +136,24 @@ class PlotWindow(QWidget):
         """現在のタブを再描画したいときに呼ぶコールバックを登録する。"""
         self._on_rerender_requested = cb
 
+    def set_on_save_requested(
+        self, cb: Callable[[PlotTabPayload, Path], None]
+    ) -> None:
+        """保存先が決まったときに呼ぶコールバックを登録する。"""
+        self._on_save_requested = cb
+
+    def set_kaleido_available(self, available: bool) -> None:
+        """PNG コピーや PNG/SVG 保存の可用性を反映する。"""
+        self._kaleido_available = available
+        for tab_state in self._tab_states:
+            tab_state.copy_png_action.setEnabled(available)
+            if available:
+                tab_state.copy_png_action.setToolTip("")
+            else:
+                tab_state.copy_png_action.setToolTip(
+                    self._texts.kaleido_unavailable_tooltip
+                )
+
     def reload_tab(self, index: int, payload: PlotTabPayload) -> None:
         """既存タブの内容を新しい HTML で差し替える。"""
         if index < 0 or index >= len(self._tab_states):
@@ -191,8 +215,11 @@ class PlotWindow(QWidget):
             lambda: self._copy_png_to_clipboard(tab_widget)
         )
         save_action = QAction(self._texts.toolbar_save, toolbar)
+        save_action.triggered.connect(lambda: self._request_save(payload))
         save_action.setToolTip(self._texts.kaleido_unavailable_tooltip)
-        save_action.setEnabled(False)
+        copy_png_action.setEnabled(self._kaleido_available)
+        if not self._kaleido_available:
+            copy_png_action.setToolTip(self._texts.kaleido_unavailable_tooltip)
         toolbar.addAction(rerender_action)
         toolbar.addAction(copy_source_action)
         toolbar.addAction(copy_png_action)
@@ -240,6 +267,74 @@ class PlotWindow(QWidget):
         if self._on_rerender_requested is None:
             return
         self._on_rerender_requested(payload)
+
+    def _request_save(self, payload: PlotTabPayload) -> None:
+        initial_path = self._build_save_initial_path(payload)
+        filters = self._build_save_filters()
+        selected_path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            self._texts.toolbar_save,
+            str(initial_path),
+            filters,
+        )
+        if not selected_path:
+            return
+
+        target_path = Path(selected_path)
+        if target_path.suffix == "":
+            suffix = self._infer_suffix_from_filter(selected_filter)
+            if suffix:
+                target_path = target_path.with_suffix(f".{suffix}")
+
+        if self._on_save_requested is None:
+            return
+        self._on_save_requested(payload, target_path)
+
+    def _build_save_initial_path(self, payload: PlotTabPayload) -> Path:
+        export_dir = Path(self._export_folder) if self._export_folder else Path.home()
+        title = self._sanitize_filename_component(payload.title)
+        timestamp = self._format_timestamp(datetime.now())
+        return export_dir / f"{title}_{timestamp}.html"
+
+    def _build_save_filters(self) -> str:
+        if self._kaleido_available:
+            return "HTML (*.html);;PNG (*.png);;SVG (*.svg);;JSON (*.json)"
+        return "HTML (*.html);;JSON (*.json)"
+
+    @staticmethod
+    def _infer_suffix_from_filter(selected_filter: str) -> str | None:
+        filter_text = selected_filter.lower()
+        if "*.png" in filter_text:
+            return "png"
+        if "*.svg" in filter_text:
+            return "svg"
+        if "*.json" in filter_text:
+            return "json"
+        if "*.html" in filter_text:
+            return "html"
+        return None
+
+    @staticmethod
+    def _sanitize_filename_component(value: str) -> str:
+        sanitized = (
+            value.strip()
+            .replace("/", "-")
+            .replace("\\", "-")
+            .replace("?", "-")
+            .replace("%", "-")
+            .replace("*", "-")
+            .replace(":", "-")
+            .replace("|", "-")
+            .replace('"', "-")
+            .replace("<", "-")
+            .replace(">", "-")
+        )
+        sanitized = " ".join(sanitized.split())[:80].rstrip(" -").strip()
+        return sanitized or "plotly-visualization"
+
+    @staticmethod
+    def _format_timestamp(value: datetime) -> str:
+        return value.strftime("%Y%m%dT%H%M%S")
 
     def _copy_source_to_clipboard(self, payload: PlotTabPayload) -> None:
         QApplication.clipboard().setText(payload.spec_source_text)
