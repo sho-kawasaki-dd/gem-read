@@ -176,6 +176,19 @@ class TestMarkdownExportService:
         assert "## Visualizations" not in markdown
         assert "_plots/plot_1.png" not in markdown
 
+    def test_skips_plotly_visualizations_when_no_specs_are_present(self) -> None:
+        texts = TranslationService().build_markdown_export_texts("en")
+
+        markdown = build_markdown_export_document(
+            _payload(plotly_specs=[]),
+            AppConfig(),
+            texts,
+            exported_at=datetime(2026, 4, 20, 10, 30, 0, tzinfo=timezone.utc),
+        )
+
+        assert "## Visualizations" not in markdown
+        assert "_plots/plot_1.png" not in markdown
+
     def test_localizes_labels_from_ui_language(self) -> None:
         texts = TranslationService().build_markdown_export_texts("ja")
 

@@ -43,6 +43,15 @@ def _spec_json() -> PlotlySpec:
     )
 
 
+def _spec_python() -> PlotlySpec:
+    return PlotlySpec(
+        index=0,
+        language="python",
+        source_text="print(fig.to_json())",
+        title="Python Plot",
+    )
+
+
 class TestPlotlyExportService:
     def test_is_kaleido_available_caches_the_import_attempt(self, monkeypatch) -> None:
         calls: list[str] = []
@@ -91,6 +100,22 @@ class TestPlotlyExportService:
         export_spec(spec, figure, format="json", path=target)
 
         assert target.read_text(encoding="utf-8") == spec.source_text
+
+    def test_export_spec_uses_figure_json_for_python_specs(self, monkeypatch, tmp_path: Path) -> None:
+        spec = _spec_python()
+        figure = _figure()
+        target = tmp_path / "plot.json"
+
+        def fake_to_json(self) -> str:
+            return '{"data": [], "layout": {"title": "Python Plot"}}'
+
+        expected_json = '{"data": [], "layout": {"title": "Python Plot"}}'
+
+        monkeypatch.setattr(type(figure), "to_json", fake_to_json)
+
+        export_spec(spec, figure, format="json", path=target)
+
+        assert target.read_text(encoding="utf-8") == expected_json
 
     @pytest.mark.parametrize("format_name", ["png", "svg"])
     def test_export_figure_raises_when_kaleido_is_unavailable(
