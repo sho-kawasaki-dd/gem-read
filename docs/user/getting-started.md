@@ -11,10 +11,18 @@ It lets you open documents, select one or more rectangular regions, and send the
 - A desktop environment that can run a PySide6 application
 - `GEMINI_API_KEY` if you want to use AI features
 
+If you want Plotly PNG / SVG export, install the optional `plotly-export` extra and make sure Chrome / Chromium is already available on the machine.
+
 ## Install
 
 ```bash
 uv sync --dev
+```
+
+For Plotly PNG / SVG export support, install the optional extra too:
+
+```bash
+uv sync --dev --extra plotly-export
 ```
 
 ## Configure Environment

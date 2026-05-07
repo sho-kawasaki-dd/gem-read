@@ -61,6 +61,8 @@ English:
 
 主なランタイム依存は PySide6、PyMuPDF、google-genai、qasync、markdown、Pillow、python-dotenv、platformdirs です。
 
+Plotly の PNG / SVG 保存や PNG コピーを使う場合は、オプション依存の `plotly-export` extra を追加で入れてください。Kaleido v1 系は Chrome / Chromium を同梱しないため、実行環境に既存のブラウザが必要です。
+
 English:
 
 - Python 3.13 or newer
@@ -70,6 +72,8 @@ English:
 
 Main runtime dependencies include PySide6, PyMuPDF, google-genai, qasync, markdown, Pillow, python-dotenv, and platformdirs.
 
+To use Plotly PNG / SVG export and PNG copy, install the optional `plotly-export` extra as well. Kaleido v1 does not bundle Chrome / Chromium, so the target machine must already have a browser installed.
+
 ## インストール / Installation
 
 日本語:
@@ -78,6 +82,12 @@ Main runtime dependencies include PySide6, PyMuPDF, google-genai, qasync, markdo
 
 ```bash
 uv sync --dev
+```
+
+Plotly の PNG / SVG 保存も使う場合は、`plotly-export` extra も入れます。
+
+```bash
+uv sync --dev --extra plotly-export
 ```
 
 `.env.example` をもとに `.env` を作成し、Gemini を使う場合は API キーを設定します。
@@ -136,6 +146,12 @@ This is the minimal setup flow using `uv`.
 
 ```bash
 uv sync --dev
+```
+
+If you also want Plotly PNG / SVG export, install the optional `plotly-export` extra.
+
+```bash
+uv sync --dev --extra plotly-export
 ```
 
 Create a `.env` file from `.env.example` and set your API key if you want to use Gemini.
@@ -223,6 +239,7 @@ Main shortcuts:
 日本語:
 
 - `GEMINI_API_KEY` が未設定でもアプリは起動しますが、AI 機能は利用できません
+- Plotly の PNG / SVG 保存機能は `plotly-export` extra が必要で、Kaleido v1 用に Chrome / Chromium の既存インストールも必要です
 - ブラウザ拡張は `GEMINI_API_KEY` 未設定でも local API に到達できますが、Gemini 実応答の代わりに mock mode を明示表示します
 - 本 README にはスクリーンショットを含めていません
 - ライセンス条件の詳細は `LICENSE` ファイルを参照してください
@@ -231,6 +248,7 @@ Main shortcuts:
 English:
 
 - The application can start without `GEMINI_API_KEY`, but AI features will not be available
+- Plotly PNG / SVG export requires the optional `plotly-export` extra, and Kaleido v1 also requires an existing Chrome / Chromium installation on the machine
 - The browser extension can still reach the local API without `GEMINI_API_KEY`, but it will show explicit mock-mode results instead of live Gemini output
 - This README does not include screenshots
 - See the `LICENSE` file for the full license terms
