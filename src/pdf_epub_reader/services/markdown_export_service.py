@@ -143,7 +143,7 @@ def build_markdown_export_document(
         lines.append("")
 
     if config.export_include_plotly_visualizations and payload.plotly_specs:
-        lines.append("## Visualizations")
+        lines.append(f"## {texts.visualizations_section_title}")
         lines.append("")
         for index, spec in enumerate(payload.plotly_specs, start=1):
             alt_text = (spec.title or f"Plot {index}").strip() or f"Plot {index}"

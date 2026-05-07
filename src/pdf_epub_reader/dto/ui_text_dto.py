@@ -205,6 +205,7 @@ class MarkdownExportTexts:
     raw_response_section_title: str
     document_metadata_section_title: str
     usage_metrics_section_title: str
+    visualizations_section_title: str
     document_title_label: str
     file_name_label: str
     selection_count_label: str
@@ -214,6 +215,7 @@ class MarkdownExportTexts:
     total_tokens_label: str
     action_translation_label: str
     action_custom_prompt_label: str
+    plotly_skipped_kaleido_unavailable_message: str
 
 
 @dataclass(frozen=True)

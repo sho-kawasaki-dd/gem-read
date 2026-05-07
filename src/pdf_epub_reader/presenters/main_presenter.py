@@ -640,8 +640,8 @@ class MainPresenter:
                         )
                     )
                 else:
-                    plotly_skip_message = self._translate(
-                        "export.status.plotly_visualizations_skipped_kaleido_unavailable"
+                    plotly_skip_message = (
+                        export_texts.plotly_skipped_kaleido_unavailable_message
                     )
 
             markdown = build_markdown_export_document(

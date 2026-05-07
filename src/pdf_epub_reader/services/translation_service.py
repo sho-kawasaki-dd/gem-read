@@ -349,6 +349,9 @@ class TranslationService:
             usage_metrics_section_title=self.translate(
                 "export.section.usage_metrics", language
             ),
+            visualizations_section_title=self.translate(
+                "export.section.visualizations", language
+            ),
             document_title_label=self.translate(
                 "export.metadata.document_title", language
             ),
@@ -373,6 +376,9 @@ class TranslationService:
             ),
             action_custom_prompt_label=self.translate(
                 "export.action.custom_prompt", language
+            ),
+            plotly_skipped_kaleido_unavailable_message=self.translate(
+                "export.status.plotly_skipped_kaleido_unavailable", language
             ),
         )
 
